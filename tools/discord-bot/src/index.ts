@@ -1,10 +1,8 @@
-// Discord rejects nicknames over 32 characters; the full name stays on /status.
-const _nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
-
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
     ActivityType,
+    type Channel,
     Client,
     DiscordAPIError,
     DiscordjsError,
@@ -13,29 +11,47 @@ import {
     Events,
     GatewayCloseCodes,
     GatewayIntentBits,
+    type Guild,
     type Message,
+    type NewsChannel,
     PermissionFlagsBits,
+    type PermissionResolvable,
     RESTJSONErrorCodes,
     type TextChannel,
 } from "discord.js";
+import { type ChannelRef, describeChannelRef, matchesChannelRef, parseChannelRef } from "./channels";
 import {
     classifyDashboardEmbed,
     DASHBOARD_TITLE,
     type DashboardMessageKind,
     formatFooter,
+    parseDashboardState,
     parseOwnerId,
 } from "./dashboard";
 import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
 import { formatStardewTime } from "./serverState";
 
+/** Reads a channel setting, still honoring the retired `*_ID` name so existing .env files keep working. */
+function readChannelRef(name: string, retiredName: string): ChannelRef | null {
+    const ref = parseChannelRef(process.env[name]);
+    if (ref) {
+        return ref;
+    }
+    const retired = parseChannelRef(process.env[retiredName]);
+    if (retired) {
+        log.warn(`${retiredName} is deprecated - set ${name} instead (a channel name or id)`);
+    }
+    return retired;
+}
+
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const API_URL = process.env.API_URL || "http://server:8080";
 const API_KEY = process.env.API_KEY || "";
 const WS_URL = process.env.WS_URL || `${API_URL.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
-const DISCORD_CHAT_CHANNEL_ID = process.env.DISCORD_CHAT_CHANNEL_ID;
-const STATUS_DASHBOARD_CHANNEL_ID = process.env.STATUS_DASHBOARD_CHANNEL_ID;
+const CHAT_CHANNEL = readChannelRef("DISCORD_CHAT_CHANNEL", "DISCORD_CHAT_CHANNEL_ID");
+const DASHBOARD_CHANNEL = readChannelRef("STATUS_DASHBOARD_CHANNEL", "STATUS_DASHBOARD_CHANNEL_ID");
 const STATUS_DASHBOARD_REFRESH_RATE = Number(process.env.STATUS_DASHBOARD_REFRESH_RATE) || 30;
 const STATUS_DASHBOARD_REFRESH_RATE_FORMATTED =
     STATUS_DASHBOARD_REFRESH_RATE < 60
@@ -121,11 +137,39 @@ interface WebSocketMessage {
 
 // Only request message intents if chat relay is enabled
 const intents = [GatewayIntentBits.Guilds];
-if (DISCORD_CHAT_CHANNEL_ID) {
+if (CHAT_CHANNEL) {
     intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
 }
 
 const client = new Client({ intents });
+
+/** A guild channel the bot posts to; the two types matched by `matchesChannelRef`. */
+type PostableChannel = TextChannel | NewsChannel;
+
+/** Channels in one guild matching a configured reference. */
+function resolveChannelsIn(guild: Guild, ref: ChannelRef): PostableChannel[] {
+    const matches: PostableChannel[] = [];
+    for (const channel of guild.channels.cache.values()) {
+        if (matchesChannelRef(channel, ref)) {
+            matches.push(channel as PostableChannel);
+        }
+    }
+    return matches;
+}
+
+/**
+ * Channels matching a configured reference across every guild: one for an id, one per
+ * guild for a name. Resolved from the gateway cache on each use, so channel renames and
+ * newly joined guilds take effect without a restart.
+ */
+function resolveChannels(ref: ChannelRef): PostableChannel[] {
+    return [...client.guilds.cache.values()].flatMap((guild) => resolveChannelsIn(guild, ref));
+}
+
+/** True when an incoming message's channel is the configured one. */
+function isConfiguredChannel(channel: Channel, ref: ChannelRef): boolean {
+    return !channel.isDMBased() && matchesChannelRef(channel, ref);
+}
 
 // WebSocket connection state
 let ws: WebSocket | null = null;
@@ -236,7 +280,8 @@ async function updatePresence(): Promise<void> {
  */
 async function updateBotNickname(): Promise<void> {
     const status = await fetchServerStatus();
-    const nickname = status?.serverName || status?.farmName;
+    // Discord rejects nicknames over 32 characters; the full name stays on /status.
+    const nickname = (status?.serverName || status?.farmName)?.slice(0, 32);
 
     if (!nickname) {
         return;
@@ -268,8 +313,8 @@ const WS_FAILURE_LOG_EVERY = 12; // one progress line per minute at the 5s retry
  * Connects to the game server's WebSocket for real-time chat relay.
  */
 function connectWebSocket(): void {
-    if (!DISCORD_CHAT_CHANNEL_ID) {
-        log.info("DISCORD_CHAT_CHANNEL_ID not set - chat relay disabled");
+    if (!CHAT_CHANNEL) {
+        log.info("DISCORD_CHAT_CHANNEL not set - chat relay disabled");
         return;
     }
 
@@ -333,13 +378,18 @@ function connectWebSocket(): void {
                     return;
                 }
 
-                if (msg.type === "chat" && msg.payload) {
-                    // Game -> Discord
-                    const channel = client.channels.cache.get(DISCORD_CHAT_CHANNEL_ID);
-                    if (channel?.isTextBased()) {
-                        const { playerName, message } = msg.payload;
-                        if (playerName && message) {
-                            await (channel as TextChannel).send(`**${playerName}**: ${message}`);
+                if (msg.type === "chat" && msg.payload && CHAT_CHANNEL) {
+                    // Game -> Discord, to the chat channel of every guild that has one
+                    const { playerName, message } = msg.payload;
+                    if (playerName && message) {
+                        for (const channel of resolveChannels(CHAT_CHANNEL)) {
+                            try {
+                                await channel.send(`**${playerName}**: ${message}`);
+                            } catch (error) {
+                                log.error(
+                                    `Failed to relay chat to #${channel.name} in ${channel.guild.name}: ${error}`,
+                                );
+                            }
                         }
                     }
                 }
@@ -451,10 +501,11 @@ interface DashboardState {
     // null only in degraded mode (persistence unavailable): no id is stamped
     // and adoption falls back to title-based matching.
     ownerId: string | null;
-    messageId: string | null;
+    // Tracked dashboard message per channel id.
+    messageIds: Record<string, string>;
 }
 
-const dashboardState: DashboardState = { ownerId: null, messageId: null };
+const dashboardState: DashboardState = { ownerId: null, messageIds: {} };
 let dashboardStateWritable = false;
 let dashboardUpdateInFlight = false;
 const warnedForeignOwnerIds = new Set<string>();
@@ -475,27 +526,19 @@ function loadDashboardState(): void {
     }
 
     if (raw !== null) {
-        try {
-            const parsed = JSON.parse(raw);
-            const ownerId = typeof parsed?.ownerId === "string" ? parsed.ownerId.trim() : "";
-            if (ownerId.length > 0) {
-                dashboardState.ownerId = ownerId;
-                // A non-snowflake messageId would fail the tracked fetch with a 400,
-                // which the transient-error branch retries forever - drop it instead.
-                dashboardState.messageId =
-                    typeof parsed.messageId === "string" && /^\d+$/.test(parsed.messageId) ? parsed.messageId : null;
-                dashboardStateWritable = true;
-                dashboardLog.info(`Ownership id: ${dashboardState.ownerId}`);
-                return;
-            }
-            dashboardLog.warn(`${DASHBOARD_STATE_FILE} has no ownerId - treating as first boot`);
-        } catch {
-            dashboardLog.warn(`${DASHBOARD_STATE_FILE} is unparseable - treating as first boot`);
+        const persisted = parseDashboardState(raw);
+        if (persisted) {
+            dashboardState.ownerId = persisted.ownerId;
+            dashboardState.messageIds = persisted.messageIds;
+            dashboardStateWritable = true;
+            dashboardLog.info(`Ownership id: ${dashboardState.ownerId}`);
+            return;
         }
+        dashboardLog.warn(`${DASHBOARD_STATE_FILE} has no usable ownerId - treating as first boot`);
     }
 
     dashboardState.ownerId = crypto.randomUUID();
-    dashboardState.messageId = null;
+    dashboardState.messageIds = {};
     dashboardStateWritable = true;
     persistDashboardState();
     if (dashboardStateWritable) {
@@ -529,9 +572,15 @@ function persistDashboardState(): void {
     }
 }
 
-/** Forgets the tracked dashboard message so the next update rescans the channel. */
-function clearTrackedMessage(): void {
-    dashboardState.messageId = null;
+/** Remembers the dashboard message of a channel. */
+function trackMessage(channelId: string, messageId: string): void {
+    dashboardState.messageIds[channelId] = messageId;
+    persistDashboardState();
+}
+
+/** Forgets a channel's tracked dashboard message so the next update rescans that channel. */
+function clearTrackedMessage(channelId: string): void {
+    delete dashboardState.messageIds[channelId];
     persistDashboardState();
 }
 
@@ -586,17 +635,21 @@ async function buildDashboardEmbed(): Promise<EmbedBuilder> {
     return embed;
 }
 
-/** Interval entry point: runs one dashboard update, skipping ticks that overlap. */
+/** Interval entry point: updates the dashboard in every matching channel, skipping ticks that overlap. */
 async function updateLiveDashboard(): Promise<void> {
-    if (!STATUS_DASHBOARD_CHANNEL_ID) {
-        return;
-    }
-    if (dashboardUpdateInFlight) {
+    if (!DASHBOARD_CHANNEL || dashboardUpdateInFlight) {
         return;
     }
     dashboardUpdateInFlight = true;
     try {
-        await runDashboardUpdate(STATUS_DASHBOARD_CHANNEL_ID);
+        const embed = await buildDashboardEmbed();
+        for (const channel of resolveChannels(DASHBOARD_CHANNEL)) {
+            try {
+                await runDashboardUpdate(channel, embed);
+            } catch (error) {
+                dashboardLog.error(`Update failed in #${channel.name} (${channel.guild.name}): ${error}`);
+            }
+        }
     } catch (error) {
         dashboardLog.error(`Loop execution failed: ${error}`);
     } finally {
@@ -605,29 +658,24 @@ async function updateLiveDashboard(): Promise<void> {
 }
 
 /**
- * Updates the dashboard: edits the tracked message when it is still ours,
+ * Updates one channel's dashboard: edits the tracked message when it is still ours,
  * otherwise scans the channel to adopt our dashboard or posts a fresh one.
  */
-async function runDashboardUpdate(channelId: string): Promise<void> {
-    const channel = (await client.channels.fetch(channelId)) as TextChannel;
-    if (!channel?.isTextBased()) {
-        dashboardLog.error("Target channel not found or is not text-based");
-        return;
-    }
-
-    const embed = await buildDashboardEmbed();
+async function runDashboardUpdate(channel: PostableChannel, embed: EmbedBuilder): Promise<void> {
+    const where = `#${channel.name} (${channel.guild.name})`;
 
     // Primary path: edit the tracked message.
-    if (dashboardState.messageId) {
+    const trackedId = dashboardState.messageIds[channel.id];
+    if (trackedId) {
         let existing: Message | null = null;
         try {
             // force: bypass the message cache (populated by our own edits), or a
             // deletion / foreign takeover of the tracked message is never seen.
-            existing = await channel.messages.fetch({ message: dashboardState.messageId, force: true });
+            existing = await channel.messages.fetch({ message: trackedId, force: true });
         } catch (error) {
             if (error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMessage) {
-                dashboardLog.info("Tracked message was deleted - scanning for a replacement");
-                clearTrackedMessage();
+                dashboardLog.info(`Tracked message in ${where} was deleted - scanning for a replacement`);
+                clearTrackedMessage(channel.id);
             } else {
                 // Transient failure (network, 5xx, rate limit, permissions): keep the id
                 // and retry next tick — falling through to the scan here is what would
@@ -643,8 +691,8 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
                 await existing.edit({ content: "", embeds: [embed] });
                 return;
             }
-            dashboardLog.warn("Tracked message is not our dashboard anymore - scanning for a replacement");
-            clearTrackedMessage();
+            dashboardLog.warn(`Tracked message in ${where} is not our dashboard anymore - scanning for a replacement`);
+            clearTrackedMessage(channel.id);
         }
     }
 
@@ -681,23 +729,21 @@ async function runDashboardUpdate(channelId: string): Promise<void> {
     const adopted = ownDashboards.find((d) => d.kind === "mine") ?? ownDashboards.find((d) => d.kind === "legacy");
 
     if (adopted) {
-        dashboardState.messageId = adopted.message.id;
-        persistDashboardState();
+        trackMessage(channel.id, adopted.message.id);
         // The edit re-stamps: legacy dashboards get the id on adoption.
         await adopted.message.edit({ content: "", embeds: [embed] });
-        dashboardLog.info(`Adopted existing ${adopted.kind} dashboard message`);
+        dashboardLog.info(`Adopted existing ${adopted.kind} dashboard message in ${where}`);
     } else {
         const newMsg = await channel.send({ embeds: [embed] });
-        dashboardState.messageId = newMsg.id;
-        persistDashboardState();
-        dashboardLog.info("Fresh status message initialized");
+        trackMessage(channel.id, newMsg.id);
+        dashboardLog.info(`Fresh status message posted in ${where}`);
     }
 
     // Best-effort cleanup of our own surplus dashboards. Skipped in degraded mode,
     // where "mine" is title-based and could match a foreign deployment's dashboard.
     if (dashboardState.ownerId !== null) {
         for (const { message } of ownDashboards) {
-            if (message.id === dashboardState.messageId) {
+            if (message.id === dashboardState.messageIds[channel.id]) {
                 continue;
             }
             try {
@@ -875,7 +921,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
     // PART 2: PASSIVE CHAT RELAY
     // --------------------------------------------------------------------------
     // If the message made it past the commands above, check if it's meant for the game chat
-    if (message.channel.id !== DISCORD_CHAT_CHANNEL_ID) {
+    if (!CHAT_CHANNEL || !isConfiguredChannel(message.channel, CHAT_CHANNEL)) {
         return;
     }
 
@@ -914,42 +960,79 @@ async function performStartupChecks(): Promise<void> {
         warnings.push("Bot is not in any guilds - invite it to a server first");
     }
 
-    // Check chat channel if configured
-    if (DISCORD_CHAT_CHANNEL_ID) {
-        const chatChannel = client.channels.cache.get(DISCORD_CHAT_CHANNEL_ID);
-
-        if (!chatChannel) {
-            errors.push(`Chat channel ${DISCORD_CHAT_CHANNEL_ID} not found - check DISCORD_CHAT_CHANNEL_ID`);
-        } else if (!chatChannel.isTextBased()) {
-            errors.push(`Channel ${DISCORD_CHAT_CHANNEL_ID} is not a text channel`);
-        } else {
-            // Check permissions in the chat channel
-            const channel = chatChannel as TextChannel;
-            const botMember = channel.guild.members.me;
-
-            if (botMember) {
-                const permissions = channel.permissionsFor(botMember);
-
-                if (!permissions?.has(PermissionFlagsBits.ViewChannel)) {
-                    errors.push(`Missing VIEW_CHANNEL permission in chat channel "${channel.name}"`);
+    /**
+     * Resolves a configured channel in every guild and checks the bot's permissions there.
+     * A guild without the channel is an error for an id (it targets one channel) and a
+     * warning for a name (the bot may serve other guilds under the same configuration).
+     */
+    function checkChannel(
+        ref: ChannelRef,
+        setting: string,
+        required: [PermissionResolvable, string][],
+        optional: [PermissionResolvable, string, string][],
+    ): void {
+        for (const guild of client.guilds.cache.values()) {
+            const channels = resolveChannelsIn(guild, ref);
+            if (channels.length === 0) {
+                const problem = `${describeChannelRef(ref)} not found in "${guild.name}" - check ${setting}`;
+                (ref.kind === "id" ? errors : warnings).push(problem);
+                continue;
+            }
+            if (channels.length > 1) {
+                warnings.push(
+                    `${describeChannelRef(ref)} matches ${channels.length} channels in "${guild.name}" - all of them are used`,
+                );
+            }
+            for (const channel of channels) {
+                const permissions = guild.members.me ? channel.permissionsFor(guild.members.me) : null;
+                const at = `#${channel.name} in "${guild.name}"`;
+                for (const [permission, name] of required) {
+                    if (!permissions?.has(permission)) {
+                        errors.push(`Missing ${name} permission in ${at}`);
+                    }
                 }
-                if (!permissions?.has(PermissionFlagsBits.SendMessages)) {
-                    errors.push(`Missing SEND_MESSAGES permission in chat channel "${channel.name}"`);
+                for (const [permission, name, consequence] of optional) {
+                    if (!permissions?.has(permission)) {
+                        warnings.push(`Missing ${name} permission in ${at} - ${consequence}`);
+                    }
                 }
-                if (!permissions?.has(PermissionFlagsBits.ReadMessageHistory)) {
-                    warnings.push(
-                        `Missing READ_MESSAGE_HISTORY permission in chat channel "${channel.name}" - may miss some messages`,
-                    );
-                }
-                if (!permissions?.has(PermissionFlagsBits.AddReactions)) {
-                    warnings.push(
-                        `Missing ADD_REACTIONS permission in chat channel "${channel.name}" - cannot show failure indicators`,
-                    );
-                }
-
-                log.info(`Chat channel: #${channel.name} in ${channel.guild.name}`);
+                log.info(`${setting}: ${at}`);
             }
         }
+    }
+
+    if (CHAT_CHANNEL) {
+        checkChannel(
+            CHAT_CHANNEL,
+            "DISCORD_CHAT_CHANNEL",
+            [
+                [PermissionFlagsBits.ViewChannel, "VIEW_CHANNEL"],
+                [PermissionFlagsBits.SendMessages, "SEND_MESSAGES"],
+            ],
+            [
+                [PermissionFlagsBits.ReadMessageHistory, "READ_MESSAGE_HISTORY", "may miss some messages"],
+                [PermissionFlagsBits.AddReactions, "ADD_REACTIONS", "cannot show failure indicators"],
+            ],
+        );
+    }
+
+    if (DASHBOARD_CHANNEL) {
+        checkChannel(
+            DASHBOARD_CHANNEL,
+            "STATUS_DASHBOARD_CHANNEL",
+            [
+                [PermissionFlagsBits.ViewChannel, "VIEW_CHANNEL"],
+                [PermissionFlagsBits.SendMessages, "SEND_MESSAGES"],
+                [PermissionFlagsBits.EmbedLinks, "EMBED_LINKS"],
+            ],
+            [
+                [
+                    PermissionFlagsBits.ReadMessageHistory,
+                    "READ_MESSAGE_HISTORY",
+                    "cannot recover the dashboard message after a restart",
+                ],
+            ],
+        );
     }
 
     // Check permissions in each guild
@@ -988,8 +1071,11 @@ client.once(Events.ClientReady, async () => {
     log.info(`API authentication: ${API_KEY ? "enabled" : "disabled"}`);
     log.info(`Update interval: ${UPDATE_INTERVAL_MS}ms`);
 
-    if (DISCORD_CHAT_CHANNEL_ID) {
-        log.info(`Chat relay channel: ${DISCORD_CHAT_CHANNEL_ID}`);
+    if (CHAT_CHANNEL) {
+        log.info(`Chat relay channel: ${describeChannelRef(CHAT_CHANNEL)}`);
+    }
+    if (DASHBOARD_CHANNEL) {
+        log.info(`Status dashboard channel: ${describeChannelRef(DASHBOARD_CHANNEL)}`);
     }
 
     // Perform startup checks
@@ -1002,7 +1088,7 @@ client.once(Events.ClientReady, async () => {
     // Connect WebSocket for chat relay
     connectWebSocket();
 
-    if (STATUS_DASHBOARD_CHANNEL_ID) {
+    if (DASHBOARD_CHANNEL) {
         loadDashboardState();
         await updateLiveDashboard();
         setInterval(updateLiveDashboard, STATUS_DASHBOARD_REFRESH_RATE * 1000);
@@ -1055,10 +1141,10 @@ client.on(Events.ShardDisconnect, ({ code }) => {
             break;
         case GatewayCloseCodes.DisallowedIntents:
             stopForConfigError([
-                "Discord refused the bot's gateway intents: DISCORD_CHAT_CHANNEL_ID is set, so the bot requests the",
+                "Discord refused the bot's gateway intents: DISCORD_CHAT_CHANNEL is set, so the bot requests the",
                 "Message Content intent, but it is not enabled for this application.",
                 "Fix: Developer Portal -> your app -> Bot -> Privileged Gateway Intents -> enable Message Content Intent,",
-                "or unset DISCORD_CHAT_CHANNEL_ID to run without chat relay.",
+                "or unset DISCORD_CHAT_CHANNEL to run without chat relay.",
             ]);
             break;
         default:

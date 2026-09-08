@@ -7,6 +7,50 @@ export const DASHBOARD_TITLE = "🧑‍🌾 Stardew Valley Server Status Dashboa
 
 const FOOTER_ID_SEPARATOR = " • id:";
 
+/**
+ * Persisted dashboard state. `ownerId` is this deployment's identity, stamped into every
+ * dashboard footer; `messageIds` caches the tracked message per channel id. The cache is
+ * only a shortcut: a missing entry makes the next update rescan the channel and re-adopt
+ * the message by its stamp.
+ */
+export interface PersistedDashboardState {
+    ownerId: string;
+    messageIds: Record<string, string>;
+}
+
+/**
+ * Parses the state file. Returns null when no usable owner id is stored, which the caller
+ * treats as a first boot. Message ids that are not snowflakes are dropped: fetching one
+ * fails with a 400 that the transient-error path would retry forever. An older single
+ * `messageId` field is ignored for the same reason the cache is optional.
+ */
+export function parseDashboardState(raw: string): PersistedDashboardState | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    if (typeof parsed !== "object" || parsed === null) {
+        return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const ownerId = typeof record.ownerId === "string" ? record.ownerId.trim() : "";
+    if (ownerId.length === 0) {
+        return null;
+    }
+
+    const messageIds: Record<string, string> = {};
+    if (typeof record.messageIds === "object" && record.messageIds !== null) {
+        for (const [channelId, messageId] of Object.entries(record.messageIds as Record<string, unknown>)) {
+            if (/^\d+$/.test(channelId) && typeof messageId === "string" && /^\d+$/.test(messageId)) {
+                messageIds[channelId] = messageId;
+            }
+        }
+    }
+    return { ownerId, messageIds };
+}
+
 /** Minimal embed shape shared by discord.js `Embed` and test fixtures. */
 export interface EmbedLike {
     title?: string | null;

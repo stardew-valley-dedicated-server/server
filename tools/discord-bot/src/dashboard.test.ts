@@ -5,6 +5,7 @@ import {
     type EmbedLike,
     formatFooter,
     isDashboardEmbed,
+    parseDashboardState,
     parseOwnerId,
 } from "./dashboard";
 
@@ -90,5 +91,36 @@ describe("classifyDashboardEmbed", () => {
 
     test("degraded mode still ignores non-dashboard content", () => {
         expect(classifyDashboardEmbed({ title: "Not a dashboard" }, null)).toBe("unrelated");
+    });
+});
+
+describe("parseDashboardState", () => {
+    const CHANNEL_ID = "123456789012345678";
+    const MESSAGE_ID = "987654321098765432";
+
+    test("round-trips owner id and per-channel message ids", () => {
+        const raw = JSON.stringify({ ownerId: OWNER_ID, messageIds: { [CHANNEL_ID]: MESSAGE_ID } });
+        expect(parseDashboardState(raw)).toEqual({ ownerId: OWNER_ID, messageIds: { [CHANNEL_ID]: MESSAGE_ID } });
+    });
+
+    test("returns null without a usable owner id", () => {
+        expect(parseDashboardState("not json")).toBeNull();
+        expect(parseDashboardState("null")).toBeNull();
+        expect(parseDashboardState("[]")).toBeNull();
+        expect(parseDashboardState(JSON.stringify({ ownerId: "   " }))).toBeNull();
+        expect(parseDashboardState(JSON.stringify({ messageIds: { [CHANNEL_ID]: MESSAGE_ID } }))).toBeNull();
+    });
+
+    test("drops entries whose ids are not snowflakes", () => {
+        const raw = JSON.stringify({
+            ownerId: OWNER_ID,
+            messageIds: { [CHANNEL_ID]: "deleted", "not-a-channel": MESSAGE_ID, "1": 42 },
+        });
+        expect(parseDashboardState(raw)).toEqual({ ownerId: OWNER_ID, messageIds: {} });
+    });
+
+    test("a state file with a single messageId keeps only the owner id", () => {
+        const raw = JSON.stringify({ ownerId: OWNER_ID, messageId: MESSAGE_ID });
+        expect(parseDashboardState(raw)).toEqual({ ownerId: OWNER_ID, messageIds: {} });
     });
 });
