@@ -5,8 +5,10 @@
 # never disagree on the range.
 #
 # Inputs (env):
-#   HEAD_REF  - commit-ish of the build's head (SHA or tag name)
-#   TAG_MATCH - space-separated `git describe --match` globs selecting base-tag candidates
+#   HEAD_REF    - commit-ish of the build's head (SHA or tag name)
+#   TAG_MATCH   - space-separated `git describe --match` globs selecting base-tag candidates
+#   TAG_EXCLUDE - optional space-separated `git describe --exclude` globs removing candidates
+#                 (a stable range must skip pre-release tags that the stable glob also matches)
 # Outputs (appended to $GITHUB_OUTPUT):
 #   head-oid, base-oid, base-tag
 #
@@ -22,6 +24,7 @@ for glob in $TAG_MATCH; do MATCH_ARGS+=(--match "$glob"); done
 # the range. Both consumers tolerate re-walking an already-processed range (stamping is
 # first-value-wins and marker-deduped; the changelog post just repeats).
 EXCLUDE_ARGS=()
+for glob in ${TAG_EXCLUDE:-}; do EXCLUDE_ARGS+=(--exclude "$glob"); done
 for tag in $(git tag -l --points-at "$HEAD_OID" $TAG_MATCH); do
   EXCLUDE_ARGS+=(--exclude "$tag")
 done

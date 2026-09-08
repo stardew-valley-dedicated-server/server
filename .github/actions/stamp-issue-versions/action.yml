@@ -23,6 +23,10 @@ inputs:
   tag-match:
     description: Space-separated `git describe --match` globs that select base-tag candidates
     required: true
+  tag-exclude:
+    description: Space-separated `git describe --exclude` globs that remove base-tag candidates
+    required: false
+    default: ""
   max-issues:
     description: Abort if the range resolves more issues than this (guards a bad base tag)
     required: false
@@ -52,6 +56,7 @@ runs:
       env:
         HEAD_REF: ${{ inputs.head-ref }}
         TAG_MATCH: ${{ inputs.tag-match }}
+        TAG_EXCLUDE: ${{ inputs.tag-exclude }}
       run: '"$GITHUB_ACTION_PATH/../../scripts/resolve-build-range.sh"'
 
     - name: Install dependencies

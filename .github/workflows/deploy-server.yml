@@ -206,15 +206,18 @@ jobs:
           # being deployed.
           version=""
           if [ -n "$sha" ]; then
-            tags=$(git ls-remote --tags origin 'preview-[0-9]*' 'sdvd-server-v*' 2>/dev/null \
+            tags=$(git ls-remote --tags origin 'preview-[0-9]*' 'v[0-9]*' 'sdvd-server-v*' 2>/dev/null \
               | awk -v s="$sha" '$1 == s { sub("refs/tags/", "", $2); sub(/\^\{\}$/, "", $2); print $2 }' || true)
+            # Stable tags are v<version> (sdvd-server-v<version> up to 1.4.1); preview tags are
+            # v<version>-preview.<counter> (preview-<version>.<counter> for older builds).
             case "$TAG" in
-              latest) tag=$(grep -m1 '^sdvd-server-v' <<< "$tags" || true) ;;
-              *) tag=$(grep -m1 '^preview-' <<< "$tags" || true) ;;
+              latest) tag=$(grep -m1 -E '^(v[0-9]+\.[0-9]+\.[0-9]+$|sdvd-server-v)' <<< "$tags" || true) ;;
+              *) tag=$(grep -m1 -E '^(v[0-9].*-preview\.|preview-)' <<< "$tags" || true) ;;
             esac
             [ -n "$tag" ] || tag=$(head -n 1 <<< "$tags")
             case "$tag" in
               preview-*) rest=${tag#preview-}; version="${rest%.*}-preview.${rest##*.}" ;;
+              v[0-9]*) version=${tag#v} ;;
               sdvd-server-v*) version=${tag#sdvd-server-v} ;;
             esac
           fi

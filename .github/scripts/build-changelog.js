@@ -23,7 +23,7 @@ const BUDGET = 3500;
 
 const CONVENTIONAL_RE = /^([a-z]+)(\([^()]*\))?(!)?: \S/i;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)$/;
-// release-please's own "release" commit (e.g. "chore(master): release sdvd-server 1.4.1") is what
+// release-please's own "release" commit (e.g. "chore(master): release 1.5.0") is what
 // a release tag points at, so it falls inside its own range. It's release plumbing, not a real
 // change, so we drop it from every count — otherwise it would inflate the "+N internal changes" line.
 const RELEASE_COMMIT_RE = /^chore(\([^()]*\))?: release\b.*\d+\.\d+\.\d+/;

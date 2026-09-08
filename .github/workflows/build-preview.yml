@@ -66,26 +66,27 @@ jobs:
           # Fallback: if no PR or couldn't extract version, bump patch from current release
           if [ -z "$NEXT_VERSION" ]; then
             echo "No release-please PR found, bumping patch version"
-            LATEST_TAG=$(git tag -l 'sdvd-server-v*' --sort=-version:refname | head -n 1)
-            if [ -z "$LATEST_TAG" ]; then
-              LATEST_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v 'preview' | head -n 1)
-            fi
-            echo "Latest release tag: $LATEST_TAG"
-            CURRENT_VERSION=$(echo "$LATEST_TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+            # Release tags are v<version>; those up to 1.4.1 carry an sdvd-server- prefix.
+            # Strip both and pick the highest version, so neither prefix wins by name.
+            CURRENT_VERSION=$(git tag -l 'v[0-9]*' 'sdvd-server-v*' | sed -E 's/^(sdvd-server-)?v//' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            echo "Latest release version: $CURRENT_VERSION"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
             NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
 
           echo "Next version: $NEXT_VERSION"
 
-          # Get current preview tag to determine counter (sort by version, highest first)
-          # Use preview-[0-9]* to exclude preview-steam-service-* and similar
-          PREVIEW_TAG=$(git tag -l 'preview-[0-9]*' --sort=-version:refname | head -n 1)
+          # Highest existing preview build as "<version> <counter>". Preview tags are
+          # v<version>-preview.<counter>; older builds carry preview-<version>.<counter>
+          # (the [0-9] in that glob skips preview-steam-service-* and similar). Both forms
+          # feed one sort so the counter continues across the tag-format change.
+          PREVIEW_TAG=$({ git tag -l 'v[0-9]*-preview.[0-9]*' | sed -E 's/^v(.*)-preview\.([0-9]+)$/\1 \2/';
+                          git tag -l 'preview-[0-9]*' | sed -E 's/^preview-(.*)\.([0-9]+)$/\1 \2/'; } \
+                        | sort -k1,1V -k2,2n | tail -n 1)
           if [ -n "$PREVIEW_TAG" ]; then
-            # Parse existing tag: preview-{version}.{counter}
-            PREVIEW_TAG_VERSION=$(echo "$PREVIEW_TAG" | sed 's/preview-\(.*\)\.[0-9]*$/\1/')
-            PREVIEW_TAG_COUNTER=$(echo "$PREVIEW_TAG" | sed 's/.*\.\([0-9]*\)$/\1/')
-            echo "Found preview tag: $PREVIEW_TAG (version: $PREVIEW_TAG_VERSION, counter: $PREVIEW_TAG_COUNTER)"
+            read -r PREVIEW_TAG_VERSION PREVIEW_TAG_COUNTER <<< "$PREVIEW_TAG"
+            echo "Found preview build: version $PREVIEW_TAG_VERSION, counter $PREVIEW_TAG_COUNTER"
 
             if [ "$PREVIEW_TAG_VERSION" == "$NEXT_VERSION" ]; then
               # Same version, increment counter
@@ -186,7 +187,7 @@ jobs:
         with:
           head: ${{ github.sha }}
           # Everything since the previous build of either channel — same rule as issue stamping.
-          tag-match: sdvd-server-v* preview-[0-9]*
+          tag-match: v[0-9]* sdvd-server-v* preview-[0-9]*
 
       - name: Discord notification
         if: steps.changelog.outcome == 'success'
@@ -208,12 +209,14 @@ jobs:
             ```docker compose pull && docker compose up -d```
 
       - name: Update preview tracking tag
+        env:
+          PREVIEW_VERSION: ${{ needs.calculate-version.outputs.preview_version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create/update tracking tag atomically (format: preview-{version}.{counter})
-          TRACKING_TAG="preview-${{ needs.calculate-version.outputs.next_version }}.${{ needs.calculate-version.outputs.preview_number }}"
+          # Tag is the image version with a v prefix: v<version>-preview.<counter>
+          TRACKING_TAG="v${PREVIEW_VERSION}"
           git tag -f "$TRACKING_TAG"
           git push origin "$TRACKING_TAG" --force
 
@@ -263,7 +266,7 @@ jobs:
           head-ref: ${{ github.sha }}
           # Base = the nearest earlier build of either channel on a previous commit (the action
           # ignores tags on this commit itself, including this run's own tracking tag).
-          tag-match: sdvd-server-v* preview-[0-9]*
+          tag-match: v[0-9]* sdvd-server-v* preview-[0-9]*
 
   build-steam-service-preview:
     name: Build Steam Service Preview
