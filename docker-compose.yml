@@ -1,6 +1,5 @@
 # Updates replace this file. Settings go in `.env` (see `.env.example`), everything else in a
-# `docker-compose.override.yml`. A bare variable is passed through only when set; the image owns
-# the default. Bump SDVD_COMPOSE_REV on every change here (checked by docker/rootfs/startapp.sh).
+# `docker-compose.override.yml`. Bump SDVD_COMPOSE_REV on every change here.
 
 services:
   # Main game server
@@ -23,12 +22,11 @@ services:
       - ./.local-container/settings:/data/settings
       - ./diagnostics:/data/diagnostics
     environment:
-      - SDVD_COMPOSE_REV=2
+      - SDVD_COMPOSE_REV=3
       - STEAM_AUTH_URL=http://steam-auth:${STEAM_AUTH_PORT:-3001}
       - SETTINGS_PATH=/data/settings/server-settings.json
-      # uid/gid the game runs as after the root init (docs: environment.md, Host / Permissions).
-      - USER_ID
-      - GROUP_ID
+      - USER_ID=${USER_ID:-1000}
+      - GROUP_ID=${GROUP_ID:-1000}
       - VNC_PASSWORD
       - SERVER_NAME
       - ALLOW_INSECURE_SETUP
@@ -63,9 +61,8 @@ services:
       - game-data:/data/game
     environment:
       - PORT=${STEAM_AUTH_PORT:-3001}
-      # Same ids as the server: both write the shared game-data volume.
-      - USER_ID
-      - GROUP_ID
+      - USER_ID=${USER_ID:-1000}
+      - GROUP_ID=${GROUP_ID:-1000}
       - STEAM_USERNAME
       - STEAM_PASSWORD
       - STEAM_REFRESH_TOKEN
