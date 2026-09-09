@@ -1,19 +1,19 @@
 # Plan: Per-Player Farms v1 (farm-stack)
 
-> **Owner-reviewed; all decisions resolved.** Grounded in [`../research/farm-stack-findings.md`](../research/farm-stack-findings.md) and a full decompiled + mod-source trace; engine claims are decompiled-verified, control primitives are production-proven, and the housing/upgrade/mail/scepter/event-return paths were traced to source. The one remaining runtime unknown (net-warp *addition* for walkable gates) is deferred out of v1, so v1 rests only on proven primitives. Residual Phase-0 smoke tests are listed under Implementation phases.
+> Grounded in [`../research/farm-stack-findings.md`](../research/farm-stack-findings.md) and a full decompiled + mod-source trace; engine claims are decompiled-verified, control primitives are production-proven, and the housing/upgrade/mail/scepter/event-return paths were traced to source. Net-warp *addition* for walkable gates is the one runtime unknown and is out of v1, so v1 rests only on proven primitives. Phase-0 smoke tests are listed under Implementation phases.
 
 ## Goal
 
 Each player gets their own `Farm`-type location (`Farm_JS_<n>`) with their own main farmhouse on it. Private farmland: own crops, animals, buildings, layout. Money, town, NPCs, festivals, and world progression stay shared. Players live on their own farm; `!visit <playername>` enters another player's farm.
 
-## Locked decisions (owner, 2026-07-13)
+## Locked decisions
 
 - Allocation is **automatic per player**, gated by a setting that is **first-time-startup-only**: stamped into mod global data (`PersistentOptions`, on the saves volume) at world creation; env changes on an existing save are ignored (log a warning, keep the stamped value). No enable/disable migration.
 - **No game-logic gaps**: every category of the findings' 106-call-site audit gets an explicit disposition — none skipped silently.
 - Every player lives in their **own main farmhouse**, not a visible cabin shack.
 - KISS: no permission system, no per-farm settings in v1.
 
-**Resolved build decisions (owner, this review):**
+**Build decisions:**
 
 - **Housing look:** the Cabin interior is wrapped in a vanilla `"Farmhouse"`-type building so clients render farmhouse visuals (honors "own farmhouse, not a cabin shack"). Proven to work (housing section) but requires migrating the farms-relevant cabin-enumeration from `b.isCabin` to `b.GetIndoors() is Cabin` — a `"Farmhouse"`-type building is `isCabin == false`.
 - **Travel:** `!visit`-only in v1 — **no walkable gates.** Every client-side return path (`Return Scepter`, Farm warp totem, festival/wedding end) hardcodes `"Farm"` and lands players on the hub regardless; the 2am pass-out (server-authoritative) returns stragglers to their own bed. Walkable hub gates need net-warp *addition* (unproven) — deferred to a fast-follow.
@@ -38,7 +38,7 @@ Consequence: `"Farm"`-named flows (bus-stop walk-back, warp totems, Return Scept
 
 ## World geometry
 
-- **Primary farm = communal hub.** Host (the headless "Server" bot) farmhouse (internal-only, unchanged), greenhouse, grandpa shrine, pets, and shipping-bin store. All vanilla `"Farm"`-targeted arrivals (bus-stop walk-back, warp totem, Return Scepter, festival/wedding end) land here — **forced by the vanilla client, not a choice.** Players leave the hub for their own farm via `!visit <own name>` (from inside any house, fee-free) or are delivered home by the 2am pass-out. (Walkable hub gates are a deferred fast-follow, pending the net-warp-addition experiment.)
+- **Primary farm = communal hub.** Host (the headless "Server" bot) farmhouse (internal-only, unchanged), greenhouse, grandpa shrine, pets, and shipping-bin store. All vanilla `"Farm"`-targeted arrivals (bus-stop walk-back, warp totem, Return Scepter, festival/wedding end) land here — **the vanilla client hardcodes them.** Players leave the hub for their own farm via `!visit <own name>` (from inside any house, fee-free) or are delivered home by the 2am pass-out. (Walkable hub gates are a deferred fast-follow, pending the net-warp-addition experiment.)
 - **Player farms** (`Farm_JS_<n>`, `Data/Locations` entries with `CreateOnLoad.Type = "StardewValley.Farm"`, `AlwaysActive: true`, same farm-type map as the world): the player's farmhouse, their farmland, their buildings. Map-edge exits keep their vanilla targets (BusStop/Backwoods/Forest), which loop back to the shared world and thence the hub — no per-farm warp rewrites needed in the `!visit`-only design.
 - Same farm type for all farms in v1 (`Farm.DayUpdate` keys spawns off global `whichFarm`, `Farm.cs` — matching types sidesteps that).
 
@@ -111,7 +111,7 @@ Every audit category from the findings, with execution side and v1 disposition:
 | Mailbox | client + server | **Mail is per-`Farmer`, never cross-delivered.** Each player reads their own mail at **their own cabin's mailbox on `Farm_JS_<n>`** (the ownership gate passes for the owner). The hub main mailbox is host-owned and **blocks** farmhands (`Farm_OtherPlayerMailbox`, `GameLocation.cs`) — it is NOT the served mailbox. Client-side `getMailboxPosition` (`Farmer.cs`) points the "you have mail" icon at the hub — a cosmetic mismatch, documented |
 | Warp totems / return scepter | client | **All land on the hub** — `Return Scepter` (`Wand.cs`) and Farm totem (`Object.cs`) hardcode `warpFarmer("Farm", …)`; not server-redirectable. Go home via `!visit`/2am pass-out |
 | Hay/silos | server + client interact | Shared on the hub v1; per-farm silos deferred |
-| Carpenter/animal menus | client | Vanilla 1.6 lets players build on any buildable held location — player farms qualify (`Farm.IsBuildableLocation`). Cabin building off-`"Farm"` is blocked client-side (`CarpenterMenu.cs`) — desirable here. **Any player can build on any player's farm — accepted for v1**; server-side veto is a fast-follow |
+| Carpenter/animal menus | client | Vanilla 1.6 lets players build on any buildable held location — player farms qualify (`Farm.IsBuildableLocation`). Cabin building off-`"Farm"` is blocked client-side (`CarpenterMenu.cs`) — desirable here. **Any player can build on any player's farm in v1**; server-side veto is a fast-follow |
 | Grandpa evaluation, lightning, Island shipping | server | Stay global on the hub (communal), documented |
 | Save migrations, debug commands | server | Operate on the primary farm only; non-crashing with extra farms — no action |
 | World map (`MapPage`), shipping UI | client | Requires `"Farm"` always-active (ground rule 5) — satisfied by hub design; no action possible or needed |
@@ -132,9 +132,9 @@ Every audit category from the findings, with execution side and v1 disposition:
 - Save/reload with 0, 1, N player farms; `saves import` of a vanilla save (single-farm save + farms-mode stamp = farms provisioned per capacity; imported owner homed per existing Layer B, then widened lookups apply).
 - Host automation: `WarpToFarmDefaultSpawn`/`MonitorFarmhouse`/host sleep unchanged on the hub — verify no host flow references player farms.
 
-## Resolved decisions (owner, this review — no open questions remain)
+## Decisions
 
-1. **Hub geometry.** Hub-with-`!visit` accepted — it is *forced*, not chosen: every client-side return path (`Return Scepter`, Farm totem, festival/wedding end) hardcodes `"Farm"` and lands players on the hub on unmodded clients. New players still spawn on their own farm at join (lobby-exit pass-out → own cabin, server-authoritative).
+1. **Hub geometry.** Hub-with-`!visit`, the only option on unmodded clients: every client-side return path (`Return Scepter`, Farm totem, festival/wedding end) hardcodes `"Farm"` and lands players on the hub on unmodded clients. New players still spawn on their own farm at join (lobby-exit pass-out → own cabin, server-authoritative).
 2. **Night events.** One event per night on a randomly chosen player farm (shared-seed retarget). Per-farm rolls deferred (effects welded to global-state animations).
 3. **Construction.** Any player may build on any player's farm in v1; server-side veto is a fast-follow.
 4. **Deletion.** Wipe the farm in place for the next claimant.
