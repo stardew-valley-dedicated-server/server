@@ -21,7 +21,7 @@ internal class Env
 
     public static readonly bool EnableModIncompatibleOptimizations = ParseBool(
         "ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS",
-        false
+        true
     );
 
     public static readonly int HealthCheckSeconds = ParseInt("HEALTH_CHECK_SECONDS", 300);
