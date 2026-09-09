@@ -56,7 +56,7 @@ Common fixes:
 Steam tokens last about 200 days. The steam-auth container asks Steam to renew its token once a day and saves the new one when Steam agrees — which it only does close to expiry. For the last 14 days before expiry, a daily warning in `docker compose logs steam-auth` reports the latest renewal result:
 
 - **"Steam declined to renew it today"** — expected until Steam's renewal window opens; the warning stops once a renewal succeeds.
-- **"Renewal failed with AccessDenied"** (or another Steam result) — this token cannot be renewed; re-run setup before the expiry date in the warning.
+- **"Renewal failed with AccessDenied"** (or another Steam result) — Steam rejected this renewal attempt; if it keeps failing, re-run setup before the expiry date in the warning.
 - Tokens supplied via `STEAM_REFRESH_TOKEN` or `STEAM_ACCOUNTS` are never renewed; mint a new one with `setup` and `export-token`, then update the variable.
 
 Once a token has expired, the log says so and names the fix:

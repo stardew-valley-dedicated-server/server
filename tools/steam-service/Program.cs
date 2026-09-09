@@ -946,59 +946,71 @@ async Task MaintainTokensAsync(Dictionary<int, SteamAuthService> accts)
     {
         foreach (var svc in accts.Values)
         {
-            if (svc.IsLoggedIn && !svc.TokenFromEnv)
+            // Fire-and-forget loop: a throw from the free-text logger in the warning path would
+            // otherwise kill it silently. LogEvent never throws.
+            try
             {
-                try
+                if (svc.IsLoggedIn && !svc.TokenFromEnv)
                 {
-                    await svc.RenewRefreshTokenAsync();
+                    try
+                    {
+                        await svc.RenewRefreshTokenAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log(
+                            $"[SteamService] A{svc.AccountIndex}: Token renewal failed: {ex.Message}"
+                        );
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Logger.Log(
-                        $"[SteamService] A{svc.AccountIndex}: Token renewal failed: {ex.Message}"
-                    );
-                }
-            }
 
-            if (svc.TokenExpiresAt is not { } expiry)
+                if (svc.TokenExpiresAt is not { } expiry)
+                {
+                    continue;
+                }
+
+                var remaining = expiry - DateTimeOffset.UtcNow;
+                if (remaining > threshold)
+                {
+                    continue;
+                }
+
+                const string setup = "`docker compose run --rm -it steam-auth setup`";
+                var lastAttempt = $"last attempt {svc.LastRenewalAttemptAt:yyyy-MM-dd HH:mm} UTC";
+                var renewalState = svc.TokenFromEnv
+                    ? $"Renewal is off for environment-supplied tokens; mint a new one with {setup} + `export-token` and update the variable."
+                    : svc.LastRenewalOutcome switch
+                    {
+                        SteamAuthService.TokenRenewalOutcome.Refused =>
+                            $"Steam declined to renew it today ({lastAttempt}). Re-run {setup} before then.",
+                        SteamAuthService.TokenRenewalOutcome.Failed =>
+                            $"Renewal failed with {svc.LastRenewalError} ({lastAttempt}). Re-run {setup} before then.",
+                        _ => $"No renewal attempt has completed yet. Re-run {setup} before then.",
+                    };
+
+                Logger.Log(
+                    $"[SteamService] WARNING: A{svc.AccountIndex} ({svc.Username}) refresh token "
+                        + $"expires {expiry:yyyy-MM-dd} UTC ({Math.Max(0, (int)remaining.TotalDays)} days). "
+                        + renewalState
+                );
+                Logger.LogEvent(
+                    "account_token_expiring",
+                    new
+                    {
+                        account = svc.AccountIndex,
+                        expiresAt = expiry.ToString("o"),
+                        daysRemaining = (int)remaining.TotalDays,
+                        lastRenewalOutcome = SteamAuthService.OutcomeName(svc.LastRenewalOutcome),
+                    }
+                );
+            }
+            catch (Exception ex)
             {
-                continue;
+                Logger.LogEvent(
+                    "account_token_maintenance_error",
+                    new { account = svc.AccountIndex, error = ex.Message }
+                );
             }
-
-            var remaining = expiry - DateTimeOffset.UtcNow;
-            if (remaining > threshold)
-            {
-                continue;
-            }
-
-            const string setup = "`docker compose run --rm -it steam-auth setup`";
-            var lastAttempt = $"last attempt {svc.LastRenewalAttemptAt:yyyy-MM-dd HH:mm} UTC";
-            var renewalState = svc.TokenFromEnv
-                ? $"Renewal is off for environment-supplied tokens; mint a new one with {setup} + `export-token` and update the variable."
-                : svc.LastRenewalOutcome switch
-                {
-                    SteamAuthService.TokenRenewalOutcome.Refused =>
-                        $"Steam declined to renew it today ({lastAttempt}). Re-run {setup} before then.",
-                    SteamAuthService.TokenRenewalOutcome.Failed =>
-                        $"Renewal failed with {svc.LastRenewalError} ({lastAttempt}). Re-run {setup} before then.",
-                    _ => $"No renewal attempt has completed yet. Re-run {setup} before then.",
-                };
-
-            Logger.Log(
-                $"[SteamService] WARNING: A{svc.AccountIndex} ({svc.Username}) refresh token "
-                    + $"expires {expiry:yyyy-MM-dd} UTC ({Math.Max(0, (int)remaining.TotalDays)} days). "
-                    + renewalState
-            );
-            Logger.LogEvent(
-                "account_token_expiring",
-                new
-                {
-                    account = svc.AccountIndex,
-                    expiresAt = expiry.ToString("o"),
-                    daysRemaining = (int)remaining.TotalDays,
-                    lastRenewalOutcome = SteamAuthService.OutcomeName(svc.LastRenewalOutcome),
-                }
-            );
         }
 
         await Task.Delay(TimeSpan.FromDays(1));

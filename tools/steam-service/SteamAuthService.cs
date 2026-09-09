@@ -947,7 +947,10 @@ public class SteamAuthService
             return
                 doc.RootElement.TryGetProperty("exp", out var exp)
                 && exp.ValueKind == JsonValueKind.Number
-                ? DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64())
+                && exp.TryGetInt64(out var seconds)
+                && seconds >= DateTimeOffset.MinValue.ToUnixTimeSeconds()
+                && seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+                ? DateTimeOffset.FromUnixTimeSeconds(seconds)
                 : null;
         }
         catch (Exception ex) when (ex is JsonException or FormatException)

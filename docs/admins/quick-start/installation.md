@@ -74,7 +74,7 @@ Follow the prompts for Steam Guard:
 This also downloads the game files. You can skip this step if Steam can log in without prompts, for example with a saved session or `STEAM_REFRESH_TOKEN`. In that case the server downloads the files itself the first time it starts.
 
 ::: tip Steam tokens expire
-Steam login tokens last about 200 days. steam-auth asks Steam to renew the token automatically and, during the last 14 days before expiry, warns daily in its logs if it still needs attention. Re-run `docker compose run --rm -it steam-auth setup` before yours expires to keep the server authenticated.
+Steam login tokens last about 200 days. steam-auth automatically renews saved-session tokens and, during the last 14 days before expiry, warns daily in its logs if one still needs attention. Re-run `docker compose run --rm -it steam-auth setup` before yours expires to keep the server authenticated. A token supplied via `STEAM_REFRESH_TOKEN` is not renewed — mint a new one with `setup` and `export-token` instead.
 :::
 
 ## 4. Start the Server

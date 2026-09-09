@@ -46,6 +46,14 @@ public class TokenExpiryTests
         Assert.Null(SteamAuthService.GetTokenExpiry(Jwt(new { exp = "soon" })));
     }
 
+    [Fact]
+    public void OutOfRangeExpReturnsNull()
+    {
+        // Fits Int64 but is far outside DateTimeOffset's range; must not throw.
+        Assert.Null(SteamAuthService.GetTokenExpiry(Jwt(new { exp = 99_999_999_999_999L })));
+        Assert.Null(SteamAuthService.GetTokenExpiry(Jwt(new { exp = long.MinValue })));
+    }
+
     private static string Jwt(object payload)
     {
         static string B64Url(string s) =>
