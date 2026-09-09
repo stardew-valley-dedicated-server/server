@@ -595,7 +595,7 @@ jobs:
           IMAGE_VERSION: local
           STEAM_ACCOUNTS: ${{ secrets.STEAM_ACCOUNTS }}
         run: |
-          docker compose build steam-auth
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml build steam-auth
           # Drop the sidecar's SDVD_EVENT transport lines from this step's log:
           # they're a machine envelope with no consumer here (unlike the E2E run,
           # nothing tails/forwards a `docker compose run` stdout). Keep the

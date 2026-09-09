@@ -43,6 +43,9 @@ logs
 # Local server settings
 server-settings.json
 
+# Per-operator Compose customizations (merged automatically by Compose); kept out of the repo.
+docker-compose.override.yml
+
 # Build output
 **/.output
 **/bin

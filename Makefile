@@ -24,6 +24,9 @@ BUILD_CONFIGURATION ?= Debug
 # Docker build progress output (plain, tty, auto, quiet)
 DOCKER_PROGRESS ?= plain
 
+# Dev overlay adds the sidecar build contexts; explicit -f drops the automatic override merge, so re-add it.
+COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml $(if $(wildcard docker-compose.override.yml),-f docker-compose.override.yml)
+
 # Export IMAGE_VERSION for usage in docker compose commands
 export IMAGE_VERSION
 
@@ -81,7 +84,7 @@ build-server:
 # Build steam-service docker image
 build-steam-service:
 	@echo Building steam-service image...
-	@docker compose build steam-auth
+	@$(COMPOSE) build steam-auth
 	@echo Steam-service build complete.
 
 # Build test client docker image (for containerized E2E tests)
@@ -102,7 +105,7 @@ build-test-client:
 # Build and run everything
 up: build
 	@echo Starting server `$(IMAGE_NAME):$(IMAGE_VERSION)`...
-	@docker compose up -d --build
+	@$(COMPOSE) up -d --build
 	@echo Server is now running. Use `make cli` or `make logs` to view output.
 
 # Authenticate Steam accounts and download game files (interactive).
@@ -111,37 +114,37 @@ up: build
 # accounts (STEAM_ACCOUNTS JSON from .env.test). Accounts with saved
 # sessions are skipped; only new accounts prompt for Steam Guard.
 setup: build-steam-service
-	@docker compose run --rm -it \
+	@$(COMPOSE) run --rm -it \
 		$(if $(wildcard .env.test),--env-from-file .env.test) \
 		steam-auth setup
 	@echo Setup complete. Saved sessions are stored in the steam-session volume.
 
 restart:
 	@echo Restarting server `$(IMAGE_NAME):$(IMAGE_VERSION)`...
-	@docker compose restart
+	@$(COMPOSE) restart
 	@echo Server restarted. Use `make cli` or `make logs` to view output.
 
 # Stop the server
 down:
 	@echo Stopping server...
-	@docker compose down --remove-orphans
+	@$(COMPOSE) down --remove-orphans
 
 # Attach to interactive split-pane server CLI
 cli:
-	@docker compose exec server attach-cli
+	@$(COMPOSE) exec server attach-cli
 
 # Collect a server-state diagnostics bundle (wizard + zip on the host under ./diagnostics)
 diagnostics:
-	@docker compose exec -it server diagnostics
+	@$(COMPOSE) exec -it server diagnostics
 
 # View server logs (escape sequence to reset colors)
 logs:
-	@docker compose logs -f
+	@$(COMPOSE) logs -f
 	-@bun -e "process.stdout.write('\x1b[0m')"
 
 dumplogs:
 	@echo "Writing logs to logs_$(TIMESTAMP).txt"
-	@docker compose logs > "logs_$(TIMESTAMP).txt"
+	@$(COMPOSE) logs > "logs_$(TIMESTAMP).txt"
 
 # Start docs dev server (extracts OpenAPI spec from Docker image first)
 docs:
@@ -162,7 +165,7 @@ docs-graph:
 # Clean up everything, including all volumes
 clean:
 	@echo Cleaning up...
-	@IMAGE_VERSION=$(IMAGE_VERSION) docker compose down -v
+	@IMAGE_VERSION=$(IMAGE_VERSION) $(COMPOSE) down -v
 	-@docker rmi $(IMAGE_NAME):$(IMAGE_VERSION) $(IMAGE_NAME):latest
 
 # Test project paths
