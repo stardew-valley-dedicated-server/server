@@ -11,6 +11,7 @@
  *   download     - Download/update game depot (uses saved session or token)
  *   ticket       - Output encrypted app ticket to stdout
  *   export-token - Output saved refresh token for CI use
+ *   renew        - Ask Steam to renew saved refresh tokens (stop serve first)
  *   serve        - Run HTTP API for runtime ticket requests (default)
  *
  * Environment Variables (JSON format - preferred for multi-account):
@@ -295,6 +296,51 @@ switch (command)
         }
         break;
 
+    case "renew":
+        // Opens its own Steam session per account, and Steam allows one live session per account,
+        // so stop serve first. While serve runs, POST /steam/renew-token does the same in-session.
+        if (accounts.Count == 0)
+        {
+            Logger.Log(
+                "[SteamService] No account configured (set STEAM_USERNAME or STEAM_ACCOUNTS)"
+            );
+            Environment.Exit(1);
+        }
+
+        foreach (var (idx, svc) in accounts.OrderBy(kv => kv.Key))
+        {
+            Logger.Log($"[SteamService] --- Account {idx}: {svc.Username} ---");
+            try
+            {
+                await LoginAccountAsync(svc, accountConfigs[idx]);
+                if (!svc.IsLoggedIn)
+                {
+                    continue;
+                }
+
+                var result = await svc.RenewRefreshTokenAsync();
+                Console.WriteLine(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            account = idx,
+                            username = svc.Username,
+                            renewed = result.Renewed,
+                            outcome = SteamAuthService.OutcomeName(result.Outcome),
+                            error = result.Error,
+                            previous_expires_at = result.PreviousExpiry?.ToString("o"),
+                            expires_at = result.NewExpiry?.ToString("o"),
+                        }
+                    )
+                );
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[SteamService] A{idx}: Token renewal failed: {ex.Message}");
+            }
+        }
+        break;
+
     case "download":
         if (accounts.TryGetValue(0, out var dlSvc))
         {
@@ -364,6 +410,7 @@ switch (command)
         Console.WriteLine("  download     Download/update game depot");
         Console.WriteLine("  ticket       Output encrypted app ticket to stdout");
         Console.WriteLine("  export-token Export saved refresh tokens (for CI)");
+        Console.WriteLine("  renew        Renew saved refresh tokens (stop serve first)");
         Console.WriteLine("  serve        Run HTTP API (default)");
         Environment.Exit(1);
         return;
@@ -496,6 +543,12 @@ async Task RunHttpServerAsync(
                     username = s.Username,
                     logged_in = s.IsLoggedIn,
                     steam_id = s.SteamId,
+                    token_expires_at = s.TokenExpiresAt?.ToString("o"),
+                    token_days_remaining = s.TokenExpiresAt is { } exp
+                        ? (int?)Math.Floor((exp - DateTimeOffset.UtcNow).TotalDays)
+                        : null,
+                    token_last_renewal_at = s.LastRenewalAttemptAt?.ToString("o"),
+                    token_last_renewal_outcome = SteamAuthService.OutcomeName(s.LastRenewalOutcome),
                 });
 
             return Results.Json(
@@ -595,6 +648,48 @@ async Task RunHttpServerAsync(
             catch (Exception ex)
             {
                 Logger.Log($"[HTTP] Error getting refresh token: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 500);
+            }
+        }
+    );
+
+    // Renews over the live session, so it never collides with serve's own login the way a
+    // second `renew` process would (Steam allows one session per account).
+    app.MapPost(
+        "/steam/renew-token",
+        async (HttpContext ctx) =>
+        {
+            try
+            {
+                var svc = await EnsureAccountReadyAsync(ctx);
+                if (svc.TokenFromEnv)
+                {
+                    return Results.Json(
+                        new
+                        {
+                            error = "Token was supplied via environment; renewing it here would "
+                                + "invalidate that copy. Mint a new one with setup + export-token "
+                                + "and update the environment value.",
+                        },
+                        statusCode: 409
+                    );
+                }
+
+                var result = await svc.RenewRefreshTokenAsync();
+                return Results.Json(
+                    new
+                    {
+                        renewed = result.Renewed,
+                        outcome = SteamAuthService.OutcomeName(result.Outcome),
+                        error = result.Error,
+                        previous_expires_at = result.PreviousExpiry?.ToString("o"),
+                        expires_at = result.NewExpiry?.ToString("o"),
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[HTTP] Token renewal failed: {ex.Message}");
                 return Results.Json(new { error = ex.Message }, statusCode: 500);
             }
         }
@@ -727,6 +822,7 @@ async Task RunHttpServerAsync(
     Console.WriteLine("  GET  /steam/ready         - Readiness check (?account=N)");
     Console.WriteLine("  GET  /steam/app-ticket    - Get encrypted app ticket (?account=N)");
     Console.WriteLine("  GET  /steam/refresh-token - Get refresh token (?account=N)");
+    Console.WriteLine("  POST /steam/renew-token   - Renew the refresh token (?account=N)");
     Console.WriteLine("  POST /steam/lobby/create  - Create lobby (?account=N)");
 
     // Volumes provisioned before the execstack patch existed still carry the flag on the
@@ -760,6 +856,8 @@ async Task RunHttpServerAsync(
     });
 
     await Task.WhenAll(loginTasks);
+
+    _ = Task.Run(() => MaintainTokensAsync(accts));
 
     // First-run bootstrap, so a fresh `docker compose up` self-provisions without a manual `setup`.
     // Keyed on the completion marker startapp.sh gates on, so a half-finished download resumes
@@ -822,6 +920,88 @@ async Task BootstrapGameFilesAsync(
             await Task.Delay(delay);
             delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, maxDelay.Ticks));
         }
+    }
+}
+
+/// <summary>
+/// Daily per-account maintenance. The renewal request is unconditional because Steam only issues
+/// a new token close to expiry and does not publish the window, so there is nothing to gate on.
+/// Environment-supplied tokens are skipped: Steam invalidates the old token on renewal, which
+/// would leave the environment copy stale.
+/// </summary>
+async Task MaintainTokensAsync(Dictionary<int, SteamAuthService> accts)
+{
+    foreach (var svc in accts.Values.Where(s => s.TokenFromEnv))
+    {
+        Logger.Log(
+            $"[SteamService] A{svc.AccountIndex} ({svc.Username}): token renewal is off for "
+                + "environment-supplied tokens, because Steam invalidates the old token on renewal "
+                + "and the environment copy would go stale. Mint a new one with `setup` + "
+                + "`export-token` before it expires."
+        );
+    }
+
+    var threshold = TimeSpan.FromDays(14);
+    while (true)
+    {
+        foreach (var svc in accts.Values)
+        {
+            if (svc.IsLoggedIn && !svc.TokenFromEnv)
+            {
+                try
+                {
+                    await svc.RenewRefreshTokenAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log(
+                        $"[SteamService] A{svc.AccountIndex}: Token renewal failed: {ex.Message}"
+                    );
+                }
+            }
+
+            if (svc.TokenExpiresAt is not { } expiry)
+            {
+                continue;
+            }
+
+            var remaining = expiry - DateTimeOffset.UtcNow;
+            if (remaining > threshold)
+            {
+                continue;
+            }
+
+            const string setup = "`docker compose run --rm -it steam-auth setup`";
+            var lastAttempt = $"last attempt {svc.LastRenewalAttemptAt:yyyy-MM-dd HH:mm} UTC";
+            var renewalState = svc.TokenFromEnv
+                ? $"Renewal is off for environment-supplied tokens; mint a new one with {setup} + `export-token` and update the variable."
+                : svc.LastRenewalOutcome switch
+                {
+                    SteamAuthService.TokenRenewalOutcome.Refused =>
+                        $"Steam declined to renew it today ({lastAttempt}). Re-run {setup} before then.",
+                    SteamAuthService.TokenRenewalOutcome.Failed =>
+                        $"Renewal failed with {svc.LastRenewalError} ({lastAttempt}). Re-run {setup} before then.",
+                    _ => $"No renewal attempt has completed yet. Re-run {setup} before then.",
+                };
+
+            Logger.Log(
+                $"[SteamService] WARNING: A{svc.AccountIndex} ({svc.Username}) refresh token "
+                    + $"expires {expiry:yyyy-MM-dd} UTC ({Math.Max(0, (int)remaining.TotalDays)} days). "
+                    + renewalState
+            );
+            Logger.LogEvent(
+                "account_token_expiring",
+                new
+                {
+                    account = svc.AccountIndex,
+                    expiresAt = expiry.ToString("o"),
+                    daysRemaining = (int)remaining.TotalDays,
+                    lastRenewalOutcome = SteamAuthService.OutcomeName(svc.LastRenewalOutcome),
+                }
+            );
+        }
+
+        await Task.Delay(TimeSpan.FromDays(1));
     }
 }
 

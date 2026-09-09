@@ -53,13 +53,45 @@ The steam-auth HTTP API exposes:
 
 ### GET /health
 
-Health check endpoint.
+Health check endpoint. Always 200 while the HTTP server is up; per-account login state and refresh-token expiry are in the body.
 
 ```json
 {
   "status": "ok",
   "logged_in": true,
-  "timestamp": "2026-01-16T12:00:00.000Z"
+  "timestamp": "2026-01-16T12:00:00.000Z",
+  "accounts": [
+    {
+      "index": 0,
+      "username": "steamuser",
+      "logged_in": true,
+      "steam_id": "76561198012345678",
+      "token_expires_at": "2026-08-04T12:00:00.000Z",
+      "token_days_remaining": 200,
+      "token_last_renewal_at": "2026-01-16T11:59:30.000Z",
+      "token_last_renewal_outcome": "refused"
+    }
+  ]
+}
+```
+
+### POST /steam/renew-token
+
+Asks Steam to renew the account's refresh token over the live session (`?account=N`, default 0). Steam decides whether to issue one; `outcome` is:
+
+- `renewed` — a new token was issued. It is saved before the response returns, because Steam invalidates the previous token on renewal. If saving fails, `outcome` stays `renewed` and `error` says so, since the new token is now the only valid one.
+- `refused` — Steam answered without a token, the normal result far from expiry.
+- `failed` — Steam rejected the request; `error` carries the Steam result name. The token still logs in until it expires.
+
+Returns 409 for tokens supplied via environment variables, since the environment copy would go stale.
+
+```json
+{
+  "renewed": true,
+  "outcome": "renewed",
+  "error": null,
+  "previous_expires_at": "2026-02-01T12:00:00.000Z",
+  "expires_at": "2026-08-20T12:00:00.000Z"
 }
 ```
 
@@ -85,11 +117,14 @@ The steam-auth service supports several commands:
 | `download` | Download/update game files (uses saved session) |
 | `ticket` | Output encrypted app ticket to stdout |
 | `export-token` | Export saved refresh token for CI use |
+| `renew` | Ask Steam to renew saved refresh tokens. Opens its own Steam session, so stop `serve` first; while `serve` runs use `POST /steam/renew-token` instead |
 | `serve` | Run HTTP API for runtime ticket requests (default) |
 
 ## Token Persistence
 
-Refresh tokens are saved to `/data/steam-session/session-{username}.json` and reused on container restart. Steam tokens typically last 200 days.
+Refresh tokens are saved to `/data/steam-session/{username}/session.json` and reused on container restart. Steam tokens typically last 200 days; the expiry comes from the token's JWT `exp` claim and is logged at every login and exposed per account in `GET /health`. An expired token fails login immediately with the setup command instead of retrying.
+
+`serve` asks Steam once a day to renew each saved-session token and logs the answer. Steam only issues a new token close to expiry and does not publish the window, so the request is made unconditionally rather than gated on remaining days. A renewed token replaces the saved session before anything else can observe it, because Steam invalidates the previous one. Tokens supplied via environment variables are skipped. During the last 14 days a daily warning reports the last renewal outcome (also `token_last_renewal_outcome` in `GET /health`).
 
 ## How Invite Codes Work
 
