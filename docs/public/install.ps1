@@ -13,7 +13,8 @@ $dir = if ($env:DIR) { $env:DIR } else { 'junimoserver' }
 function Die($msg) { throw $msg }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Die 'Docker is not installed or not on PATH.' }
-try { docker compose version | Out-Null } catch { Die 'The Docker Compose plugin is required (docker compose v2).' }
+docker compose version | Out-Null
+if ($LASTEXITCODE -ne 0) { Die 'The Docker Compose plugin is required (docker compose v2).' }
 
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Write-Host "Installing into $((Resolve-Path $dir).Path)"

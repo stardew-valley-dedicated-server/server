@@ -11,11 +11,13 @@ $repo = 'stardew-valley-dedicated-server/server'
 function Die($msg) { throw $msg }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Die 'Docker is not installed or not on PATH.' }
-try { docker compose version | Out-Null } catch { Die 'The Docker Compose plugin is required (docker compose v2).' }
+docker compose version | Out-Null
+if ($LASTEXITCODE -ne 0) { Die 'The Docker Compose plugin is required (docker compose v2).' }
 if (-not (Test-Path docker-compose.yml)) { Die 'No docker-compose.yml here. Run this from your server directory, or install first: https://docs.junimoserver.com/install.ps1' }
 
 Write-Host 'Pulling images...'
 docker compose pull
+if ($LASTEXITCODE -ne 0) { Die 'docker compose pull failed.' }
 
 # Resolve the image tag Compose will actually use (honors .env and any override file).
 $serverImage = docker compose config --images 2>$null | Where-Object { $_ -match '^sdvd/server:' } | Select-Object -First 1
@@ -37,4 +39,5 @@ Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile docker-compose.yml
 
 Write-Host 'Restarting...'
 docker compose up -d --remove-orphans
+if ($LASTEXITCODE -ne 0) { Die 'docker compose up failed.' }
 Write-Host 'Update complete.'

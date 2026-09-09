@@ -18,7 +18,7 @@ irm https://docs.junimoserver.com/update.ps1 | iex
 
 It pulls the image for your configured `IMAGE_VERSION` (stable, preview, or pinned), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
 
-Prefer to do it by hand? Download `docker-compose.yml` from the [latest release](https://github.com/stardew-valley-dedicated-server/server/releases/latest), replace yours, then run `docker compose pull && docker compose up -d --remove-orphans`.
+Prefer to do it by hand (on `latest`)? Download `docker-compose.yml` from the [latest release](https://github.com/stardew-valley-dedicated-server/server/releases/latest), replace yours, then run `docker compose pull && docker compose up -d --remove-orphans`. On `preview` or a pinned version, use the script above (it fetches the `docker-compose.yml` matching your image) or the file linked by the startup warning below.
 
 A **docker-compose.yml does not match this image** warning at startup links the matching file.
 

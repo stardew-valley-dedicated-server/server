@@ -65,6 +65,9 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
     # VNC Server (for web-based administration access)
     VNC_PASSWORD=""
+
+    # HTTP API key (the server won't start until VNC_PASSWORD and API_KEY are set)
+    API_KEY=""
     ```
 
 2. **First-Time Setup**:
