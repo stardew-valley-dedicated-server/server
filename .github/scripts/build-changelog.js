@@ -107,9 +107,6 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
         return { ...result, markdown: `No changes since \`${baseTag}\` · ${diffLink}` };
     }
 
-    // The last line of the changelog. It holds up to three pieces, joined with " · ": an "…and N
-    // more" note when we had to drop entries, the "+N internal changes" count, and always the diff
-    // link. The " · " separator matches the "· #PR" that ends each entry above, so it all reads alike.
     const bottomLine = (droppedCount) => {
         const parts = [];
         if (droppedCount > 0) {
@@ -119,7 +116,7 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
             parts.push(`+${hiddenCount} internal change${hiddenCount === 1 ? "" : "s"}`);
         }
         parts.push(diffLink);
-        return parts.join(" · ");
+        return `- ${parts.join(" · ")}`;
     };
 
     const entryLines = [...VISIBLE_TYPES.flatMap((t) => visible.get(t)), ...other].map((e) => renderEntry(e, repoUrl));

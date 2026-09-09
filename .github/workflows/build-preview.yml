@@ -205,9 +205,10 @@ jobs:
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
-            ${{ steps.changelog.outputs.upgrade-notes }}**Update** (set `IMAGE_VERSION=preview` in `.env` first)
-            ```curl -fsSL https://docs.junimoserver.com/update.sh | bash```
-            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`. Pin this build instead: `IMAGE_VERSION=${{ needs.calculate-version.outputs.preview_version }}`.
+            ${{ steps.changelog.outputs.upgrade-notes }}**Update** ([documentation](https://docs.junimoserver.com/admins/operations/upgrading))
+            Set `IMAGE_VERSION=preview` in `.env`, then run:
+            Linux/macOS: `curl -fsSL https://docs.junimoserver.com/update.sh | bash`
+            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
 
       - name: Update preview tracking tag
         env:
