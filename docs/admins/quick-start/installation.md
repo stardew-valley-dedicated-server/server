@@ -1,47 +1,61 @@
 ---
-description: Install JunimoServer with Docker Compose — download the configuration, set your Steam credentials, and start your Stardew Valley dedicated server.
+description: Install JunimoServer with Docker Compose. Download the config, set your Steam credentials, and start your Stardew Valley dedicated server.
 ---
 
 # Installation
 
-For development, see [Building from Source](/developers/advanced/building-from-source).
+Before you start, make sure you have [Docker and a Steam account that owns Stardew Valley](/admins/quick-start/prerequisites). To build the server from source instead, see [Building from Source](/developers/advanced/building-from-source).
 
-## 1. Download Configuration
+## 1. Download
+
+Create a new server folder with the config files, then enter it:
+
+::: code-group
+
+```sh [Linux / macOS]
+curl -fsSL https://docs.junimoserver.com/install.sh | bash
+cd junimoserver
+```
+
+```powershell [Windows]
+irm https://docs.junimoserver.com/install.ps1 | iex
+cd junimoserver
+```
+
+:::
+
+You configure the server through `.env` in the next step. Don't edit `docker-compose.yml` yourself, because updates overwrite it. To change a port or add extra mods, put those changes in a `docker-compose.override.yml` next to it, and Compose applies both files together. See [Upgrading](/admins/operations/upgrading#customizing-docker-compose) for how this works.
+
+::: details Set it up by hand instead
+Create the folder and download both files yourself:
 
 ```sh
 mkdir junimoserver && cd junimoserver
-curl -O https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/.env.example
-mv .env.example .env
+curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml
+curl -fsSL -o .env https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/.env.example
 ```
+:::
 
 ## 2. Configure
 
-Edit `.env`:
+Open `.env` and set your Steam login and two passwords. The server won't start until both passwords are set:
 
 ```sh
 STEAM_USERNAME="your_steam_username"
 STEAM_PASSWORD="your_steam_password"
-VNC_PASSWORD="your_secure_password"
+VNC_PASSWORD="a_password_for_the_web_admin_page"
+API_KEY="a_long_random_secret"
 ```
 
-On Linux, also set the user the game runs as to your own, so the server's files on your computer
-belong to you (not needed on Windows and macOS; for rootless Docker see
-[Host / Permissions](/admins/configuration/environment#host-permissions)):
+`VNC_PASSWORD` protects the web admin page. `API_KEY` protects the HTTP API. Generate a strong key with `openssl rand -base64 32`. If you only run on a trusted local network and don't want passwords, set `ALLOW_INSECURE_SETUP=true` instead.
 
-```sh
-printf 'USER_ID=%s\nGROUP_ID=%s\n' "$(id -u)" "$(id -g)" >> .env
-```
+::: warning The API key controls your server
+Anyone who has your API key can fully control the server through the HTTP API. Keep it secret and treat it like a password.
+:::
 
-## 3. Pull Images
+See [Environment Variables](/admins/configuration/environment) for every available setting.
 
-Download the pre-built Docker images:
-
-```sh
-docker compose pull
-```
-
-## 4. First-Time Setup
+## 3. First-Time Setup
 
 Authenticate with Steam:
 
@@ -49,45 +63,56 @@ Authenticate with Steam:
 docker compose run --rm -it steam-auth setup
 ```
 
-Follow the prompts for Steam Guard (email code, mobile app, or QR code). Setup also downloads the game files right away. If you skip it and Steam can log in without prompts (a saved session or `STEAM_REFRESH_TOKEN`), the server downloads them itself on first start and reports a startup phase (downloading, then starting) until the game is up.
+Follow the prompts for Steam Guard:
 
-## 5. Start the Server
+| Method | How it works |
+|--------|--------------|
+| Email code | Enter the code from your email |
+| Mobile app | Enter the code or approve the notification |
+| QR code | Scan with the Steam app (no password needed) |
+
+This also downloads the game files. You can skip this step if Steam can log in without prompts, for example with a saved session or `STEAM_REFRESH_TOKEN`. In that case the server downloads the files itself the first time it starts.
+
+::: tip Steam tokens expire
+Steam login tokens last about 200 days. Re-run `docker compose run --rm -it steam-auth setup` before yours expires to keep the server authenticated.
+:::
+
+## 4. Start the Server
 
 ```sh
 docker compose up -d
 ```
 
-::: info .local-container Directory
-On first startup, a `.local-container/` directory is created next to your `docker-compose.yml`. This contains your `server-settings.json` and is how settings are persisted on your host machine. See [Server Settings](/admins/configuration/server-settings) to customize.
+Check it came up:
+
+```sh
+docker compose ps
+docker compose logs -f
+```
+
+`server` and `steam-auth` should show `Up`. If you haven't set up Discord, `discord-bot` shows as exited. That's normal. Once the server is ready, it prints a startup banner in the logs: a box bordered with `*` showing the server version and network status. That's your signal it's up.
+
+::: info Where your settings live
+A `.local-container/` folder appears next to your `docker-compose.yml` on first startup. It holds your `server-settings.json`, so your settings persist on your machine. See [Server Settings](/admins/configuration/server-settings) to change them.
 :::
 
-## 6. Get Invite Code & Connect
+## 5. Get Invite Code & Connect
 
-Get your invite code:
+Open the server console:
 
 ```sh
 docker compose exec server attach-cli
-# Type: info
 ```
 
-Then connect with your game, just like joining any multiplayer server:
+Type `info` to see your invite code, then connect with your game just like joining any multiplayer server:
 
 1. Launch Stardew Valley
 2. Click **Co-op** → **Enter Invite Code**
 3. Paste the invite code
 4. Play!
 
-::: tip No VNC Needed
-You don't need VNC to play or manage the server. The CLI and in-game commands handle everything. VNC is only for advanced debugging.
+::: tip You don't need VNC
+The CLI and in-game commands handle everything. VNC is only for advanced debugging.
 :::
 
-## Basic Commands
-
-```sh
-docker compose up -d       # Start
-docker compose down        # Stop
-docker compose logs -f     # View logs
-docker compose restart     # Restart
-docker compose ps          # Status
-```
-
+That's it. Your server is running. Manage it with [Console & Chat Commands](/admins/operations/commands), keep it up to date with [Upgrading](/admins/operations/upgrading), and if something goes wrong, see [Troubleshooting](/admins/troubleshooting).

@@ -31,7 +31,7 @@ This installs:
 - **git hooks** - Auto-format staged C# and JS/TS files on commit, validate commit messages, block direct pushes to `master`
 
 ::: tip Running compose outside `make`
-`make` targets export `IMAGE_VERSION=local`, so compose uses your local build (`sdvd/server:local`). Outside `make` the variable is unset and services resolve to `sdvd/server:latest`, which `docker compose up`/`run` pull from the registry (`exec` reuses the running container). Set `IMAGE_VERSION=local` in `.env` or your shell to reuse the local image ([variable reference](/developers/testing/e2e-testing)).
+`make` targets export `IMAGE_VERSION=local`, so compose uses your local build (`sdvd/server:local`). Outside `make` the variable is unset and services resolve to `sdvd/server:latest`, which `docker compose up`/`run` pull from the registry (`exec` reuses the running container). Set `IMAGE_VERSION=local` in `.env` or your shell to reuse the local image ([variable reference](/developers/testing/e2e-testing)). `make` also layers `docker-compose.dev.yml`, which holds the sidecar build contexts; without it `docker compose build` has nothing to build.
 :::
 
 #### Line Endings

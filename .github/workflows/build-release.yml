@@ -112,6 +112,13 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** https://github.com/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
 
+      # No continue-on-error: the Discord post below links these assets.
+      - name: Attach operator files to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "$TAG" docker-compose.yml .env.example --clobber
+
       # continue-on-error on both notification steps: a range or Discord failure must never
       # red a release build that already published its images.
       - name: Build changelog
@@ -140,9 +147,9 @@ jobs:
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
-            **Use it**
-            ```IMAGE_VERSION=${{ needs.release-please.outputs.version }}```
-            ```docker compose pull && docker compose up -d```
+            ${{ steps.changelog.outputs.upgrade-notes }}**Update**
+            ```curl -fsSL https://docs.junimoserver.com/update.sh | bash```
+            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`. Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
 
   stamp-issue-versions:
     name: Stamp Issue Versions

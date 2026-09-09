@@ -10,7 +10,6 @@ JunimoServer is a Docker-based dedicated server for Stardew Valley multiplayer. 
 
 1. [Prerequisites](/admins/quick-start/prerequisites)
 2. [Installation](/admins/quick-start/installation)
-3. [First Server Setup](/admins/quick-start/first-setup)
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig, loadEnv } from "vitepress";
 import { useSidebar } from "vitepress-openapi";
-import { groupIconVitePlugin } from "vitepress-plugin-group-icons";
+import { groupIconMdPlugin, groupIconVitePlugin } from "vitepress-plugin-group-icons";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import spec from "../assets/openapi.json" with { type: "json" };
 import { STUB_BASE, statusStubPlugin } from "./statusStub";
@@ -31,6 +31,11 @@ const foucThemeMap = JSON.stringify(Object.fromEntries(themes.map((t) => [t.id, 
 
 export default withMermaid(
     defineConfig({
+        markdown: {
+            config(md) {
+                md.use(groupIconMdPlugin);
+            },
+        },
         vite: {
             // Bake the build time into the bundle so the sidebar can show "Last built: …"
             define: {
@@ -53,6 +58,8 @@ export default withMermaid(
                     customIcon: {
                         curl: "simple-icons:curl",
                         ".cs": "vscode-icons:file-type-csharp2",
+                        windows: "vscode-icons:file-type-powershell",
+                        "linux / macos": "logos:bash-icon",
                     },
                     // Set default labels for code blocks (labels for API samples are defined separately in `theme/index.ts`)
                     defaultLabels: ["curl", ".cs", ".ts", ".py"],
@@ -193,7 +200,6 @@ export default withMermaid(
                             { text: "Overview", link: "/admins/" },
                             { text: "Prerequisites", link: "/admins/quick-start/prerequisites" },
                             { text: "Installation", link: "/admins/quick-start/installation" },
-                            { text: "First Setup", link: "/admins/quick-start/first-setup" },
                         ],
                     },
                     {

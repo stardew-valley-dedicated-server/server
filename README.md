@@ -47,11 +47,16 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 1. **Create Configuration**:
 
-    Download the configuration files from GitHub:
-    - [`docker-compose.yml`](https://github.com/stardew-valley-dedicated-server/server/blob/master/docker-compose.yml)
-    - [`.env.example`](https://github.com/stardew-valley-dedicated-server/server/blob/master/.env.example)
+    Create a new server folder with the config files:
 
-    Rename `.env.example` to `.env` and configure your server. Here is a minimal example:
+    ```sh
+    curl -fsSL https://docs.junimoserver.com/install.sh | bash
+    cd junimoserver
+    ```
+
+    On Windows: `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`, then `cd junimoserver`.
+
+    Then edit `.env` and configure your server. Here is a minimal example:
 
     ```sh
     # Steam Account Details (required for downloading the game server)
@@ -86,13 +91,15 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 ### Updating to a new version
 
-When a new version is released, update your server with:
+When a new version is released, run:
 
 ```sh
-docker compose pull
-docker compose down
-docker compose up -d
+curl -fsSL https://docs.junimoserver.com/update.sh | bash
 ```
+
+On Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
+
+This pulls the new image, installs the matching `docker-compose.yml`, and restarts. Your `.env`, saves, and settings are untouched. Keep your own compose changes in a `docker-compose.override.yml` (see [Upgrading](https://docs.junimoserver.com/admins/operations/upgrading)).
 
 ### Using preview releases
 
@@ -111,13 +118,7 @@ To switch back to stable releases, remove the line or set it to `latest`:
 IMAGE_VERSION=latest
 ```
 
-After changing the version, run:
-
-```sh
-docker compose pull
-docker compose down
-docker compose up -d
-```
+After changing the version, run the update command above — it pulls the matching image and `docker-compose.yml` for whichever `IMAGE_VERSION` you set (stable, preview, or pinned).
 
 You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
 
