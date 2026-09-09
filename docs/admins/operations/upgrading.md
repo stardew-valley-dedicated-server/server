@@ -2,17 +2,44 @@
 
 ## Quick Upgrade
 
-For most users with Docker images:
+Run this from your server directory:
 
-```sh
-docker compose pull
-docker compose down
-docker compose up -d
+::: code-group
+
+```sh [Linux / macOS]
+curl -fsSL https://docs.junimoserver.com/update.sh | bash
 ```
 
-Your save files and configuration are stored in Docker volumes and will be preserved.
+```powershell [Windows]
+irm https://docs.junimoserver.com/update.ps1 | iex
+```
+
+:::
+
+It pulls the image for your configured `IMAGE_VERSION` (stable, preview, or pinned), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
+
+Prefer to do it by hand (on `latest`)? Download `docker-compose.yml` from the [latest release](https://github.com/stardew-valley-dedicated-server/server/releases/latest), replace yours, then run `docker compose pull && docker compose up -d --remove-orphans`. On `preview` or a pinned version, use the script above (it fetches the `docker-compose.yml` matching your image) or the file linked by the startup warning below.
+
+A **docker-compose.yml does not match this image** warning at startup links the matching file.
+
+## Customizing docker-compose
+
+Updates replace `docker-compose.yml`, so put your own changes in a `docker-compose.override.yml` next to it (Compose merges it automatically). Extra mods, for example:
+
+```yaml
+services:
+  server:
+    volumes:
+      - ./mods:/data/Mods/extra
+```
+
+Settings such as ports and passwords go in `.env`; see [Environment Variables](/admins/configuration/environment).
 
 ## Upgrade Notes
+
+### Updates replace `docker-compose.yml`
+
+The update command overwrites `docker-compose.yml`. If you edited it by hand (extra mod mounts, port changes), move those edits to a `docker-compose.override.yml` before running the command, or they are lost and the server starts without them. See [Customizing docker-compose](#customizing-docker-compose).
 
 ### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
 
@@ -40,13 +67,7 @@ Set the image version in your `.env` file:
 IMAGE_VERSION=preview
 ```
 
-Then pull and restart:
-
-```sh
-docker compose pull
-docker compose down
-docker compose up -d
-```
+Then run the [Quick Upgrade](#quick-upgrade) command — it pulls the preview image and installs the `docker-compose.yml` from that build's commit automatically.
 
 ::: warning
 Preview builds may contain experimental features or bugs. Back up your saves before switching.
@@ -60,7 +81,7 @@ Remove or comment out the `IMAGE_VERSION` line in `.env` (defaults to `latest`):
 # IMAGE_VERSION=preview
 ```
 
-Then pull and restart as above.
+Then run the [Quick Upgrade](#quick-upgrade) command again.
 
 ## Updating Game Files
 
