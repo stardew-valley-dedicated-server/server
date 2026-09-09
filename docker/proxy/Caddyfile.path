@@ -7,6 +7,6 @@
 import common.caddy
 
 {$PUBLIC_HOST} {
-	redir /{$SERVER_URL_NAME} /{$SERVER_URL_NAME}/ 301
-	import server /{$SERVER_URL_NAME}
+	redir /{$SERVER_URL_NAME:server} /{$SERVER_URL_NAME:server}/ 301
+	import server /{$SERVER_URL_NAME:server}
 }

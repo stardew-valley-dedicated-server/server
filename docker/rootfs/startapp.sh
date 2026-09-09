@@ -18,6 +18,9 @@ GAME_DOWNLOAD_MARKER="${GAME_DEST_DIR}/.download-manifest-413150"
 API_PORT="${API_PORT:-8080}"
 # Lifecycle phase served on the API port until the mod takes over: "downloading" | "starting".
 PHASE_FILE="/tmp/startup-phase"
+# SDVD_COMPOSE_REV of the docker-compose.yml this image ships with (validate-pr.yml keeps them
+# equal). Keep it a bare unindented assignment — validate-pr.yml greps this exact line.
+EXPECTED_COMPOSE_REV=1
 
 # Validate required environment variables
 validate_environment() {
@@ -62,8 +65,30 @@ validate_environment() {
     fi
 }
 
+check_compose_revision() {
+    local actual="${SDVD_COMPOSE_REV:-unset}" url
+    [ "$actual" = "$EXPECTED_COMPOSE_REV" ] && return 0
+    # E2E containers start without compose.
+    [ "${SDVD_ENV:-}" = "test" ] && return 0
+    if [ "${SDVD_GIT_SHA:-unknown}" != "unknown" ]; then
+        url="https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/${SDVD_GIT_SHA}/docker-compose.yml"
+    else
+        url="https://github.com/stardew-valley-dedicated-server/server/releases/latest"
+    fi
+    echo ""
+    echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[33m║  WARNING: docker-compose.yml does not match this image!               ║\e[0m"
+    echo -e "\e[33m║                                                                       ║\e[0m"
+    printf "\e[33m║  %-69s║\e[0m\n" "Your file is revision ${actual}, this image expects revision ${EXPECTED_COMPOSE_REV}."
+    echo -e "\e[33m║  Replace it with the matching file, then run: docker compose up -d    ║\e[0m"
+    echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
+    echo -e "\e[33m  Matching file: ${url}\e[0m"
+    echo ""
+}
+
 # Run validation before anything else
 validate_environment
+check_compose_revision
 
 print_error() {
     echo -e "\e[31m$1\e[0m"

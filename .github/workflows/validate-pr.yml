@@ -372,3 +372,44 @@ jobs:
 
       - name: Run workflow-script tests
         run: npm test
+
+  validate-compose-revision:
+    name: Validate Compose Revision
+    needs: authorize
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
+
+      # Every docker-compose.yml change bumps SDVD_COMPOSE_REV, kept equal to startapp.sh's
+      # EXPECTED_COMPOSE_REV; the image warns operators on a mismatch.
+      - name: Check compose revision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          compose_rev() { sed -nE 's/^\s*- SDVD_COMPOSE_REV=([0-9]+)\s*$/\1/p' | head -n 1; }
+          head_rev=$(compose_rev < docker-compose.yml)
+          image_rev=$(sed -nE 's/^EXPECTED_COMPOSE_REV=([0-9]+)$/\1/p' docker/rootfs/startapp.sh | head -n 1)
+          [ -n "$head_rev" ] || { echo "::error file=docker-compose.yml::SDVD_COMPOSE_REV is missing"; exit 1; }
+          [ -n "$image_rev" ] || { echo "::error file=docker/rootfs/startapp.sh::EXPECTED_COMPOSE_REV is missing"; exit 1; }
+          if [ "$head_rev" != "$image_rev" ]; then
+            echo "::error::docker-compose.yml has SDVD_COMPOSE_REV=$head_rev but docker/rootfs/startapp.sh expects $image_rev — keep them equal"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          if git diff --quiet "$BASE_SHA" HEAD -- docker-compose.yml; then
+            echo "docker-compose.yml unchanged (revision $head_rev)."
+            exit 0
+          fi
+          base_rev=$(git show "$BASE_SHA:docker-compose.yml" | compose_rev || true)
+          if [ "${base_rev:-0}" -ge "$head_rev" ]; then
+            echo "::error file=docker-compose.yml::docker-compose.yml changed but SDVD_COMPOSE_REV is still $head_rev — bump it (and EXPECTED_COMPOSE_REV in docker/rootfs/startapp.sh) so outdated copies are detected"
+            exit 1
+          fi
+          echo "docker-compose.yml changed: revision ${base_rev:-none} -> $head_rev."

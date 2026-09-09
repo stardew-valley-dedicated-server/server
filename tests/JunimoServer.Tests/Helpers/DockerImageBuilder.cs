@@ -229,33 +229,48 @@ public static class DockerImageBuilder
         // The Makefile `export`s these vars, and Docker reads them via --secret id=x,env=STEAM_X.
         var steamCredentials = GetSteamCredentials(progress);
 
-        // Build steam-service and server in parallel.
-        // Test-client MUST wait for server to finish. Both Dockerfiles share identical
-        // steam-service-builder and game-downloader stages (same Steam account). Building
-        // them concurrently causes two Steam logins with the same account, and Steam's
-        // single-session enforcement kicks the first session, causing TaskCanceledException.
-        // Building server first populates the BuildKit layer cache so the test-client
-        // build hits warm cache for all shared stages (~5s instead of minutes).
+        // IMAGE_VERSION pins every build to the tag the containers run at (ImageTag, always "local"
+        // here — EnsureImagesExistAsync only builds when UseLocalImages). Without it the compose
+        // steam-auth build defaults to sdvd/steam-service:latest and the :local container
+        // (PullPolicy.Never) can't find its image.
+        var buildEnvironment = new Dictionary<string, string>(steamCredentials)
+        {
+            ["IMAGE_VERSION"] = ImageTag,
+        };
+
+        // steam-service and server build in parallel — steam-service has no build-time Steam login
+        // (auth is a runtime step), so it can't collide with the server build's game-downloader
+        // stage. serverTask builds only the server (`make build-server`); `make build` would also
+        // run `docker compose build steam-auth`, duplicating steamAuthTask. Test-client MUST wait
+        // for the server: their Dockerfiles share the game-downloader stage (same Steam account), so
+        // a concurrent build means two logins and Steam's single-session kick — serial keeps one
+        // login and lets test-client reuse the server's warm BuildKit cache (~5s instead of minutes).
         progress.Step("Building steam-service image", SetupStepStatus.Started);
         progress.Step("Building server image", SetupStepStatus.Started);
 
+        // Explicit -f drops Compose's automatic override merge; re-add it like the Makefile's COMPOSE.
+        var composeFiles = "-f docker-compose.yml -f docker-compose.dev.yml";
+        if (File.Exists(Path.Combine(ServerRepoDir, "docker-compose.override.yml")))
+        {
+            composeFiles += " -f docker-compose.override.yml";
+        }
         var steamAuthTask = BuildAndEmitStatus(
             "docker",
-            "compose build steam-auth",
+            $"compose {composeFiles} build steam-auth",
             "steam-service image",
             TestTimings.DockerBuildSteamAuthTimeout,
             "Building steam-service image",
             progress,
-            steamCredentials
+            buildEnvironment
         );
         var serverTask = BuildAndEmitStatus(
             "make",
-            "build",
+            "build-server",
             "server image",
             TestTimings.DockerBuildServerTimeout,
             "Building server image",
             progress,
-            steamCredentials
+            buildEnvironment
         );
 
         await Task.WhenAll(steamAuthTask, serverTask);
@@ -270,7 +285,7 @@ public static class DockerImageBuilder
                 TestTimings.DockerBuildServerTimeout,
                 "Building test-client image",
                 progress,
-                steamCredentials
+                buildEnvironment
             );
         }
 

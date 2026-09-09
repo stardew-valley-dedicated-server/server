@@ -1,0 +1,13 @@
+# Sidecar build contexts for local builds; `make` and the E2E test harness layer this over docker-compose.yml.
+services:
+  steam-auth:
+    build:
+      # Repo root, not ./tools/steam-service — the image build needs the repo-level
+      # Directory.Build.props and .editorconfig (code-style enforcement).
+      context: .
+      dockerfile: tools/steam-service/Dockerfile
+
+  discord-bot:
+    build:
+      context: ./tools/discord-bot
+      dockerfile: Dockerfile
