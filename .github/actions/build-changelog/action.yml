@@ -38,8 +38,8 @@ outputs:
     value: ${{ steps.changelog.outputs.compare-url }}
   upgrade-notes:
     description: >
-      Markdown flagging docker-compose.yml / .env.example changes in the range; empty if none,
-      otherwise ends with a blank line.
+      "Config changed" list flagging docker-compose.yml / .env.example changes in the range;
+      empty if none, otherwise ends with a blank line.
     value: ${{ steps.files.outputs.upgrade-notes }}
 
 runs:
@@ -72,22 +72,20 @@ runs:
       env:
         BASE_OID: ${{ steps.range.outputs.base-oid }}
         HEAD_OID: ${{ steps.range.outputs.head-oid }}
-        REPO_URL: ${{ github.server_url }}/${{ github.repository }}
       run: |
         set -euo pipefail
         changed=$(git diff --name-only "$BASE_OID" "$HEAD_OID" -- docker-compose.yml .env.example)
         notes=""
         if grep -qx 'docker-compose.yml' <<< "$changed"; then
-          notes+='⚠ `docker-compose.yml` changed — the update command below replaces yours. Hand-edited it? Move the edits to `docker-compose.override.yml` first.'$'\n'
+          notes+='- `docker-compose.yml`: how to [customize](https://docs.junimoserver.com/admins/operations/upgrading#customizing-docker-compose)'$'\n'
         fi
         if grep -qx '.env.example' <<< "$changed"; then
-          notes+="⚠ \`.env.example\` changed — check [the new file](${REPO_URL}/blob/${HEAD_OID}/.env.example) for options to add to your \`.env\`."$'\n'
+          notes+='- `.env.example`: see the [new options](https://docs.junimoserver.com/admins/configuration/environment)'$'\n'
         fi
         {
           echo "upgrade-notes<<EOF_UPGRADE_NOTES"
-          # notes ends in a newline; one more makes the trailing blank line.
           if [ -n "$notes" ]; then
-            printf '%s\n\n' "$notes"
+            printf '**Config changed**\n%s\n' "$notes"
           fi
           echo "EOF_UPGRADE_NOTES"
         } >> "$GITHUB_OUTPUT"

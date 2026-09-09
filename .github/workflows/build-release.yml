@@ -148,9 +148,9 @@ jobs:
           description: |
             ${{ steps.changelog.outputs.markdown }}
 
-            ${{ steps.changelog.outputs.upgrade-notes }}**Update**
-            ```curl -fsSL https://docs.junimoserver.com/update.sh | bash```
-            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`. Pin instead of following `latest`: `IMAGE_VERSION=${{ needs.release-please.outputs.version }}` in `.env`.
+            ${{ steps.changelog.outputs.upgrade-notes }}**Update** ([documentation](https://docs.junimoserver.com/admins/operations/upgrading))
+            Linux/macOS: `curl -fsSL https://docs.junimoserver.com/update.sh | bash`
+            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
 
   stamp-issue-versions:
     name: Stamp Issue Versions

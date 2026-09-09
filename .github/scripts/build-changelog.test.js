@@ -37,7 +37,7 @@ test("lists visible types in release-please priority order under one Changes hea
             "- perf: fewer allocations · [#3](https://github.com/o/r/pull/3)",
             "- revert: undo the thing · [#4](https://github.com/o/r/pull/4)",
             "- docs: explain cabins · [#5](https://github.com/o/r/pull/5)",
-            `[diff](${COMPARE})`,
+            `- [diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [5, 5, 0]);
@@ -45,7 +45,7 @@ test("lists visible types in release-please priority order under one Changes hea
 
 test("hidden-only range is just the Changes heading and the internal-changes bottom line", () => {
     const result = buildChangelog(["ci: bump action (#9)", "chore: tidy", "refactor: rename (#8)"], OPTS);
-    assert.equal(result.markdown, ["**Changes**", `+3 internal changes · [diff](${COMPARE})`].join("\n"));
+    assert.equal(result.markdown, ["**Changes**", `- +3 internal changes · [diff](${COMPARE})`].join("\n"));
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [3, 0, 3]);
 });
 
@@ -56,7 +56,7 @@ test("mixed range lists visible entries and folds hidden ones into the bottom li
         [
             "**Changes**",
             "- fix(ci): quote globs · [#2](https://github.com/o/r/pull/2)",
-            `+2 internal changes · [diff](${COMPARE})`,
+            `- +2 internal changes · [diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [3, 1, 2]);
@@ -64,14 +64,14 @@ test("mixed range lists visible entries and folds hidden ones into the bottom li
 
 test("a single internal change uses the singular note", () => {
     const result = buildChangelog(["chore: bump deps"], OPTS);
-    assert.equal(result.markdown, ["**Changes**", `+1 internal change · [diff](${COMPARE})`].join("\n"));
+    assert.equal(result.markdown, ["**Changes**", `- +1 internal change · [diff](${COMPARE})`].join("\n"));
 });
 
 test("a subject without (#N) is listed without a PR link", () => {
     const result = buildChangelog(["feat(tools): add request-correlation context"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Changes**", "- feat(tools): add request-correlation context", `[diff](${COMPARE})`].join("\n"),
+        ["**Changes**", "- feat(tools): add request-correlation context", `- [diff](${COMPARE})`].join("\n"),
     );
 });
 
@@ -83,7 +83,7 @@ test("a non-conventional subject is listed after the visible types, verbatim, ne
             "**Changes**",
             "- feat: real feature · [#6](https://github.com/o/r/pull/6)",
             "- Update README badges · [#7](https://github.com/o/r/pull/7)",
-            `[diff](${COMPARE})`,
+            `- [diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.equal(result.visibleCount, 2);
@@ -93,7 +93,7 @@ test("an unknown conventional type is listed after the visible types", () => {
     const result = buildChangelog(["wip: half-done thing (#7)"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Changes**", "- wip: half-done thing · [#7](https://github.com/o/r/pull/7)", `[diff](${COMPARE})`].join(
+        ["**Changes**", "- wip: half-done thing · [#7](https://github.com/o/r/pull/7)", `- [diff](${COMPARE})`].join(
             "\n",
         ),
     );
@@ -106,7 +106,7 @@ test("feat!: gets the breaking-change warning marker", () => {
         [
             "**Changes**",
             "- ⚠ feat!: drop LAN transport · [#10](https://github.com/o/r/pull/10)",
-            `[diff](${COMPARE})`,
+            `- [diff](${COMPARE})`,
         ].join("\n"),
     );
 });
@@ -121,7 +121,7 @@ test("markdown special characters in subjects are escaped", () => {
         [
             "**Changes**",
             "- fix: escape \\`code\\` and \\*stars\\* and \\_under\\_ and \\~tilde\\~ and \\|pipe\\| and \\\\slash",
-            `[diff](${COMPARE})`,
+            `- [diff](${COMPARE})`,
         ].join("\n"),
     );
 });
@@ -133,7 +133,7 @@ test("a subject with markdown link syntax cannot inject a masked link", () => {
         [
             "**Changes**",
             "- feat: \\[deployment guide\\](https://attacker.example) · [#13](https://github.com/o/r/pull/13)",
-            `[diff](${COMPARE})`,
+            `- [diff](${COMPARE})`,
         ].join("\n"),
     );
 });
@@ -142,7 +142,7 @@ test("a non-ASCII subject passes through and the budget counts code points", () 
     const result = buildChangelog(["feat: 🎉 支持中文标题 (#12)"], OPTS);
     assert.equal(
         result.markdown,
-        ["**Changes**", "- feat: 🎉 支持中文标题 · [#12](https://github.com/o/r/pull/12)", `[diff](${COMPARE})`].join(
+        ["**Changes**", "- feat: 🎉 支持中文标题 · [#12](https://github.com/o/r/pull/12)", `- [diff](${COMPARE})`].join(
             "\n",
         ),
     );
@@ -163,8 +163,8 @@ test("an over-budget list is cut at a line boundary with an …and N more notice
     // count, folds the internal change in, and carries the diff link.
     const keptEntries = lines.filter((l) => l.startsWith("- feat:")).length;
     assert.ok(keptEntries > 0 && keptEntries < 100);
-    assert.equal(lines[lines.length - 1], `…and ${100 - keptEntries} more · +1 internal change · [diff](${COMPARE})`);
-    for (const line of lines.filter((l) => l.startsWith("- "))) {
+    assert.equal(lines[lines.length - 1], `- …and ${100 - keptEntries} more · +1 internal change · [diff](${COMPARE})`);
+    for (const line of lines.filter((l) => l.startsWith("- feat:"))) {
         assert.match(line, /· \[#\d+\]\(https:\/\/github\.com\/o\/r\/pull\/\d+\)$/);
     }
 });
@@ -179,7 +179,7 @@ test("release-please's release commit is excluded from every count", () => {
         [
             "**Changes**",
             "- fix: stop the crash · [#2](https://github.com/o/r/pull/2)",
-            `+1 internal change · [diff](${COMPARE})`,
+            `- +1 internal change · [diff](${COMPARE})`,
         ].join("\n"),
     );
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [2, 1, 1]);
