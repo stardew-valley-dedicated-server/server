@@ -307,7 +307,7 @@ jobs:
             echo "::endgroup::"
 
             echo "::group::Health check"
-            if docker compose ps | grep -qE "unhealthy|Exit"; then
+            if docker compose ps | grep -qE "unhealthy|Exit|Restarting"; then
               echo "::error::Container health check failed"
               docker compose logs --tail=50
               exit 1
@@ -329,7 +329,7 @@ jobs:
               # Retries cover the certificate order, which can take a minute on first start.
               if ! curl -fsS --retry 12 --retry-delay 10 --retry-all-errors "$url" > /dev/null; then
                 echo "::error::Proxy check failed: $url"
-                docker compose logs --tail=50 proxy
+                docker compose logs --tail=50 proxy server
                 exit 1
               fi
               echo "$url OK"
