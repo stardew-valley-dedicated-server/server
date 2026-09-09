@@ -20,7 +20,7 @@ API_PORT="${API_PORT:-8080}"
 PHASE_FILE="/tmp/startup-phase"
 # SDVD_COMPOSE_REV of the docker-compose.yml this image ships with (validate-pr.yml keeps them
 # equal). Keep it a bare unindented assignment — validate-pr.yml greps this exact line.
-EXPECTED_COMPOSE_REV=1
+EXPECTED_COMPOSE_REV=2
 
 # Validate required environment variables
 validate_environment() {
