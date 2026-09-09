@@ -27,6 +27,10 @@ These must be set for the server to function:
 | `PROXY_ROUTING` | `path` (`https://HOST/NAME/`) or `subdomain` (`https://NAME.HOST/`) | `path` |
 | `COMPOSE_PROFILES` | `proxy` starts the bundled HTTPS proxy; leave unset to use your own | - |
 | `SERVER_FPS` | Render rate: `0` = rendering disabled, `N > 0` = render at N fps | `0` |
+| `SERVER_TPS` | Simulation ticks per second (`1`–`60`); lower cuts CPU use | `60` |
+| `SDVD_TPS_AGNOSTIC_PACING` | Keep fades and NPC/monster/projectile movement at wall-clock speed regardless of `SERVER_TPS`; `false` restores vanilla per-tick pacing | `true` |
+| `CROP_SAVER_LIGHTNING_IMMUNITY` | Managed crops survive lightning strikes | `true` |
+| `STEAM_KEEP_LANGUAGES` | Comma-separated language codes whose fonts to keep in the game download (e.g. `ru-RU,ja-JP`); empty keeps English only | (English only) |
 | `VERBOSE_LOGGING` | Override verbose logging setting | - |
 
 ## Security Variables
