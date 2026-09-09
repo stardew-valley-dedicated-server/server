@@ -35,7 +35,13 @@ if ($sha -and $sha -ne 'unknown') {
 }
 
 Write-Host 'Fetching docker-compose.yml...'
-Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile docker-compose.yml
+$tmp = New-TemporaryFile
+Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $tmp
+$backup = "docker-compose.yml.$(Get-Date -Format 'yyyyMMdd-HHmmss').bak"
+Copy-Item docker-compose.yml $backup -Force
+Move-Item $tmp docker-compose.yml -Force
+Write-Host "Replaced docker-compose.yml (backup: $backup)"
+Write-Host 'Custom changes? Use docker-compose.override.yml: https://docs.junimoserver.com/admins/operations/upgrading#customizing-docker-compose'
 
 Write-Host 'Restarting...'
 docker compose up -d --remove-orphans

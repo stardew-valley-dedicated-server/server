@@ -39,7 +39,7 @@ Settings such as ports and passwords go in `.env`; see [Environment Variables](/
 
 ### Updates replace `docker-compose.yml`
 
-The update command overwrites `docker-compose.yml`. If you edited it by hand (extra mod mounts, port changes), move those edits to a `docker-compose.override.yml` before running the command, or they are lost and the server starts without them. See [Customizing docker-compose](#customizing-docker-compose).
+The update command overwrites `docker-compose.yml`, saving the previous file as a timestamped `.bak` first. Keep hand edits (extra mod mounts, port changes) in a `docker-compose.override.yml` instead, so they survive every update. See [Customizing docker-compose](#customizing-docker-compose).
 
 ### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
 

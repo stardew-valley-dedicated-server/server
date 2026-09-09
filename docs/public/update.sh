@@ -36,7 +36,11 @@ fi
 echo "Fetching docker-compose.yml..."
 tmp="$(mktemp)"
 curl -fsSL -o "$tmp" "$compose_url" || die "Could not download docker-compose.yml from $compose_url"
+backup="docker-compose.yml.$(date +%Y%m%d-%H%M%S).bak"
+cp docker-compose.yml "$backup"
 mv "$tmp" docker-compose.yml
+echo "Replaced docker-compose.yml (backup: $backup)"
+echo "Custom changes? Use docker-compose.override.yml: https://docs.junimoserver.com/admins/operations/upgrading#customizing-docker-compose"
 
 echo "Restarting..."
 docker compose up -d --remove-orphans
