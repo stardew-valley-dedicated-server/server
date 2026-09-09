@@ -23,7 +23,7 @@ services:
       - ./.local-container/settings:/data/settings
       - ./diagnostics:/data/diagnostics
     environment:
-      - SDVD_COMPOSE_REV=1
+      - SDVD_COMPOSE_REV=2
       - STEAM_AUTH_URL=http://steam-auth:${STEAM_AUTH_PORT:-3001}
       - SETTINGS_PATH=/data/settings/server-settings.json
       # uid/gid the game runs as after the root init (docs: environment.md, Host / Permissions).
@@ -42,6 +42,10 @@ services:
       - SERVER_PASSWORD
       - MAX_LOGIN_ATTEMPTS
       - AUTH_TIMEOUT_SECONDS
+      - ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS
+      - HEALTH_CHECK_SECONDS
+      - CROP_SAVER_LIGHTNING_IMMUNITY
+      - VERBOSE_LOGGING
     depends_on:
       steam-auth:
         condition: service_healthy

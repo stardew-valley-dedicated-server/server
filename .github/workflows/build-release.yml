@@ -80,6 +80,7 @@ jobs:
           sbom: true
           build-args: |
             SDVD_GIT_SHA=${{ github.sha }}
+            BUILD_CONFIGURATION=Release
           secrets: |
             steam_username=${{ secrets.STEAM_USERNAME }}
             steam_password=${{ secrets.STEAM_PASSWORD }}
