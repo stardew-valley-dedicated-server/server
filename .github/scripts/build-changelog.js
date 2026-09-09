@@ -16,10 +16,12 @@ const HEADER = "**Changes**";
 const VISIBLE_TYPES = ["feat", "fix", "perf", "revert", "docs"];
 const HIDDEN_TYPES = new Set(["style", "chore", "refactor", "test", "build", "ci"]);
 
-// We measure length in code points (what Discord counts), not JS string length. 3500 leaves room
-// under Discord's 4096-char description limit for the "Use it" block the caller appends, and under
-// the 6000-char limit for the whole embed.
-const BUDGET = 3500;
+// We measure length in code points (what Discord counts), not JS string length. The caller appends
+// its upgrade notes and "Update" block to this markdown as one embed description, so the budget is
+// Discord's 4096 description limit minus ~900 reserved for that appended text (worst case ~870:
+// both upgrade-note warnings plus the longest "Update" block). Title + description stay well under
+// the 6000-char whole-embed limit. discord-notify rejects an over-limit post, so keep the reserve.
+const BUDGET = 3200;
 
 const CONVENTIONAL_RE = /^([a-z]+)(\([^()]*\))?(!)?: \S/i;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)$/;

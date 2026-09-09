@@ -3,7 +3,7 @@
 //
 // These lock in how the Discord post looks: one flat "Changes" list in release-please's type order,
 // nothing ever dropped (a subject we can't parse is listed after the known types), markdown special
-// characters escaped, a diff link on every result, and the whole thing kept under the 3500-code-point
+// characters escaped, a diff link on every result, and the whole thing kept under the code-point
 // budget — trimming between whole lines with an "…and N more" note when it's too long.
 
 const { test } = require("node:test");
