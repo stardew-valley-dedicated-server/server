@@ -83,10 +83,8 @@ Preview images are tagged with:
 # Pull latest preview
 docker pull sdvd/server:preview
 
-# Use preview in docker-compose.yml
-services:
-  server:
-    image: sdvd/server:preview
+# Use preview: set IMAGE_VERSION=preview in .env, then
+docker compose pull && docker compose up -d --remove-orphans
 ```
 
 ### Batching Features
@@ -453,13 +451,13 @@ To manually trigger a deployment:
 The pipeline:
 
 1. Creates/updates `.env` file with secrets and correct `IMAGE_VERSION`
-2. Copies `docker-compose.yml` to VPS
+2. Copies `docker-compose.yml` and `docker/proxy` (at the image's commit) to the VPS
 3. Pulls the appropriate Docker images
 4. Restarts containers
 5. Verifies deployment health
 
 ::: tip
-The pipeline uses the same `docker-compose.yml` from the repository, ensuring consistency between local development and deployed environments. The `IMAGE_VERSION` environment variable controls which image tag is used.
+The `IMAGE_VERSION` environment variable controls which image tag is used.
 :::
 
 ## Cleanup Caches
