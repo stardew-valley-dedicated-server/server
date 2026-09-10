@@ -1,3 +1,8 @@
+---
+paths:
+  - "tests/**/*.cs"
+---
+
 # Localize a defect empirically before theorizing a mechanism
 
 A plausible mechanism story is cheap to invent and expensive to chase down the wrong layer. Two localization moves, both cheaper than theorizing:
@@ -7,4 +12,4 @@ A plausible mechanism story is cheap to invent and expensive to chase down the w
 
 **Why:** Both moves are anchored to expensive wrong-layer sessions. Diffing: the `AbandonedClaim_SweptOnReload` flake (33%) burned a long session on four plausible-but-wrong mechanism theories, each refuted only after detailed log-staring; tabulating one signal ("what in-game date did the reload load?") across 4 passing + 1 failing run gave a perfect 5/5 split and localized the cause to `/newgame`'s gating `SaveLoaded` in one step. Bisecting: a per-test recording came out 2× time-compressed; two confident mechanism stories led to a fix at the stage being stared at (reverted by the user as wrong), while two cheap probes — `ffprobe` on one raw segment, then swapping the concat method on the same segments — located the real cause at the earlier demux stage in minutes.
 
-**How to apply:** Apply whichever move matches the evidence you have, before proposing any fix. Sibling of `runtime-post-conditions-are-gates.md`, which verifies a hypothesis by *running* it — this rule is about *forming* the hypothesis from evidence you already have.
+**How to apply:** Apply whichever move matches the evidence you have, before proposing any fix. Sibling of [`runtime-post-conditions-are-gates.md`](universal/runtime-post-conditions-are-gates.md), which verifies a hypothesis by *running* it — this rule is about *forming* the hypothesis from evidence you already have.

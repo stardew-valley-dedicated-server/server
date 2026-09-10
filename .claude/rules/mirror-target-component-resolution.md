@@ -1,3 +1,10 @@
+---
+paths:
+  - "mod/**/*.cs"
+  - "tests/**/*.cs"
+  - "tools/**/*.cs"
+---
+
 # A probe that detects another component's state must mirror that component's full resolution logic
 
 When you write detection code that models another component's behavior — "is this container configured the way the real X would interpret it?", "what would the runtime resolver decide?" — the model must mirror the target's complete resolution order, not just the path you happen to be familiar with. Picking only the happy path produces silent false negatives: the probe says "no conflict" while the target component is actively in the state you were trying to detect.

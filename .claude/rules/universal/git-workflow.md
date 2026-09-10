@@ -47,7 +47,7 @@ gh pr merge <child-num> --squash --auto
 
 - Every CodeRabbit/Greptile thread ends resolved, never just outdated.
 - Applied: push, confirm resolved; else reply in-thread naming the commit, resolve.
-- Rejected: reply in-thread with reason and citation, resolve. Verify per `bot-review-blind-spots.md`.
+- Rejected: reply in-thread with reason and citation, resolve. Verify per [`bot-review-blind-spots.md`](../bot-review-blind-spots.md).
 - Resolve: `gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<PRRT_…>"}) { thread { isResolved } } }'` (ids from `pullRequest.reviewThreads`).
 - Reply: `gh api repos/<owner>/<repo>/pulls/<num>/comments/<root-comment-id>/replies -f body=…`.
 

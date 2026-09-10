@@ -12,7 +12,7 @@ Buckets:
 
 A file's bucket is decided by **its lesson**, which can differ from the code area its `paths:` glob targets. The `paths:` frontmatter and rule bodies are not changed — only file location.
 
-`universal/` (L1, always-on) is out of scope and stays as is. `README.md` stays at `rules/` root with its L2 table restructured.
+`universal/` (always-on) is out of scope. It carries no index row — it is always loaded, discovered by globbing `universal/`. `README.md` stays at the `rules/` root; its L2 section is the four sub-tables below.
 
 ## Current state
 
@@ -22,7 +22,7 @@ The loader matches `paths:` frontmatter at any directory depth — `universal/` 
 
 ## Mapping (4 buckets)
 
-The per-file listing below is a snapshot. Re-derive it from `ls .claude/rules/*.md` at execution time and bucket anything added since.
+The per-file listing below is a snapshot. Re-derive it from `ls .claude/rules/*.md` at execution time and bucket every file present.
 
 ### `vanilla/` — Stardew engine lessons
 
@@ -89,7 +89,7 @@ Subject-matter calls where the bucket differs from the `paths:` glob, recorded s
 Both skills must track the new layout or the grouping re-fragments:
 
 - **`extract-session-rules/SKILL.md`** — the "Scope decision" section routes path-scoped rules to `.claude/rules/<kebab-name>.md`. Change it to route to the matching subject-matter subfolder (`vanilla`/`mod`/`tests`/`misc`) chosen by the rule's lesson, with the four bucket definitions. New path-scoped rules then land grouped.
-- **`review-rules/SKILL.md`** — `Glob`-based discovery (`.claude/rules/**/*.md`) already recurses, so the audit still finds bucketed files. Two spots assume the flat+universal two-level layout and need adjusting: the "Build a flat list … every file listed in `README.md`" discovery step and the README cross-check that enumerates `.claude/rules/` and `.claude/rules/universal/`. Update both to expect the bucket subfolders and the four README sub-tables.
+- **`review-rules/SKILL.md`** — `Glob`-based discovery (`.claude/rules/**/*.md`) already recurses, so the audit finds bucketed files. Two spots assume the flat layout and need adjusting: the Pass-1 discovery step ("Build a flat list … cross-check `README.md`") and the `Index sync` section. Update both to expect the bucket subfolders and the four README sub-tables.
 
 ## Compatibility verification
 

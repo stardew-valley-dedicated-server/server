@@ -133,7 +133,7 @@ The CLI should:
 The TUI connects via HTTP polling (status) + WebSocket (real-time events). On disconnect:
 - Status bar should show "Disconnected" with elapsed time.
 - Log view freezes (last known state).
-- Command input rejects with clear feedback — surface the failure to the operator immediately rather than retrying silently. Per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, the dashboard is an admin tool typically run on LAN or over an SSH tunnel; an exponential reconnect-backoff loop would be retry-as-feature for a connection that, when broken, the operator wants to know about.
+- Command input rejects with clear feedback — surface the failure to the operator immediately rather than retrying silently. Per `.claude/rules/universal/dont-paper-over-root-cause.md`, the dashboard is an admin tool typically run on LAN or over an SSH tunnel; an exponential reconnect-backoff loop would be retry-as-feature for a connection that, when broken, the operator wants to know about.
 - Manual reconnect: a single keybind (`r`) attempts one immediate reconnection, with no automatic backoff.
 - After reconnection: re-fetch full status, resume WebSocket stream.
 
