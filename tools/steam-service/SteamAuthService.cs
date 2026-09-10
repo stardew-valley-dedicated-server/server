@@ -89,6 +89,47 @@ public class SteamAuthService
 
     public bool IsLoggedIn { get; private set; }
     public string? SteamId => _steamClient.SteamID?.ConvertToUInt64().ToString();
+
+    /// <summary>Expiry of the refresh token last used to log in, from its JWT `exp` claim.</summary>
+    public DateTimeOffset? TokenExpiresAt { get; private set; }
+
+    /// <summary>
+    /// True when the refresh token came from STEAM_REFRESH_TOKEN / STEAM_ACCOUNTS rather than the
+    /// saved session. Renewal is refused for these: Steam invalidates the old token on renewal,
+    /// which would silently break the env copy.
+    /// </summary>
+    public bool TokenFromEnv { get; private set; }
+
+    /// <summary>
+    /// Steam's answer to a renewal request: a new token, a refusal (OK with no token, the normal
+    /// answer far from expiry), or an authentication failure (the token can no longer be renewed
+    /// but still logs in until <c>exp</c>).
+    /// </summary>
+    public enum TokenRenewalOutcome
+    {
+        Renewed,
+        Refused,
+        Failed,
+    }
+
+    /// <summary>Result of <see cref="RenewRefreshTokenAsync"/>; <c>Error</c> is the <see cref="EResult"/> name when <see cref="TokenRenewalOutcome.Failed"/>.</summary>
+    public record TokenRenewalResult(
+        TokenRenewalOutcome Outcome,
+        DateTimeOffset? PreviousExpiry,
+        DateTimeOffset? NewExpiry,
+        string? Error
+    )
+    {
+        public bool Renewed => Outcome == TokenRenewalOutcome.Renewed;
+    }
+
+    /// <summary>When <see cref="RenewRefreshTokenAsync"/> last asked Steam and what Steam answered.</summary>
+    public DateTimeOffset? LastRenewalAttemptAt { get; private set; }
+    public TokenRenewalOutcome? LastRenewalOutcome { get; private set; }
+    public string? LastRenewalError { get; private set; }
+
+    private const string SetupHint =
+        "Re-authenticate with: docker compose run --rm -it steam-auth setup";
     public ulong CurrentLobbyId => _currentLobbyId;
 
     public SteamAuthService(
@@ -244,6 +285,12 @@ public class SteamAuthService
         if (IsTerminalLogoff(result))
         {
             return; // banned/disabled
+        }
+
+        if (TokenExpiresAt is { } expiry && expiry <= DateTimeOffset.UtcNow)
+        {
+            Logger.Log($"{_logPrefix} Not reconnecting: refresh token expired. {SetupHint}");
+            return;
         }
 
         if (Interlocked.CompareExchange(ref _reconnectInProgress, 1, 0) != 0)
@@ -573,6 +620,7 @@ public class SteamAuthService
 
         _username = session.Value.username;
         _refreshToken = session.Value.refreshToken;
+        TokenFromEnv = false;
 
         await ConnectAndLoginAsync(_refreshToken);
     }
@@ -585,6 +633,7 @@ public class SteamAuthService
     {
         _username = username;
         _refreshToken = refreshToken;
+        TokenFromEnv = true;
 
         Logger.Log($"{_logPrefix} Logging in with provided token for {username}...");
         await ConnectAndLoginAsync(refreshToken);
@@ -784,6 +833,20 @@ public class SteamAuthService
         const int baseDelaySeconds = 5;
         var loginTimeout = TimeSpan.FromSeconds(30);
 
+        TokenExpiresAt = GetTokenExpiry(refreshToken);
+        if (TokenExpiresAt is { } expired && expired <= DateTimeOffset.UtcNow)
+        {
+            // Steam would reject it anyway; fail fast with the fix instead of five retries.
+            Logger.Log(
+                $"{_logPrefix} Refresh token expired on {expired:yyyy-MM-dd HH:mm:ss} UTC. {SetupHint}"
+            );
+            Logger.LogEvent(
+                "account_token_expired",
+                new { prefix = _logPrefix, expiresAt = expired.ToString("o") }
+            );
+            throw new Exception($"Refresh token expired on {expired:yyyy-MM-dd}. {SetupHint}");
+        }
+
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
             var tcs = new TaskCompletionSource<bool>();
@@ -794,7 +857,13 @@ public class SteamAuthService
                 Logger.Log(
                     $"{_logPrefix} Logging in as {_username} with token ({refreshToken.Length} chars)..."
                 );
-                PrintTokenExpiry(refreshToken);
+                if (TokenExpiresAt is { } expiry)
+                {
+                    var remaining = expiry - DateTimeOffset.UtcNow;
+                    Logger.Log(
+                        $"{_logPrefix} Token expires: {expiry:yyyy-MM-dd HH:mm:ss} UTC ({remaining.Days} days remaining)"
+                    );
+                }
             }
             else
             {
@@ -846,53 +915,175 @@ public class SteamAuthService
             }
         }
 
-        throw new Exception($"Login failed after {maxRetries} attempts");
+        throw new Exception(
+            $"Login failed after {maxRetries} attempts. If Steam rejected the token, {SetupHint}"
+        );
     }
 
-    private void PrintTokenExpiry(string token)
+    /// <summary>
+    /// Expiry from the token's JWT <c>exp</c> claim, or null when the token is not a parseable JWT
+    /// or carries no <c>exp</c>. Steam never published the signing key, so the claim is read
+    /// unverified.
+    /// </summary>
+    internal static DateTimeOffset? GetTokenExpiry(string token)
     {
         try
         {
-            // JWT format: header.payload.signature
             var parts = token.Split('.');
             if (parts.Length != 3)
             {
-                return;
+                return null;
             }
 
-            // Decode payload (base64url)
-            var payload = parts[1];
-            // Add padding if needed
-            payload = payload.Replace('-', '+').Replace('_', '/');
-            switch (payload.Length % 4)
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            payload += (payload.Length % 4) switch
             {
-                case 2:
-                    payload += "==";
-                    break;
-                case 3:
-                    payload += "=";
-                    break;
-            }
+                2 => "==",
+                3 => "=",
+                _ => "",
+            };
 
-            var json = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
-            var doc = JsonDocument.Parse(json);
-
-            if (doc.RootElement.TryGetProperty("exp", out var expProp))
-            {
-                var exp = expProp.GetInt64();
-                var expiryDate = DateTimeOffset.FromUnixTimeSeconds(exp);
-                var remaining = expiryDate - DateTimeOffset.UtcNow;
-
-                Logger.Log(
-                    $"{_logPrefix} Token expires: {expiryDate:yyyy-MM-dd HH:mm:ss} UTC ({remaining.Days} days remaining)"
-                );
-            }
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(payload));
+            return
+                doc.RootElement.TryGetProperty("exp", out var exp)
+                && exp.ValueKind == JsonValueKind.Number
+                && exp.TryGetInt64(out var seconds)
+                && seconds >= DateTimeOffset.MinValue.ToUnixTimeSeconds()
+                && seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+                ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+                : null;
         }
-        catch (Exception ex) when (ex is JsonException or FormatException or KeyNotFoundException)
+        catch (Exception ex) when (ex is JsonException or FormatException)
         {
-            // Token expiry parsing is non-critical, just skip it
+            return null;
         }
     }
+
+    /// <summary>
+    /// Asks Steam for a renewed refresh token over the logged-in session. Steam decides whether
+    /// to issue one; the result reports whether it did. A renewed token replaces the saved
+    /// session before returning because Steam invalidates the previous token on renewal.
+    /// Holds the login semaphore so the reconnect loop never reads the token mid-swap. An
+    /// <see cref="AuthenticationException"/> is reported as <see cref="TokenRenewalOutcome.Failed"/>
+    /// rather than thrown: the session stays up and the token keeps logging in until it expires.
+    /// </summary>
+    public async Task<TokenRenewalResult> RenewRefreshTokenAsync()
+    {
+        if (!IsLoggedIn)
+        {
+            throw new InvalidOperationException("Not logged in");
+        }
+
+        if (TokenFromEnv)
+        {
+            throw new InvalidOperationException(
+                "Token was supplied via environment; renewing it here would invalidate that copy. "
+                    + "Renew where the token is minted and update the environment value."
+            );
+        }
+
+        await _loginSemaphore.WaitAsync();
+        try
+        {
+            if (!IsLoggedIn || _refreshToken == null || _username == null)
+            {
+                throw new InvalidOperationException("Not logged in");
+            }
+
+            var steamId =
+                _steamClient.SteamID
+                ?? throw new InvalidOperationException("No SteamID on session");
+            var previousExpiry = TokenExpiresAt;
+            var attemptedAt = DateTimeOffset.UtcNow;
+            TokenRenewalOutcome outcome;
+            string? error = null;
+
+            try
+            {
+                var response = await _steamClient.Authentication.GenerateAccessTokenForAppAsync(
+                    steamId,
+                    _refreshToken,
+                    allowRenewal: true
+                );
+
+                if (string.IsNullOrEmpty(response.RefreshToken))
+                {
+                    outcome = TokenRenewalOutcome.Refused;
+                }
+                else
+                {
+                    // Steam has already invalidated the old token, so the new one is adopted
+                    // even if persisting it fails; that failure is reported, not hidden.
+                    _refreshToken = response.RefreshToken;
+                    TokenExpiresAt = GetTokenExpiry(_refreshToken);
+                    outcome = TokenRenewalOutcome.Renewed;
+                    try
+                    {
+                        SaveSession(_username, _refreshToken);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        error = $"renewed but not saved: {ex.Message}";
+                        Logger.Log(
+                            $"{_logPrefix} Refresh token renewed but saving the session failed ({ex.Message}). "
+                                + "The new token exists only in this process; if the sidecar restarts before "
+                                + $"a successful save, {SetupHint}"
+                        );
+                    }
+                }
+            }
+            catch (AuthenticationException ex)
+            {
+                outcome = TokenRenewalOutcome.Failed;
+                error = ex.Result.ToString();
+            }
+            catch (Exception ex)
+            {
+                LastRenewalAttemptAt = attemptedAt;
+                LastRenewalOutcome = TokenRenewalOutcome.Failed;
+                LastRenewalError = ex.Message;
+                throw;
+            }
+
+            LastRenewalAttemptAt = attemptedAt;
+            LastRenewalOutcome = outcome;
+            LastRenewalError = error;
+
+            Logger.Log(
+                outcome switch
+                {
+                    TokenRenewalOutcome.Renewed =>
+                        $"{_logPrefix} Refresh token renewed; new expiry {TokenExpiresAt:yyyy-MM-dd HH:mm:ss} UTC",
+                    TokenRenewalOutcome.Failed =>
+                        $"{_logPrefix} Refresh token renewal failed with {error} (current expiry {previousExpiry:yyyy-MM-dd HH:mm:ss} UTC)",
+                    _ =>
+                        $"{_logPrefix} Steam did not issue a new refresh token (current expiry {previousExpiry:yyyy-MM-dd HH:mm:ss} UTC)",
+                }
+            );
+            Logger.LogEvent(
+                "account_token_renewal",
+                new
+                {
+                    prefix = _logPrefix,
+                    outcome = OutcomeName(outcome),
+                    renewed = outcome == TokenRenewalOutcome.Renewed,
+                    error,
+                    previousExpiry = previousExpiry?.ToString("o"),
+                    newExpiry = TokenExpiresAt?.ToString("o"),
+                }
+            );
+
+            return new TokenRenewalResult(outcome, previousExpiry, TokenExpiresAt, error);
+        }
+        finally
+        {
+            _loginSemaphore.Release();
+        }
+    }
+
+    /// <summary>Wire form of an outcome in log events and HTTP JSON (lower-case).</summary>
+    public static string? OutcomeName(TokenRenewalOutcome? outcome) =>
+        outcome?.ToString().ToLowerInvariant();
 
     // ========================================================================
     // App Ticket (Encrypted App Ticket for Galaxy cross-platform auth)
