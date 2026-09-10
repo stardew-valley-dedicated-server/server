@@ -109,26 +109,52 @@ We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) fo
 
 **Format:**
 ```
-<type>: <description>
+<type>(<scope>): <description>
 
 [optional body]
 ```
 
-**Types:**
-- `feat:` - New feature (bumps minor version: 1.0.0 → 1.1.0)
-- `fix:` - Bug fix (bumps patch version: 1.0.0 → 1.0.1)
-- `docs:` - Documentation only (no version bump)
-- `chore:` - Maintenance tasks (no version bump)
-- `refactor:` - Code refactoring (no version bump)
-- `test:` - Adding tests (no version bump)
+Pick the **type** first — what *kind* of work it is; it drives the changelog and version bump. The **scope** is *which area* it touches, and is optional. **Kind → type, area → scope.**
+
+**Types** (11, all enforced):
+
+| Type | Use for | Changelog |
+|---|---|---|
+| `feat` | New player/admin-facing capability | Features (minor bump) |
+| `fix` | Bug fix in shipped behavior | Bug Fixes (patch bump) |
+| `perf` | Faster/lighter shipped behavior | Performance |
+| `revert` | Reverts a previous commit | shown |
+| `docs` | Documentation only | shown |
+| `refactor` | Restructure with no behavior change | hidden |
+| `test` | Test code only | hidden |
+| `build` | How artifacts are compiled/produced — Dockerfile build stages, `.csproj`, `Directory.Build.props`, SMAPI-version bumps | hidden |
+| `ci` | Pipelines, GitHub Actions, release automation | hidden |
+| `chore` | Everything else with no more specific kind — deps, repo config, `.claude/` | hidden |
+| `style` | Formatting only | hidden |
+
+**`ci` and `build` are types, never scopes** — a CI change is `ci:`, a build-system change is `build:`, never `fix(ci)` or `chore(ci)`. Reach for a hidden type when its *kind* fits (`test`, `refactor`, `build`, `ci`, `style`); use `chore` only when none does — never `chore(<kind>)`, which throws the area away.
+
+**Scopes** — optional, but when present must come from the enforced enum below (spelling and kebab-casing are validated, so `fix(cabin)` and `crop_saver` are rejected):
+
+| Group | Scopes |
+|---|---|
+| Product / runtime | `host` `core` `api` `steam` `auth` `lobby` `cabins` `chat` `saves` `crop-saver` `networking` `gameplay` `compat` `backup` `diagnostics` `discord` |
+| Infrastructure | `docker` |
+| Tooling / repo | `tests` `test-runner` `test-client` `test-ui` `tools` `claude` `docs` `repo` |
+| Dependencies (Renovate-emitted) | `deps` `deps-dev` `deps/*` |
+
+Rough guide: `host` = unattended host behavior (auto-pause/sleep, festivals); `core` = the server process/infrastructure; `chat` = the command framework + Discord relay, but a feature-specific command attributes to its feature (a `!cabin` change is `feat(cabins)`); `gameplay` = server-side vanilla-behavior tweaks; `compat` = interop with other/3rd-party mods.
+
+A bare `feat: …` with no scope is valid — that's the pressure-release valve for rare one-off areas. The enum lives in [`commitlint.config.js`](https://github.com/stardew-valley-dedicated-server/server/blob/master/commitlint.config.js); adding a recurring area is a one-line PR against it.
 
 **Breaking changes:**
 - `feat!:` or `BREAKING CHANGE:` in body (bumps major version: 1.0.0 → 2.0.0)
 
 **Examples:**
 ```bash
-git commit -m "feat: add cabin management system"
-git commit -m "fix: resolve memory leak in server loop"
+git commit -m "feat(cabins): add cabin management system"
+git commit -m "fix(core): resolve memory leak in the game loop"
+git commit -m "ci: cache NuGet restore across build jobs"
 git commit -m "docs: update installation guide"
 git commit -m "feat!: redesign configuration format"
 ```
@@ -137,6 +163,7 @@ git commit -m "feat!: redesign configuration format"
 
 After running `make install`, git hooks will automatically validate your commits:
 - ❌ Invalid: `"update readme"` → Error: type missing
+- ❌ Invalid: `"fix(cabin): typo"` → Error: scope not in enum (it's `cabins`)
 - ✅ Valid: `"docs: update readme"` → Accepted
 
 #### Making the Pull Request

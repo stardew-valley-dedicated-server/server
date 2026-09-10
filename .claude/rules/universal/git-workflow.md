@@ -36,6 +36,7 @@ gh pr merge <child-num> --squash --auto
 ## Commits and PRs
 
 - Conventional commits (commitlint), body lines max 100 chars, `git commit -F <file>`.
+- Pick the `type(scope)` via the `commit` skill — it carries the enforced type list and the files-edited→scope map.
 - No `Co-Authored-By` trailer. No co-author attribution in PRs.
 - Subjects (PR title, commit subject) are changelog lines: lead with the player/admin-facing outcome ("festivals no longer kick players who moved their cabin"), not the mechanism, and say what kind of thing shipped ("embeddable live server status widget for web pages", not "status widget backed by /status").
 - Commit body in plain English — what changed, why, what tests cover it — no unexplained in-house terms.
