@@ -45,7 +45,8 @@
         "rule": "Every artifact (file, report, event stream) has exactly one producer. Flag a change that adds a second writer for an artifact something else already produces — the fix is merging state upstream, not a second writer. Search the repo for the existing producer. (one-writer-per-artifact.md)"
       },
       {
-        "rule": "Every shared contract (env-var JSON, event fields, file formats) has one canonical typed record + parser. Flag a second hand-written parser (JsonDocument walks, key-string lookups) for a contract that already has one. Search the repo for the existing parser. (universal/one-parser-per-contract.md)"
+        "scope": ["mod/**/*.cs", "tests/**/*.cs", "tools/**/*.cs"],
+        "rule": "Every shared contract (env-var JSON, event fields, file formats) has one canonical typed record + parser. Flag a second hand-written parser (JsonDocument walks, key-string lookups) for a contract that already has one. Search the repo for the existing parser. (one-parser-per-contract.md)"
       },
       {
         "scope": ["tests/JunimoServer.Tests/Helpers/SetupEventBus.cs", "tests/JunimoServer.Tests/Helpers/ContainerStatsCollector.cs", "tests/JunimoServer.TestRunner/**", "tests/test-ui/src/types/events.ts", "tests/test-ui/src/types/state.ts", "tests/test-ui/src/composables/useTestStore.ts"],
@@ -130,7 +131,7 @@
         "description": "One producer per artifact — incident context for the distilled rule"
       },
       {
-        "path": ".claude/rules/universal/one-parser-per-contract.md",
+        "path": ".claude/rules/one-parser-per-contract.md",
         "description": "One canonical parser per shared contract — incident context for the distilled rule"
       },
       {

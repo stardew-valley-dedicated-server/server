@@ -15,4 +15,4 @@ Two further consequences worth expecting:
 
 **Why:** Sustained bot review of a rules PR produced both failure directions. A reviewer declared `FarmhandMenu.checkListPopulation` "not part of the base game" after `git ls-files` came back empty; the method exists and the rule's claim about it was sound. In the same review, a purely textual contradiction catch landed a genuine defect that had been carried, unverified, through a rule merge.
 
-**How to apply:** When a reviewer disputes a decompiled-source citation, open the path under `decompiled/` (from the main checkout — worktrees don't have it, per `git-workflow.md`), confirm the symbol, and answer with the line reference plus a note that the tree is gitignored. Reserve rule edits for findings that survive that check.
+**How to apply:** When a reviewer disputes a decompiled-source citation, open the path under `decompiled/` (from the main checkout — worktrees don't have it, per [`git-workflow.md`](universal/git-workflow.md)), confirm the symbol, and answer with the line reference plus a note that the tree is gitignored. Reserve rule edits for findings that survive that check.

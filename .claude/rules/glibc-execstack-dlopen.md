@@ -22,7 +22,7 @@ glibc misreports the main thread's stack as 4 KB with the stack pointer outside 
 `Task.RunSynchronously` gates inlining on `TryEnsureSufficientExecutionStack`, so it silently
 queued SMAPI's synchronized NewDay task to the thread pool, whose `BlockOnUIThread` then
 deadlocked against the blocked main thread — every server hung at "Synchronizing 'NewDay'
-task..." (same family as the musl deadlock in `modern-docker.md`). Native amd64 was unaffected,
+task..." (same family as the musl deadlock in [`modern-docker.md`](modern-docker.md)). Native amd64 was unaffected,
 which is what made the tunable look safe locally.
 
 **How to apply:** Probe the actual mechanism: a one-line dlopen (perl `DynaLoader`, python

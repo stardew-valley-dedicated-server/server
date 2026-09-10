@@ -136,7 +136,7 @@ Ordering = value/risk. Every item is **behavior-preserving** unless noted. Do th
 
 - Add a helper (in `GameControl/MenuNavigator.cs`) that, after setting `Game1.activeClickableMenu`, confirms the transition committed on the game thread (bounded retry) before returning success — instead of set-and-assume.
 - Extract the `FarmhandMenu` readiness check (`ModEntry.cs:552-626`) into a named helper with explicit states (loading / ready / failed) rather than 5 inline flags.
-- **Caution:** this is a retry/stability layer in screen-scraping code; per `.claude/rules/universal/retry-is-evidence-of-root-cause.md`, confirm each added retry papers over genuine UI-commit latency (provably outside our control) and not a missing await. Document the justification inline.
+- **Caution:** this is a retry/stability layer in screen-scraping code; per `.claude/rules/universal/dont-paper-over-root-cause.md`, confirm each added retry papers over genuine UI-commit latency (provably outside our control) and not a missing await. Document the justification inline.
 
 ### Priority 5 — Minor (opportunistic)
 

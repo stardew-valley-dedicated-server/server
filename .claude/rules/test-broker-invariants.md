@@ -36,7 +36,7 @@ Load-bearing invariants for the test resource broker, capacity gating, and sessi
 
 ## Session Liveness
 
-- **A liveness gate must cross-check client belief against server truth.** `PersistentSession.IsAliveAsync` originally only checked the test-client's `IsConnected` flag. The client can believe it's connected after the server has evicted the peer — reuse then proceeded and `GrantAdmin` failed for 10s with "player not found" (`getAllFarmers()` didn't contain the uid). Any "is this session still usable?" check that reads only one side of the connection is not a liveness gate. Require both: client-side `GetState().IsConnected` AND server-side `WaitForPlayerByIdAsync(uid)` within a short budget (`SessionRevalidationBudget`, 2s).
+- **A liveness gate must cross-check client belief against server truth.** Checking only the test-client's `IsConnected` flag is not enough: the client can believe it's connected after the server has evicted the peer, so reuse proceeds and `GrantAdmin` fails for 10s with "player not found" (`getAllFarmers()` didn't contain the uid). Any "is this session still usable?" check that reads only one side of the connection is not a liveness gate. Require both: client-side `GetState().IsConnected` AND server-side `WaitForPlayerByIdAsync(uid)` within a short budget (`SessionRevalidationBudget`, 2s).
 - **`/players` snapshot ⇔ `getAllFarmers()` for connected peers.** Both derive from `Game1.otherFarmers` — `/players` iterates `otherFarmers.Roots` via `FarmerCollection`, and `getAllFarmers()` filters `farmhandData` by `isActive() == otherFarmers.ContainsKey(uid)`. So `/players` is a reliable precondition gate for any `getAllFarmers()`-based mod endpoint.
 
 ## Polling Budgets

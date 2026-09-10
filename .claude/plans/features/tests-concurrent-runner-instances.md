@@ -188,7 +188,7 @@ cache the `GameDataDistributor` populates).
 
 There is also a *protocol-level* constraint: Steam allows **one live login per account**, and
 both runners build/log-in with `STEAM_ACCOUNTS[0]` today. Per
-`protocol-invariant-not-file-workaround.md`, this is enforced by Steam on the *account
+`dont-paper-over-root-cause.md` (§ in space), this is enforced by Steam on the *account
 identifier*, not the file — so the fix is disjoint accounts, not disjoint session files.
 
 **Per the user's decision (document constraints, no auto-split), the plan does NOT add

@@ -2,7 +2,7 @@
 
 Before you write a concrete claim that a reader will act on — an identifier name, a framework behavior, a cited number, a "nothing consumes this" cut, "the reference implementation handles X" — verify it. One grep, one source read, one benchmark check. Don't pattern-match plausible-sounding names from context, don't propagate cited numbers without checking the primary source, and don't act on shallow no-consumer reads.
 
-**Why:** A fabricated `SDVD_STEAM_ACCOUNTS_N` (real name: `STEAM_ACCOUNTS`) almost shipped in a user-facing log message, pattern-matched from the surrounding `SDVD_MAX_*` convention without a grep. Every category below is anchored to a near-miss of the same shape — a conflated emulation-slowdown figure, a `correlation_id` cut that would have broken `AsyncLocal` capture (`asynclocal-pitfalls.md`), a spec whose motivation contradicted its own design.
+**Why:** A fabricated `SDVD_STEAM_ACCOUNTS_N` (real name: `STEAM_ACCOUNTS`) almost shipped in a user-facing log message, pattern-matched from the surrounding `SDVD_MAX_*` convention without a grep — and each category below is anchored to a near-miss of the same shape (a conflated emulation-slowdown figure, a `correlation_id` cut that would have broken `AsyncLocal` capture, a spec whose motivation contradicted its own design).
 
 **How to apply:**
 - **Identifier names** in plans or proposed user-facing strings (env vars, flags, file paths, Makefile targets, config keys, event names) → one Grep before publishing. Especially important for strings that survive the plan and outlive it (log messages, error text, doc snippets).

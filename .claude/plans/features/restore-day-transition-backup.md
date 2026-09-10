@@ -174,4 +174,4 @@ Per `.claude/rules/universal/plan-discipline.md`'s adversarial section, the feat
 
 ## Why this is a feature plan, not a bug fix
 
-The audit framed this as "fix a deadlock." Per `.claude/rules/universal/retry-is-evidence-of-root-cause.md` (and `verify-claims.md`), the audit's premise didn't survive verification: there is no live deadlock, no live blocking, no live save-time freeze — because the code does not run. The right framing is "this feature was abandoned mid-implementation; do we want it?" The user's answer is yes, with proper wiring and a fully-async chain. That makes it a feature plan, with the audit-doc correction handled separately.
+The audit framed this as "fix a deadlock." Per `.claude/rules/universal/dont-paper-over-root-cause.md` (and `verify-claims.md`), the audit's premise didn't survive verification: there is no live deadlock, no live blocking, no live save-time freeze — because the code does not run. The right framing is "this feature was abandoned mid-implementation; do we want it?" The user's answer is yes, with proper wiring and a fully-async chain. That makes it a feature plan, with the audit-doc correction handled separately.

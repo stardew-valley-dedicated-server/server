@@ -25,7 +25,7 @@ Out of scope unless the user opts in: `.claude/plans/**`, `docs/**`, anything ou
 
 ### Pass 1 — Inventory
 
-Glob the in-scope files (filtered by argument if any). Read each. Build a flat list: path, line count, frontmatter, one-line summary. Cross-check `.claude/rules/README.md`: every file listed, every listed file present, one-liners match.
+Glob the in-scope files (filtered by argument if any). Read each. Build a flat list: path, line count, frontmatter, one-line summary. Cross-check `.claude/rules/README.md`: every **path-scoped** file (`.claude/rules/*.md`) has an index row, every indexed file is present, one-liners match. Universal files carry no index row — confirm they are not listed, not that they are.
 
 **Early exit:** if pass 1 surfaces no candidate issues at all, report that and stop. Don't manufacture findings.
 
@@ -89,8 +89,8 @@ The keep-test for every line: **"Would removing this cause Claude to make mistak
 
 #### Index sync
 
-- Every file in `.claude/rules/` and `.claude/rules/universal/` listed in `README.md`.
-- One-liner matches current rule.
+- Only path-scoped rules (`.claude/rules/*.md`) are indexed. Every one has a row; every row maps to a present file. Universal rules (`.claude/rules/universal/*.md`) are always loaded and carry no row — verify by globbing `universal/`, not by an index entry.
+- One-liner is a single trigger clause — enough to decide whether to open the rule — and matches the current rule.
 - "Triggers on" column reflects current `paths:` (abbreviated is fine).
 
 ### Pass 3 — Propose, then act
