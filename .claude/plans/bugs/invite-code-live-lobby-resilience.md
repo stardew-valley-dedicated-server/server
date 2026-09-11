@@ -1,13 +1,15 @@
 # Final Plan: Invite code mirrors the live Galaxy lobby; connectivity state is legible; Galaxy recovers independently
 
 Status: implemented on branch `fix/invite-code-live-lobby-resilience` (mod + tests build clean;
-discord-bot TS tests pass). **Do NOT ship as-is.** Phase 1 (invite-code mirror) and Phase 2
-(observability) are clean and final. Phase 3 (recovery) is correct but structurally flawed — it layers a
-wall-clock supervisor next to the pre-existing Steam-reconnect re-login driver, coordinating through
-shared flags (the F4/F6/F7 review fixes are the evidence). It must be consolidated into a single
-poll-driven state machine before this ships. See
-[`.claude/plans/refactor/galaxy-recovery-single-driver.md`](../refactor/galaxy-recovery-single-driver.md)
-— execute that in a fresh session, then ship all three phases together.
+discord-bot TS tests pass). Ship all three phases together.
+
+Phase 3 (recovery) keeps two triggers — the Steam-reconnect callback and the wall-clock supervisor
+`PumpGalaxyRecovery` — over one gated machinery (`TryBeginGalaxyReSignInGated` plus the in-flight guard
+in `BeginGalaxyReSignIn`) by design; a single stored state machine was evaluated and rejected because it
+would only relabel the in-flight flags as a second source of truth. Both triggers enter recovery through
+`EnterRecovering`. The settle hold in `ConsumePendingGalaxyReSignIn` (next attempt = max(existing,
+now + grace)) is load-bearing: the ticket fetch blocks up to the grace window and the initial backoff
+equals it, so a clock set at attempt start could expire while the re-created lobby is still entering.
 
 ## Implementation status (what landed vs. what still needs a test endpoint)
 

@@ -133,7 +133,10 @@ public class GalaxyAuthService : ModService
 
     /// <summary>
     /// Galaxy lobby state surfaced on <c>/status</c> and <c>/health</c>: <c>connected</c> |
-    /// <c>recovering</c> | <c>down</c>. Owned solely by <see cref="PumpGalaxyRecovery"/>.
+    /// <c>recovering</c> | <c>down</c>. Writers: <see cref="PumpGalaxyRecovery"/> (connected),
+    /// <see cref="EnterRecovering"/> (recovering, from both the supervisor and the reconnect re-login),
+    /// <see cref="SetInviteCodeFromLiveLobby"/> on a non-null code (connected), and
+    /// <see cref="SteamHelperShutdown_Prefix"/> (down).
     /// <see cref="GalaxyLobbyState"/> returns null in LAN mode (no Galaxy).
     /// </summary>
     private static volatile string _galaxyLobbyState = "down";
@@ -734,6 +737,24 @@ public class GalaxyAuthService : ModService
     }
 
     /// <summary>
+    /// Marks the lobby as recovering. Shared by both recovery triggers (the wall-clock supervisor and
+    /// the Steam-reconnect re-login) so the state, flag, backoff reset and event are written once.
+    /// Idempotent; returns true only on the transition into recovery so the caller can arm its timers.
+    /// </summary>
+    private static bool EnterRecovering()
+    {
+        _galaxyLobbyState = "recovering";
+        if (_galaxyRecovering)
+        {
+            return false;
+        }
+        _galaxyRecovering = true;
+        _reloginBackoffSeconds = SupervisorInitialBackoffSeconds;
+        Diagnostics.ModEventLog.Emit("galaxy_lobby_recovering");
+        return true;
+    }
+
+    /// <summary>
     /// Independent Galaxy recovery supervisor + degraded-only invite-code safety net, evaluated on a
     /// shared ~5s wall-clock gate (TPS-independent) from the game-thread pump. Acts ONLY when the lobby
     /// is known to be down (<see cref="IsGalaxyLobbyConnected"/> == <c>false</c>: the GalaxyNetServer and
@@ -785,15 +806,11 @@ public class GalaxyAuthService : ModService
         // Lobby down: either the GalaxyNetServer is present with lobby == null (connected == false), or
         // it went missing mid-recovery (connected == null && already recovering).
         SetInviteCodeFromLiveLobby(); // degraded safety net: withdraws the now-dead code
-        _galaxyLobbyState = "recovering";
 
-        if (!_galaxyRecovering)
+        if (EnterRecovering())
         {
-            _galaxyRecovering = true;
             // Let vanilla's own ~20s recreate timer try first before escalating to a re-login.
             _nextReloginAttemptUtc = now + SupervisorGraceWindow;
-            _reloginBackoffSeconds = SupervisorInitialBackoffSeconds;
-            Diagnostics.ModEventLog.Emit("galaxy_lobby_recovering");
         }
 
         // Don't escalate (or grow backoff) while a re-login is already in flight: BeginGalaxyReSignIn
@@ -1451,8 +1468,7 @@ public class GalaxyAuthService : ModService
             // code is withdrawn, and (b) — critically — arms the supervisor's null-branch, so if
             // SignInSteam below throws after the server was removed, the supervisor still re-drives the
             // re-login instead of treating the missing server as a not-actionable boot/reload window.
-            _galaxyRecovering = true;
-            _galaxyLobbyState = "recovering";
+            EnterRecovering();
 
             // Hold off the supervisor's next escalation by at least the grace window while THIS re-login
             // settles. Without this, a reconnect-triggered re-login (which never set _nextReloginAttemptUtc)
