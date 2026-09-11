@@ -4,8 +4,9 @@
 // (scope, then subject). The core function is exported so `npm test` can call it.
 //
 // How the action runs it: it pipes `git log --first-parent --format='%H%x1f%s%x1f%b%x1e' BASE..HEAD`
-// in on stdin and sets the BASE_TAG, HEAD_OID and REPO_URL env vars. We write markdown / count /
-// visible-count / hidden-count / compare-url to $GITHUB_OUTPUT (or print them to stdout locally).
+// in on stdin (\x1e-terminated records, so a multi-line body stays in one record) and sets the
+// BASE_TAG, HEAD_OID and REPO_URL env vars. We write markdown / count / visible-count /
+// hidden-count / compare-url to $GITHUB_OUTPUT (or print them to stdout locally).
 // The workflow prepends a `# Build|Release [<version>](<hub>) is available!` line and posts the
 // whole thing as the first embed's description; the full diff is reached from the "See all changes" button.
 //
@@ -39,6 +40,9 @@ const BUDGET = 3900;
 
 const CONVENTIONAL_RE = /^([a-z]+)(?:\(([^()]*)\))?(!)?: (.*)$/i;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)$/;
+// A commit is breaking with a `!` in the subject or a `BREAKING CHANGE:` / `BREAKING-CHANGE:`
+// footer in the body — release-please honours both, so the callout must recognise both too.
+const BREAKING_RE = /\bBREAKING[ -]CHANGE\b/;
 // release-please's own "release" commit (e.g. "chore(master): release 1.5.0") is what
 // a release tag points at, so it falls inside its own range. It's release plumbing, not a real
 // change, so we drop it from every count — otherwise it would inflate the hidden-change count.
@@ -80,18 +84,19 @@ function parseSubject(subject) {
         type: conv ? conv[1].toLowerCase() : null,
         scope: conv ? (conv[2] ?? "") : "",
         subject: conv ? conv[4] : text,
-        breaking: conv ? conv[3] === "!" || /\bBREAKING[ -]CHANGE\b/.test(text) : false,
+        breaking: conv ? conv[3] === "!" || BREAKING_RE.test(text) : false,
         pr,
     };
 }
 
 /**
- * Expand one commit into the subjects it contributes: its own subject, plus every body line that
- * is itself a conventional commit (a squash of a PR shipping several changes). Body entries carry
- * the subject's `(#N)` so they link to the same PR. Anything else in the body is ignored.
+ * Expand one commit into the entries it contributes: itself (subject plus body, so a `BREAKING
+ * CHANGE:` footer is seen), plus every body line that is itself a conventional commit (a squash of
+ * a PR shipping several changes). Body entries carry the subject's `(#N)` so they link to the same
+ * PR, and have no body of their own. Anything else in the body is ignored.
  * @param {string} subject - Raw `git log %s` subject line.
  * @param {string} body - Raw `git log %b` body (may be empty).
- * @returns {string[]}
+ * @returns {{subject: string, body: string}[]}
  */
 function expandCommit(subject, body) {
     const pr = subject.match(PR_SUFFIX_RE);
@@ -100,8 +105,8 @@ function expandCommit(subject, body) {
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => CONVENTIONAL_RE.test(line))
-        .map((line) => `${line}${suffix}`);
-    return [subject, ...extra];
+        .map((line) => ({ subject: `${line}${suffix}`, body: "" }));
+    return [{ subject, body }, ...extra];
 }
 
 const GROUP_TYPES = new Set(GROUPS.map(([t]) => t));
@@ -125,33 +130,43 @@ function byScopeThenSubject(a, b) {
     return a.scope.localeCompare(b.scope) || a.subject.localeCompare(b.subject);
 }
 
-/** @returns {string[]} the entries of one section, sorted, rendered. */
+/** @returns {{text: string, id: number}[]} one section's entries, sorted and rendered. */
 function renderSection(entries, repoUrl) {
-    return [...entries].sort(byScopeThenSubject).map((e) => renderEntry(e, repoUrl));
+    return [...entries].sort(byScopeThenSubject).map((e) => ({ text: renderEntry(e, repoUrl), id: e.id }));
 }
 
 /**
  * Build the changelog markdown for a commit range.
- * @param {string[]} subjects - `git log %s` subjects, newest first (git log order).
+ * @param {(string | {subject: string, body?: string})[]} commits - commits newest first (git log
+ *   order). A plain string is treated as a subject with no body; the body is scanned for a
+ *   `BREAKING CHANGE:` footer so a commit that declares breaking only in its body still gets the callout.
  * @param {{repoUrl: string, baseTag: string, headOid: string}} opts
  * @returns {{markdown: string, count: number, visibleCount: number, hiddenCount: number, compareUrl: string}}
  *   `markdown` is never longer than BUDGET code points. If the full list wouldn't fit, trailing
  *   entries are dropped at a line boundary (dropping any section heading left empty) and a bottom
- *   line says how many entries were left off.
+ *   line says how many unique commits were left off.
  */
-function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
+function buildChangelog(commits, { repoUrl, baseTag, headOid }) {
     const compareUrl = `${repoUrl}/compare/${baseTag}...${headOid}`;
 
-    const changes = subjects.filter((s) => !RELEASE_COMMIT_RE.test(s));
+    // Accept raw subject strings (unit tests, and any caller without bodies) or {subject, body}.
+    const normalized = commits.map((c) => (typeof c === "string" ? { subject: c, body: "" } : c));
+    const changes = normalized.filter(({ subject }) => !RELEASE_COMMIT_RE.test(subject));
     const buckets = new Map(GROUPS.map(([t]) => [t, []]));
     const other = [];
     let hiddenCount = 0;
-    for (const subject of changes) {
+    let nextId = 0;
+    for (const { subject, body } of changes) {
         const entry = parseSubject(subject);
+        // Breaking can be declared by `!` in the subject (parsed above) or a `BREAKING CHANGE:` body footer.
+        entry.breaking = entry.breaking || BREAKING_RE.test(body ?? "");
         if (entry.type !== null && HIDDEN_TYPES.has(entry.type)) {
             hiddenCount += 1;
             continue;
         }
+        // A stable id per commit, so the breaking callout and the type-section copy of the same
+        // commit share it and the over-budget notice can count unique commits, not rendered lines.
+        entry.id = nextId++;
         (buckets.get(entry.type) ?? other).push(entry);
     }
 
@@ -169,53 +184,56 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     // Breaking changes get a callout at the top (like release-please's ⚠ BREAKING CHANGES section);
     // the icon lives only on this heading — each commit also appears in its own type section below,
     // rendered the same as any other entry.
+    const heading = (text) => ({ text, id: null });
     const breaking = [...GROUPS.flatMap(([t]) => buckets.get(t)), ...other].filter((e) => e.breaking);
     const sections = [];
     if (breaking.length) {
-        sections.push(["### ⚠️ Breaking changes", ...renderSection(breaking, repoUrl)]);
+        sections.push([heading("### ⚠️ Breaking changes"), ...renderSection(breaking, repoUrl)]);
     }
-    for (const [type, heading] of GROUPS) {
+    for (const [type, sectionHeading] of GROUPS) {
         const entries = buckets.get(type);
         if (entries.length) {
-            sections.push([heading, ...renderSection(entries, repoUrl)]);
+            sections.push([heading(sectionHeading), ...renderSection(entries, repoUrl)]);
         }
     }
     if (other.length) {
-        sections.push(["### Other", ...renderSection(other, repoUrl)]);
+        sections.push([heading("### Other"), ...renderSection(other, repoUrl)]);
     }
 
-    // No blank separators — the `###` headings carry their own spacing.
+    // No blank separators — the `###` headings carry their own spacing. Each line is {text, id};
+    // id is null for headings and shared between a commit's breaking callout and type-section copies.
     const lines = sections.flat();
-    const full = [HEADER, ...lines].join("\n");
+    const full = [HEADER, ...lines.map((l) => l.text)].join("\n");
     if (codePoints(full) <= BUDGET) {
         return { ...result, markdown: full };
     }
 
     // Over budget: keep lines from the top until the next won't fit (reserving room for the notice,
     // measured at its longest in case everything remaining is dropped), then drop any trailing
-    // heading left with no entries and note how many entries were left off.
-    const isHeading = (line) => line.startsWith("### ");
-    const totalEntries = lines.filter((line) => !isHeading(line)).length;
+    // heading left with no entries and note how many unique commits were left off. Counting commits
+    // (not lines) means a breaking commit kept in the callout isn't reported "more" just because its
+    // duplicate type-section line fell off the end.
+    const totalCommits = new Set(lines.filter((l) => l.id !== null).map((l) => l.id)).size;
     const notice = (n) => `- …and ${n} more`;
-    const reserve = 1 + codePoints(notice(totalEntries));
+    const reserve = 1 + codePoints(notice(totalCommits));
     const kept = [HEADER];
+    const keptCommits = new Set();
     let used = codePoints(HEADER);
-    let keptEntries = 0;
     for (const line of lines) {
-        const cost = 1 + codePoints(line);
+        const cost = 1 + codePoints(line.text);
         if (used + cost + reserve > BUDGET) {
             break;
         }
-        kept.push(line);
+        kept.push(line.text);
         used += cost;
-        if (!isHeading(line)) {
-            keptEntries += 1;
+        if (line.id !== null) {
+            keptCommits.add(line.id);
         }
     }
-    while (kept.length > 1 && isHeading(kept[kept.length - 1])) {
+    while (kept.length > 1 && kept[kept.length - 1].startsWith("### ")) {
         kept.pop();
     }
-    const dropped = totalEntries - keptEntries;
+    const dropped = totalCommits - keptCommits.size;
     const markdown = dropped > 0 ? [...kept, notice(dropped)].join("\n") : kept.join("\n");
     return { ...result, markdown };
 }
@@ -243,16 +261,16 @@ function main() {
     const repoUrl = requireEnv("REPO_URL");
 
     // Each record is `<sha>\x1f<subject>\x1f<body>\x1e`. Bodies span lines, so records are split
-    // on the \x1e terminator and fields on \x1f; a record with an empty subject still counts.
-    const subjects = readFileSync(0, "utf8")
+    // on the \x1e terminator and fields on \x1f; a record with an empty subject or body still counts.
+    const commits = readFileSync(0, "utf8")
         .split("\x1e")
         .filter((record) => record.includes("\x1f"))
         .flatMap((record) => {
-            const [, subject = "", body = ""] = record.split("\x1f");
-            return expandCommit(subject.trim(), body);
+            const fields = record.split("\x1f");
+            return expandCommit((fields[1] ?? "").trim(), fields.slice(2).join("\x1f"));
         });
 
-    const result = buildChangelog(subjects, { repoUrl, baseTag, headOid });
+    const result = buildChangelog(commits, { repoUrl, baseTag, headOid });
     const delimiter = `EOF_${randomUUID()}`;
     const output = [
         `markdown<<${delimiter}`,

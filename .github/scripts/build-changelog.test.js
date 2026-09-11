@@ -86,6 +86,31 @@ test("a breaking commit gets a top callout and also appears in its type section 
     );
 });
 
+test("a commit breaking only via a body footer still gets the callout", () => {
+    const result = buildChangelog(
+        [
+            {
+                subject: "feat(api): rework auth (#20)",
+                body: "Rework the login flow.\n\nBREAKING CHANGE: /login now requires a token.",
+            },
+            { subject: "fix: small fix (#19)", body: "" },
+        ],
+        OPTS,
+    );
+    assert.equal(
+        result.markdown,
+        [
+            "## Changes",
+            "### ⚠️ Breaking changes",
+            "- api: rework auth ([#20](https://github.com/o/r/pull/20))",
+            "### Features",
+            "- api: rework auth ([#20](https://github.com/o/r/pull/20))",
+            "### Bug Fixes",
+            "- small fix ([#19](https://github.com/o/r/pull/19))",
+        ].join("\n"),
+    );
+});
+
 test("a subject without (#N) is listed without a PR link", () => {
     const result = buildChangelog(["feat(tools): add request-correlation context"], OPTS);
     assert.equal(
@@ -209,15 +234,18 @@ test("a squash commit's conventional body lines become their own entries, linked
         "chore: internal tidy-up",
     ].join("\n");
     assert.deepEqual(expandCommit("feat(docker): quieter console (#661)", body), [
-        "feat(docker): quieter console (#661)",
-        "fix(docker): the console exits when the server isn't running (#661)",
-        "feat(docker): startup noise is hidden (#661)",
-        "chore: internal tidy-up (#661)",
+        { subject: "feat(docker): quieter console (#661)", body },
+        { subject: "fix(docker): the console exits when the server isn't running (#661)", body: "" },
+        { subject: "feat(docker): startup noise is hidden (#661)", body: "" },
+        { subject: "chore: internal tidy-up (#661)", body: "" },
     ]);
     // Without a PR suffix on the subject, body entries get none either.
-    assert.deepEqual(expandCommit("fix: direct push", "feat: extra"), ["fix: direct push", "feat: extra"]);
+    assert.deepEqual(expandCommit("fix: direct push", "feat: extra"), [
+        { subject: "fix: direct push", body: "feat: extra" },
+        { subject: "feat: extra", body: "" },
+    ]);
     // An empty body contributes nothing.
-    assert.deepEqual(expandCommit("fix: alone (#1)", ""), ["fix: alone (#1)"]);
+    assert.deepEqual(expandCommit("fix: alone (#1)", ""), [{ subject: "fix: alone (#1)", body: "" }]);
 });
 
 test("zero commits reports no changes since the base tag", () => {
