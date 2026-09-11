@@ -143,14 +143,22 @@ jobs:
           # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_RELEASES || vars.DISCORD_BOT_USERNAME || 'Release Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_RELEASES || vars.DISCORD_BOT_AVATAR_URL }}
-          title: Release ${{ needs.release-please.outputs.version }}
-          color: "5763719"
+          # Logo green (#77FF6E) for stable releases; the preview channel uses amber. No title — the
+          # version headline is inline in the description so it can link to the image tag.
+          color: "7864174"
           description: |
+            # Release [${{ needs.release-please.outputs.version }}](https://hub.docker.com/r/sdvd/server/tags?name=${{ needs.release-please.outputs.version }}) is available!
             ${{ steps.changelog.outputs.markdown }}
-
-            ${{ steps.changelog.outputs.upgrade-notes }}**Update** ([documentation](https://docs.junimoserver.com/admins/operations/upgrading))
-            Linux/macOS: `curl -fsSL https://docs.junimoserver.com/update.sh | bash`
-            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
+          embed2-description: |
+            ## Install or update
+            Run from your server folder to update, or from an empty folder for a new server.
+            ### Linux/macOS
+            `curl -fsSL https://docs.junimoserver.com/install.sh | bash`
+            ### Windows (PowerShell)
+            `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`
+          buttons: >-
+            [{"label":"Upgrade guide","url":"https://docs.junimoserver.com/admins/operations/upgrading"},
+             {"label":"See all changes","url":"${{ steps.changelog.outputs.compare-url }}"}]
 
   stamp-issue-versions:
     name: Stamp Issue Versions

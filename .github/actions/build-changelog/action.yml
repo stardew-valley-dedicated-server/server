@@ -19,7 +19,7 @@ inputs:
 
 outputs:
   markdown:
-    description: Changelog markdown (at most 3200 code points)
+    description: Changelog markdown (at most 3900 code points)
     value: ${{ steps.changelog.outputs.markdown }}
   count:
     description: Commits in the range
@@ -36,11 +36,6 @@ outputs:
   compare-url:
     description: GitHub compare URL for the range
     value: ${{ steps.changelog.outputs.compare-url }}
-  upgrade-notes:
-    description: >
-      "Config changed" list flagging docker-compose.yml / .env.example changes in the range;
-      empty if none, otherwise ends with a blank line.
-    value: ${{ steps.files.outputs.upgrade-notes }}
 
 runs:
   using: composite
@@ -65,28 +60,3 @@ runs:
       run: |
         git log --first-parent --format='%H%x1f%s' "$BASE_OID..$HEAD_OID" \
           | node "$GITHUB_ACTION_PATH/../../scripts/build-changelog.js"
-
-    - name: Flag changed operator files
-      id: files
-      shell: bash
-      env:
-        BASE_OID: ${{ steps.range.outputs.base-oid }}
-        HEAD_OID: ${{ steps.range.outputs.head-oid }}
-      run: |
-        set -euo pipefail
-        changed=$(git diff --name-only "$BASE_OID" "$HEAD_OID" -- docker-compose.yml .env.example)
-        notes=""
-        if grep -qx 'docker-compose.yml' <<< "$changed"; then
-          notes+='- `docker-compose.yml`: how to [customize](https://docs.junimoserver.com/admins/operations/upgrading#customizing-docker-compose)'$'\n'
-        fi
-        if grep -qx '.env.example' <<< "$changed"; then
-          notes+='- `.env.example`: see the [new options](https://docs.junimoserver.com/admins/configuration/environment)'$'\n'
-        fi
-        {
-          echo "upgrade-notes<<EOF_UPGRADE_NOTES"
-          if [ -n "$notes" ]; then
-            printf '**Config changed**\n%s\n' "$notes"
-          fi
-          echo "EOF_UPGRADE_NOTES"
-        } >> "$GITHUB_OUTPUT"
-        echo "changed: ${changed:-none}"

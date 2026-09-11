@@ -1,18 +1,25 @@
 name: Discord Notify
 description: >
-  Posts one embed message to a Discord webhook. It checks Discord's size limits first and fails
-  the step with a clear message rather than posting something cut off. If the webhook input is
-  empty it just logs a note and exits 0, so notifications quietly stop when the secret isn't set.
-  If the post itself fails the step fails (curl --fail-with-body); callers on the success path set
-  continue-on-error, so a Discord outage never turns a passing build or deploy red.
+  Posts a message to a Discord webhook: a primary embed, an optional second embed, an optional
+  plain content line above them, and an optional row of link buttons. It checks Discord's size
+  limits first and fails the step with a clear message rather than posting something cut off. If
+  the webhook input is empty it just logs a note and exits 0, so notifications quietly stop when
+  the secret isn't set. If the post itself fails the step fails (curl --fail-with-body); callers on
+  the success path set continue-on-error, so a Discord outage never turns a passing build red.
 
 inputs:
   webhook:
     description: Discord webhook URL; empty means log "no webhook configured" and skip
     required: true
+  content:
+    description: Optional plain message line shown above the embeds (at most 2000 characters)
+    required: false
+    default: ""
   title:
-    description: Embed title (at most 256 characters)
-    required: true
+    description: Optional primary embed title (at most 256 characters); omit it and put the
+      heading in the description instead. Either a title or a description must be set.
+    required: false
+    default: ""
   url:
     description: Optional URL the title links to
     required: false
@@ -33,13 +40,29 @@ inputs:
     description: Embed color as a decimal number
     required: true
   description:
-    description: Optional embed description, markdown (at most 4096 characters)
+    description: Optional primary-embed description, markdown (at most 4096 characters)
     required: false
     default: ""
   fields:
     description: >
       Optional JSON array of {name, value, inline?} objects. Callers build it with
       `jq -n --arg` so user-supplied text is never string-interpolated into JSON.
+    required: false
+    default: "[]"
+  embed2-title:
+    description: Optional second-embed title; the second embed is added only if this or its
+      description is set (at most 256 characters)
+    required: false
+    default: ""
+  embed2-description:
+    description: Optional second-embed description, markdown (at most 4096 characters)
+    required: false
+    default: ""
+  buttons:
+    description: >
+      Optional JSON array of {label, url} link buttons rendered in one row below the embeds
+      (max 5). Author-controlled values only. When present, `?with_components=true` is added to the
+      webhook URL so Discord renders them.
     required: false
     default: "[]"
   dry-run:
@@ -54,6 +77,7 @@ runs:
       shell: bash
       env:
         WEBHOOK: ${{ inputs.webhook }}
+        CONTENT: ${{ inputs.content }}
         TITLE: ${{ inputs.title }}
         URL: ${{ inputs.url }}
         USERNAME: ${{ inputs.username }}
@@ -61,6 +85,9 @@ runs:
         COLOR: ${{ inputs.color }}
         DESCRIPTION: ${{ inputs.description }}
         FIELDS: ${{ inputs.fields }}
+        EMBED2_TITLE: ${{ inputs.embed2-title }}
+        EMBED2_DESCRIPTION: ${{ inputs.embed2-description }}
+        BUTTONS: ${{ inputs.buttons }}
         DRY_RUN: ${{ inputs.dry-run }}
       run: |
         set -euo pipefail
@@ -71,10 +98,14 @@ runs:
         fi
 
         [[ "$COLOR" =~ ^[0-9]+$ ]] || { echo "::error::discord-notify: color must be decimal, got '$COLOR'"; exit 1; }
-        [ -n "$TITLE" ] || { echo "::error::discord-notify: title must not be empty"; exit 1; }
+        [ -n "$TITLE" ] || [ -n "$DESCRIPTION" ] \
+          || { echo "::error::discord-notify: a title or a description must be set"; exit 1; }
         jq -e 'type == "array" and all(.[]; (.name | type == "string") and (.value | type == "string"))' \
           >/dev/null 2>&1 <<< "$FIELDS" \
           || { echo "::error::discord-notify: fields must be a JSON array of {name, value} objects"; exit 1; }
+        jq -e 'type == "array" and all(.[]; (.label | type == "string") and (.url | type == "string"))' \
+          >/dev/null 2>&1 <<< "$BUTTONS" \
+          || { echo "::error::discord-notify: buttons must be a JSON array of {label, url} objects"; exit 1; }
 
         # If a caller sets a name (release/preview) but no avatar, fall back to the project logo.
         # This is the one place that URL lives; it's served from the docs site. Callers with no name
@@ -84,47 +115,65 @@ runs:
         fi
 
         payload=$(jq -cn \
+          --arg content "$CONTENT" \
           --arg title "$TITLE" \
           --arg url "$URL" \
           --arg desc "$DESCRIPTION" \
+          --arg e2title "$EMBED2_TITLE" \
+          --arg e2desc "$EMBED2_DESCRIPTION" \
           --arg username "$USERNAME" \
           --arg avatar "$AVATAR_URL" \
           --argjson color "$COLOR" \
           --argjson fields "$FIELDS" \
-          '{
-            embeds: [(
-              {title: $title, color: $color}
-              + (if $url == "" then {} else {url: $url} end)
-              + (if $desc == "" then {} else {description: $desc} end)
-              + (if ($fields | length) == 0 then {} else {fields: $fields} end)
-            )]
-          }
+          --argjson buttons "$BUTTONS" \
+          '(
+            {color: $color}
+            + (if $title == "" then {} else {title: $title} end)
+            + (if $url == "" then {} else {url: $url} end)
+            + (if $desc == "" then {} else {description: $desc} end)
+            + (if ($fields | length) == 0 then {} else {fields: $fields} end)
+          ) as $primary
+          # Second embed shares the primary color so both left bars match; added only when set.
+          | (if $e2title == "" and $e2desc == "" then [] else [(
+              {color: $color}
+              + (if $e2title == "" then {} else {title: $e2title} end)
+              + (if $e2desc == "" then {} else {description: $e2desc} end)
+            )] end) as $extra
+          | {embeds: ([$primary] + $extra)}
+          + (if $content == "" then {} else {content: $content} end)
           + (if $username == "" then {} else {username: $username} end)
-          + (if $avatar == "" then {} else {avatar_url: $avatar} end)')
+          + (if $avatar == "" then {} else {avatar_url: $avatar} end)
+          + (if ($buttons | length) == 0 then {} else
+              {components: [{type: 1, components: [$buttons[] | {type: 2, style: 5, label: .label, url: .url}]}]}
+            end)')
 
-        # Discord's embed limits: title 256, description 4096, field name 256 / value 1024, 25 fields,
-        # and 6000 characters across the whole embed. We fail loudly rather than trim — a cut-off
-        # message is worse than a red step, and the changelog builder already keeps itself under budget.
+        # Discord limits, checked across every embed: content 2000; per embed title 256,
+        # description 4096, field name 256 / value 1024, 25 fields; 6000 characters summed over all
+        # embeds; one button row of at most 5, each label 1-80. We fail loudly rather than trim: a
+        # cut-off message is worse than a red step, and the changelog builder keeps itself in budget.
         errors=$(jq -r '
-          .embeds[0]
-          | (.description // "") as $d
-          | (.fields // []) as $f
+          (.content // "") as $content
+          | .embeds as $embeds
+          | (.components // []) as $rows
+          | ([$embeds[] | (.title | length) + ((.description // "") | length)
+                + ([(.fields // [])[] | (.name | length) + (.value | length)] | add // 0)] | add // 0) as $total
           | [
-              (select((.title | length) > 256) | "title exceeds 256 characters"),
-              (select(($d | length) > 4096) | "description exceeds 4096 characters"),
-              (select(($f | length) > 25) | "more than 25 fields"),
-              ($f[] | select((.name | length) < 1 or (.name | length) > 256)
-                | "field name empty or over 256 characters"),
-              ($f[] | select((.value | length) < 1 or (.value | length) > 1024)
-                | "field value empty or over 1024 characters (field: \(.name))"),
-              (select(
-                ((.title | length) + ($d | length)
-                  + ([$f[] | (.name | length) + (.value | length)] | add // 0)) > 6000)
-                | "embed exceeds 6000 characters total")
+              (select(($content | length) > 2000) | "content exceeds 2000 characters"),
+              ($embeds[] | select((.title | length) > 256) | "an embed title exceeds 256 characters"),
+              ($embeds[] | select(((.description // "") | length) > 4096) | "an embed description exceeds 4096 characters"),
+              ($embeds[] | select(((.fields // []) | length) > 25) | "an embed has more than 25 fields"),
+              ($embeds[] | (.fields // [])[] | select((.name | length) < 1 or (.name | length) > 256)
+                | "a field name is empty or over 256 characters"),
+              ($embeds[] | (.fields // [])[] | select((.value | length) < 1 or (.value | length) > 1024)
+                | "a field value is empty or over 1024 characters (field: \(.name))"),
+              (select($total > 6000) | "embeds exceed 6000 characters total"),
+              ($rows[] | select((.components | length) > 5) | "a button row has more than 5 buttons"),
+              ($rows[] | .components[] | select((.label | length) < 1 or (.label | length) > 80)
+                | "a button label is empty or over 80 characters")
             ]
-          | join("; ")' <<< "$payload")
+          | unique | join("; ")' <<< "$payload")
         if [ -n "$errors" ]; then
-          echo "::error::discord-notify: embed over Discord limits: $errors"
+          echo "::error::discord-notify: message over Discord limits: $errors"
           exit 1
         fi
 
@@ -132,4 +181,13 @@ runs:
           echo "$payload"
           exit 0
         fi
-        curl -sS --fail-with-body --proto '=https' -H "Content-Type: application/json" -d "$payload" "$WEBHOOK"
+
+        # Link buttons render only when the webhook request opts in via ?with_components=true.
+        post_url="$WEBHOOK"
+        if [ "$(jq 'length' <<< "$BUTTONS")" -gt 0 ]; then
+          case "$WEBHOOK" in
+            *\?*) post_url="${WEBHOOK}&with_components=true" ;;
+            *)    post_url="${WEBHOOK}?with_components=true" ;;
+          esac
+        fi
+        curl -sS --fail-with-body --proto '=https' -H "Content-Type: application/json" -d "$payload" "$post_url"
