@@ -25,9 +25,14 @@ public static class ServerBanner
     /// </summary>
     public static void Print(IMonitor monitor, IModHelper helper)
     {
+        string inviteCode;
         lock (_lock)
         {
-            var codeAvailable = InviteCodes.Joinable != null;
+            // Snapshot under the lock and print that snapshot: the async print awaits an external IP
+            // lookup, and re-reading the code after it could make both the no-code banner and its
+            // refresh print with the code.
+            inviteCode = InviteCodes.Joinable;
+            var codeAvailable = inviteCode != null;
 
             // Skip only when there is nothing new to show: already printed the final (with-code)
             // banner, or already printed and still no code to add.
@@ -40,10 +45,10 @@ public static class ServerBanner
             _printedWithCode = codeAvailable;
         }
 
-        _ = PrintAsync(monitor, helper);
+        _ = PrintAsync(monitor, helper, inviteCode);
     }
 
-    private static async Task PrintAsync(IMonitor monitor, IModHelper helper)
+    private static async Task PrintAsync(IMonitor monitor, IModHelper helper, string inviteCode)
     {
         var modInfo = helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
@@ -70,7 +75,6 @@ public static class ServerBanner
 
         // The code lets anyone join, so it's masked in the banner (which is captured into
         // the public report). The real code is served verbatim by the API and the CLI.
-        var inviteCode = InviteCodes.Joinable;
         bannerLines.Add(
             $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "not yet available")}"
         );

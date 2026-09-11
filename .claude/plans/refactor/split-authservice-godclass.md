@@ -23,7 +23,7 @@
 
 **Rejected approach — extract only (4) into a `GalaxyReauthRecovery` class.** The recovery state
 (`_pendingGalaxyReSignIn`, `_galaxyAwaitingReLogon`, `_galaxyReSignInInFlight`,
-`_pendingReSignInTicket{,Length}`, `_galaxyReLogonWaitedTicks`) IS self-contained — touched only by
+`_pendingReSignInTicket{,Length}`, `_galaxyReLogonDeadlineUtc`) IS self-contained — touched only by
 the recovery methods and `OnSteamServersLost`'s reset. But the recovery *logic* is not independent:
 
 - It reads/writes **`_steamLobbyId`** (the re-stamp), which is owned and written across (2) — so a
