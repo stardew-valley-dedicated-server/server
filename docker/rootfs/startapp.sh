@@ -362,10 +362,8 @@ mkfifo "${INPUT_FIFO}"
 # prompts that read a raw keystroke (Console.ReadKey: crash/update markers, PressAnyKeyToExit)
 # can't be answered through this channel; prevent them upstream (see clear_smapi_marker_prompts)
 echo "Starting SMAPI..."
-# `script` writes to both stdout (docker logs) and the typescript file (${LOG_FILE}, read by
-# attach-cli / `cat`). Keep this pipeline unfiltered: startup noise is filtered at the read
-# site instead (attach-cli tails through strip-startup-noise.awk). A filter interposed on
-# script's stdout here stalled the session under `wait`, so don't reintroduce one.
+# `script` writes to both stdout (docker logs) and the typescript file (${LOG_FILE}, tailed by
+# attach-cli and read by `cat`).
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
 
