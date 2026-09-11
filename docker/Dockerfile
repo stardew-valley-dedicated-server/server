@@ -265,7 +265,8 @@ COPY docker/rootfs/ /
 # Apply our chmod'd services and set other script permissions
 RUN cp -a /tmp/services/. /etc/services.d/ && \
     rm -rf /tmp/services && \
-    chmod +x /startapp.sh /opt/base/bin/* /etc/cont-init.d/50-server-init.sh
+    chmod +x /startapp.sh /opt/base/bin/* /etc/cont-init.d/50-server-init.sh \
+             /etc/cont-env.d/WEB_LISTENING_PORT /etc/cont-env.d/VNC_LISTENING_PORT
 
 # Copy mod from build stage (no game files included in image)
 COPY --from=mod-builder /output/JunimoServer /data/Mods/JunimoServer

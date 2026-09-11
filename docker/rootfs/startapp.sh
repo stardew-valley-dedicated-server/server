@@ -26,19 +26,8 @@ EXPECTED_COMPOSE_REV=3
 validate_environment() {
     local has_warnings=false
 
-    # Security warnings
-    if [ -z "${VNC_PASSWORD:-}" ]; then
-        echo ""
-        echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
-        echo -e "\e[33m║  WARNING: VNC_PASSWORD is not set!                                     ║\e[0m"
-        echo -e "\e[33m║                                                                       ║\e[0m"
-        echo -e "\e[33m║  The VNC web interface will be accessible without a password.          ║\e[0m"
-        echo -e "\e[33m║  Set VNC_PASSWORD in your .env file to secure it.                     ║\e[0m"
-        echo -e "\e[33m╚═══════════════════════════════════════════════════════════════════════╝\e[0m"
-        echo ""
-        has_warnings=true
-    fi
-
+    # Security warnings. VNC needs no check here: its ports are disabled unless VNC_PASSWORD is set
+    # (see /etc/cont-env.d/WEB_LISTENING_PORT).
     if [ "${API_ENABLED:-true}" = "true" ] && [ -z "${API_KEY:-}" ]; then
         echo ""
         echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"
