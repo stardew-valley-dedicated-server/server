@@ -19,21 +19,54 @@ COLOR_BORDER_ACTIVE=$COLOR_BRAND_3
 COLOR_STATUSBAR_BACKGROUND=$COLOR_BRAND_3
 COLOR_STATUSBAR_TEXT=$COLOR_BRAND_1
 
+# The launcher outlives SMAPI (it waits on it), so once it's gone the server has crashed or never
+# started: no log will ever appear, so bail instead of waiting forever.
+# Exact command-line match, so a shell merely mentioning the path doesn't count as the launcher.
+server_alive() { pgrep -f -x '([^ ]*/)?bash /opt/bin/start-game\.sh' >/dev/null 2>&1; }
+
+exit_server_not_running() {
+    echo ""
+    echo "The server is not running (it crashed or failed to start), so there is nothing to attach to."
+    echo "Check the logs, fix the issue, then start it again:"
+    echo "  docker compose logs --tail 200 server"
+    echo "  docker compose up -d"
+    exit 1
+}
+
 # Wait for server to be ready
 if [ ! -f "$LOG_FILE" ]; then
     echo "Waiting for server to be ready..."
     while [ ! -f "$LOG_FILE" ]; do
+        server_alive || exit_server_not_running
         sleep 1
     done
 fi
+server_alive || exit_server_not_running
 
 start_output_pane() {
     local session_name="$1"
     local log_file="$2"
 
+    # Build the startup-noise filter (see strip-startup-noise.awk). Fall back to a no-op
+    # passthrough if awk or the filter is unusable, so the console is never blanked.
+    # mawk block-buffers stdout and ignores fflush(), so under `tail -f` (no EOF) its output
+    # never reaches the pane — it needs `-W interactive`. busybox/gawk flush via fflush() in
+    # the program and warn on/reject -W, so only add it for mawk (which accepts it silently).
+    local noise_filter="/opt/bin/strip-startup-noise.awk"
+    local log_filter="cat"
+    if command -v awk >/dev/null 2>&1 && [ -r "$noise_filter" ]; then
+        local awk_flush=""
+        if [ -z "$(awk -W interactive 'BEGIN{}' </dev/null 2>&1)" ]; then
+            awk_flush="-W interactive"
+        fi
+        if printf '\n' | awk $awk_flush -f "$noise_filter" >/dev/null 2>&1; then
+            log_filter="awk $awk_flush -f $noise_filter"
+        fi
+    fi
+
     # Pin default-shell so panes and #() jobs never inherit an account shell that can't run
     # commands (the production baseimage writes /sbin/nologin for every account)
-    tmux start-server \; set-option -g default-shell /bin/sh \; new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | sed 's/\x1b\[30m/\x1b[90m/g'"
+    tmux start-server \; set-option -g default-shell /bin/sh \; new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | ${log_filter} | sed 's/\x1b\[30m/\x1b[90m/g'"
 }
 
 start_input_pane_split() {
