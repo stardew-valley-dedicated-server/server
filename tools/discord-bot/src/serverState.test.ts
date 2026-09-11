@@ -68,6 +68,15 @@ describe("describeInviteAvailability", () => {
                 steamSession: "lost",
             }),
         ).toBe("Steam session reconnecting");
+        // Both down: the Steam session is the root cause (same order as the mod's chat reply).
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: null,
+                steamRelayReady: false,
+                galaxyLobby: "recovering",
+                steamSession: "lost",
+            }),
+        ).toBe("Steam session reconnecting");
     });
 
     test("LAN-only server explains there will never be a code", () => {

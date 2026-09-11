@@ -93,11 +93,13 @@ export function describeInviteAvailability(
         // LAN-only server (no Steam/Galaxy configured): there will never be a code.
         return "invite codes are disabled in LAN-only mode";
     }
-    if (status.galaxyLobby === "recovering") {
-        return "Galaxy lobby reconnecting";
-    }
+    // Steam first: the Steam session is upstream of the Galaxy lobby, so when both are down it is
+    // the root cause. Same order as the mod's InviteCodes.UnavailableReason.
     if (status.steamSession === "lost") {
         return "Steam session reconnecting";
+    }
+    if (status.galaxyLobby === "recovering") {
+        return "Galaxy lobby reconnecting";
     }
     return "connecting…";
 }
