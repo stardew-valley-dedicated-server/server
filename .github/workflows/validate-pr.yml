@@ -259,7 +259,7 @@ jobs:
         id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "10.0.400"
+          dotnet-version: "10.0.401"
 
       # Key the cache by the resolved SDK version so a new SDK band always restores
       # from scratch instead of inheriting another band's package extraction via a
@@ -316,7 +316,7 @@ jobs:
         id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: "10.0.400"
+          dotnet-version: "10.0.401"
 
       # Key the cache by the resolved SDK version so a new SDK band always restores
       # from scratch instead of inheriting another band's package extraction via a

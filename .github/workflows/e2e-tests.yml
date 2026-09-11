@@ -494,7 +494,7 @@ jobs:
       - name: Setup .NET 10.0
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.400'
+          dotnet-version: '10.0.401'
 
       # Build the test-UI SPA so the runner can assemble the offline web report
       # (test-web) from it after the run. The runner's report path (ReportGenerator,
