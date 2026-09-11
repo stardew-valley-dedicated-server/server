@@ -43,7 +43,10 @@ if (!res.ok) throw new Error("unreachable");
 const status = await res.json();
 // status.isOnline, status.isReady, status.phase ("downloading" or "starting" before the game runs),
 // status.playerCount, status.maxPlayers,
-// status.steamInviteCode (null until the Steam lobby is published), status.gogInviteCode,
+// status.steamInviteCode (the universal S-code; null until a Galaxy lobby exists),
+// status.steamRelayReady (can Steam clients join the code right now),
+// status.galaxyLobby ("connected" | "recovering" | "down"; null in LAN mode),
+// status.steamSession ("connected" | "lost"), status.authReadiness ("ok" | "expiring" | "unavailable"),
 // status.farmName, status.serverName (SERVER_NAME, empty when unset),
 // status.season, status.day, status.year, status.timeOfDay,
 // status.serverVersion (the running image version), status.gameVersion,

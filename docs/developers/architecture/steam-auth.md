@@ -132,7 +132,33 @@ Refresh tokens are saved to `/data/steam-session/{username}/session.json` and re
 2. Galaxy creates a lobby and requests an encrypted app ticket
 3. Game server's `AuthService` fetches ticket from steam-auth via HTTP
 4. Steam-auth uses SteamKit2 to get an encrypted app ticket from Steam
-5. Ticket is returned and used to generate the Galaxy invite code (G-prefixed); the S-prefixed code players receive is the same lobby id, handed out once the Steam lobby is published
+5. The Galaxy SDK produces the invite code — which vanilla already makes **S-prefixed**
+   (`"S" + Base36(lobby id)`). The server mirrors this live-lobby code and exposes it the moment a
+   Galaxy lobby exists. A GOG client decodes it and joins over Galaxy P2P immediately; a vanilla
+   Steam client joins over the Steam relay once the Galaxy lobby carries the `SteamLobbyId` stamp,
+   reported separately as `steamRelayReady`. The G-code is never exposed — a Steam player who used it
+   would join over Galaxy and be given a farmhand their Steam identity never sees again.
+
+### Connectivity signals on `/status` and `/health`
+
+The invite code is a **mirror of the live Galaxy lobby**, not a cache: it is derived from
+`Game1.server?.getInviteCode()` by one writer at lobby-lifecycle transitions and is never erased by an
+unrelated Steam-session flap. Alongside `steamInviteCode`, both endpoints report five independent
+signals so a monitor can explain a missing or non-working code without reading logs:
+
+| Field | Meaning |
+|-------|---------|
+| `steamInviteCode` | The universal S-code, or null when no Galaxy lobby exists |
+| `steamRelayReady` | Whether Steam clients can use the code right now (the relay stamp is present) |
+| `galaxyLobby` | `connected` \| `recovering` \| `down` (null in LAN-only mode) |
+| `steamSession` | `connected` \| `lost` — the Steam GameServer session |
+| `authReadiness` | `ok` \| `expiring` \| `unavailable` — sidecar token health (null in LAN mode) |
+
+`/health` carries the same summary in its body but keeps its HTTP status and `status` field tied to
+game-thread liveness only, so an alive-but-recovering server stays `200` (the Docker healthcheck and
+deploy gate must not restart it on a transient Galaxy/Steam blip). Galaxy recovers on its own
+supervisor timer independent of a Steam reconnect; a permanently dead/expired token surfaces as
+`authReadiness: unavailable` instead of being retried forever.
 
 ### Lobbies are forced Public
 

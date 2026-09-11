@@ -14,22 +14,30 @@ namespace JunimoServer.Util;
 public static class ServerBanner
 {
     private static bool _hasPrinted = false;
+    private static bool _printedWithCode = false;
     private static readonly object _lock = new object();
 
     /// <summary>
     /// Prints the server startup banner with IP addresses and invite code (if available).
-    /// This method is idempotent - it will only print once per session.
+    /// Prints once, PLUS exactly one refresh the first time an invite code becomes available — so a
+    /// banner printed by the ~5s startup fallback (before the code exists) does not lock forever on
+    /// "not yet available" (the old wart). Once printed with a code, it is idempotent.
     /// </summary>
     public static void Print(IMonitor monitor, IModHelper helper)
     {
         lock (_lock)
         {
-            if (_hasPrinted)
+            var codeAvailable = InviteCodes.Joinable != null;
+
+            // Skip only when there is nothing new to show: already printed the final (with-code)
+            // banner, or already printed and still no code to add.
+            if (_hasPrinted && (_printedWithCode || !codeAvailable))
             {
                 return;
             }
 
             _hasPrinted = true;
+            _printedWithCode = codeAvailable;
         }
 
         _ = PrintAsync(monitor, helper);
@@ -101,6 +109,7 @@ public static class ServerBanner
         lock (_lock)
         {
             _hasPrinted = false;
+            _printedWithCode = false;
         }
     }
 }

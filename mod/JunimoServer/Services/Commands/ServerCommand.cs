@@ -46,7 +46,8 @@ public class ServerCommand
                 var farmName = Game1.player?.farmName.Value ?? "Unknown";
                 var playerCount = Game1.server?.connectionsCount ?? 0;
                 var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
-                var inviteCode = InviteCodes.Joinable ?? "not yet available";
+                var inviteCode =
+                    InviteCodes.Joinable ?? $"not yet available ({InviteCodes.UnavailableReason})";
                 var uptime = DateTime.UtcNow - _startTimeUtc;
                 var season = Game1.currentSeason ?? "unknown";
 
@@ -116,7 +117,7 @@ public class ServerCommand
     {
         if (Game1.server == null)
         {
-            _monitor.Log("Server is not running.", LogLevel.Error);
+            _monitor.Log("Server is not running.", LogLevel.Warn);
             return;
         }
 
@@ -125,7 +126,8 @@ public class ServerCommand
         var farmName = Game1.player?.farmName.Value ?? "Unknown";
         var playerCount = Game1.server?.connectionsCount ?? 0;
         var maxPlayers = Game1.netWorldState.Value?.CurrentPlayerLimit ?? 4;
-        var inviteCode = InviteCodes.Joinable ?? "not yet available";
+        var inviteCode =
+            InviteCodes.Joinable ?? $"not yet available ({InviteCodes.UnavailableReason})";
         var uptime = DateTime.UtcNow - _startTimeUtc;
         var season = Game1.currentSeason ?? "unknown";
 

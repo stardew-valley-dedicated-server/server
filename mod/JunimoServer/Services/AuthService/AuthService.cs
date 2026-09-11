@@ -30,7 +30,10 @@ public class GalaxyAuthService : ModService
     /// Set in SteamHelperInitialize_Prefix, used when OnServerSteamIdReceived fires.
     /// </summary>
     private static SteamHelper _pendingSteamHelper;
-    private static bool _galaxyInitComplete;
+
+    // volatile: written on the game thread, but now read cross-thread by the GalaxyLobbyState /
+    // AuthReadiness getters (HTTP threads). Matters for read visibility on arm64 (the deploy target).
+    private static volatile bool _galaxyInitComplete;
 
     // Diagnostic-only: count GameServer-mode Galaxy auth-lost / state-change callbacks so a
     // total-connectivity-loss repro can tell whether the closed-source Galaxy SDK re-fires them after
@@ -98,8 +101,10 @@ public class GalaxyAuthService : ModService
     public static bool SteamLobbyPublished => _steamLobbyPublished;
 
     /// <summary>
-    /// The invite code as the game generated it (G-prefixed); null until the Galaxy lobby exists.
-    /// <see cref="InviteCodes"/> derives every displayed form from it.
+    /// The live Galaxy lobby's invite code (S-prefixed — vanilla <c>GalaxySocket.GetInviteCode()</c>
+    /// already returns <c>"S" + Base36(lobby id)</c>); null when no lobby exists. This is a MIRROR of
+    /// <c>Game1.server?.getInviteCode()</c>, written only by <see cref="SetInviteCodeFromLiveLobby"/>
+    /// and cleared only by <see cref="WithdrawInviteCode"/>. <see cref="InviteCodes"/> exposes it.
     /// </summary>
     private static volatile string _galaxyInviteCode;
 
@@ -123,6 +128,59 @@ public class GalaxyAuthService : ModService
     /// <summary>Safety ceiling: give up waiting for the re-login to log on after this many ticks.</summary>
     private const int GalaxyReLogonTimeoutTicks = 600;
     private static int _galaxyReLogonWaitedTicks;
+
+    #region Invite-code mirror + recovery supervisor state (game thread)
+
+    /// <summary>
+    /// Galaxy lobby state surfaced on <c>/status</c> and <c>/health</c>: <c>connected</c> |
+    /// <c>recovering</c> | <c>down</c>. Owned solely by <see cref="PumpGalaxyRecovery"/>.
+    /// <see cref="GalaxyLobbyState"/> returns null in LAN mode (no Galaxy).
+    /// </summary>
+    private static volatile string _galaxyLobbyState = "down";
+
+    /// <summary>See <see cref="_galaxyLobbyState"/>; null when Galaxy was never initialized (LAN).</summary>
+    public static string GalaxyLobbyState => _galaxyInitComplete ? _galaxyLobbyState : null;
+
+    /// <summary>True while the supervisor is driving recovery of a lobby known to be down.</summary>
+    private static bool _galaxyRecovering;
+
+    /// <summary>Shared wall-clock gate for the degraded safety net + supervisor (TPS-independent).</summary>
+    private static DateTime _lastRecoveryEvalUtc = DateTime.MinValue;
+
+    /// <summary>Earliest wall-clock time the supervisor may next escalate to a re-login.</summary>
+    private static DateTime _nextReloginAttemptUtc = DateTime.MinValue;
+
+    /// <summary>Current bounded backoff between supervisor re-login escalations.</summary>
+    private static int _reloginBackoffSeconds = SupervisorInitialBackoffSeconds;
+
+    private static readonly TimeSpan RecoveryEvalInterval = TimeSpan.FromSeconds(5);
+
+    /// <summary>Grace after a lobby drops before escalating — longer than vanilla's 20s recreate timer.</summary>
+    private static readonly TimeSpan SupervisorGraceWindow = TimeSpan.FromSeconds(30);
+    private const int SupervisorInitialBackoffSeconds = 30;
+    private const int SupervisorMaxBackoffSeconds = 120;
+
+    /// <summary>
+    /// Slow cadence once auth is classified permanently unavailable (dead/expired token): stop the
+    /// tight relogin loop but keep checking so a re-<c>setup</c> is still picked up (Phase 3d).
+    /// </summary>
+    private const int SupervisorAuthBlockedBackoffSeconds = 300;
+
+    /// <summary>
+    /// Sidecar token health for <c>/status</c> and <c>/health</c>: <c>ok</c> | <c>expiring</c> |
+    /// <c>unavailable</c>. Written by the low-frequency auth poll (<see cref="PumpAuthReadinessPoll"/>).
+    /// </summary>
+    private static volatile string _authReadiness = "ok";
+
+    /// <summary>See <see cref="_authReadiness"/>; null when Galaxy was never initialized (LAN).</summary>
+    public static string AuthReadiness => _galaxyInitComplete ? _authReadiness : null;
+
+    private static DateTime _lastAuthPollUtc = DateTime.MinValue;
+    private static volatile bool _authPollInFlight;
+    private static readonly TimeSpan AuthPollInterval = TimeSpan.FromMinutes(5);
+    private const int AuthExpiringThresholdDays = 14;
+
+    #endregion
 
     /// <summary>
     /// Cached Steam Auth API client (singleton pattern to avoid socket exhaustion)
@@ -246,8 +304,9 @@ public class GalaxyAuthService : ModService
         _lastSteamLobbyPrivacy = null;
         _pendingGalaxyLobbyUpdate = false;
         _steamLobbyPublished = false;
-        _galaxyInviteCode = null;
-        InviteCodeFile.Delete(_monitor);
+        // A Steam-CM flap must NOT touch the invite code: the Galaxy lobby usually survives it, so the
+        // code stays valid. WithdrawInviteCode fires only when the Galaxy lobby itself is gone (see
+        // TryRemoveGalaxyServer / shutdown). This is the reported-incident fix.
 
         // Abandon a prior session's in-flight re-login — else it consumes a stale (gen-bumped) ticket
         // or re-stamps against the just-cleared lobby. The next reconnect re-arms it.
@@ -471,6 +530,11 @@ public class GalaxyAuthService : ModService
                     );
                     UpdateGalaxyLobbyWithSteamLobbyId();
                 }
+
+                // Reconcile the mirror to the freshly-added server's lobby (usually null until the
+                // lobby-enter postfix fires; harmless no-op then). Live read is safe here — not
+                // inside the GetInviteCode postfix, so it can't recurse.
+                SetInviteCodeFromLiveLobby();
             }
             else
             {
@@ -512,8 +576,7 @@ public class GalaxyAuthService : ModService
             }
             servers.Remove(galaxyServer);
             // The next lobby gets a new code; nothing may publish the dead one meanwhile.
-            _galaxyInviteCode = null;
-            InviteCodeFile.Delete(_monitor);
+            WithdrawInviteCode("no_lobby");
             _monitor.Log("Removed dead GalaxyNetServer for re-auth", LogLevel.Info);
         }
         catch (Exception ex)
@@ -599,6 +662,243 @@ public class GalaxyAuthService : ModService
         );
         BeginGalaxyReSignIn();
     }
+
+    #region Invite-code mirror (single writer) + recovery supervisor
+
+    /// <summary>
+    /// The SOLE writer of <see cref="_galaxyInviteCode"/> and the invite-code file. Mirrors the live
+    /// Galaxy lobby's code (<c>Game1.server?.getInviteCode()</c> — a local native read, game thread
+    /// only). When the code is null it withdraws; when it changed it updates the mirror + file, prints
+    /// the banner once, and emits the transition event. Idempotent when unchanged, so callers may fire
+    /// it freely at lobby-lifecycle transitions.
+    /// </summary>
+    /// <param name="liveCode">Pre-read live code. The <c>GalaxySocket.GetInviteCode</c> postfix MUST
+    /// pass its <c>__result</c> here (with <paramref name="codeProvided"/> true) — re-reading
+    /// <c>getInviteCode()</c> from inside that postfix would recurse. All other sites omit it.</param>
+    /// <param name="codeProvided">True when <paramref name="liveCode"/> is authoritative.</param>
+    private static void SetInviteCodeFromLiveLobby(
+        string liveCode = null,
+        bool codeProvided = false
+    )
+    {
+        if (!_galaxyInitComplete)
+        {
+            return;
+        }
+
+        var code = codeProvided ? liveCode : Game1.server?.getInviteCode();
+        if (string.IsNullOrEmpty(code))
+        {
+            WithdrawInviteCode("no_lobby");
+            return;
+        }
+
+        if (code == _galaxyInviteCode)
+        {
+            return; // unchanged — no file/banner/event churn
+        }
+
+        _galaxyInviteCode = code;
+
+        // A non-null code means the Galaxy lobby is up. Set the reported state here (not only from the
+        // supervisor's next 5s eval) so /status never shows a code with galaxyLobby="down" at boot. The
+        // supervisor still owns the recovering/down transitions (code null → it decides).
+        _galaxyLobbyState = "connected";
+
+        // InviteCodes.Joinable is the S-form of the mirror (== code); write it as the CLI/file value.
+        var joinable = InviteCodes.Joinable;
+        if (joinable != null)
+        {
+            InviteCodeFile.Write(joinable, _monitor);
+        }
+
+        // Idempotent: the banner prints the invite line at most once (see ServerBanner).
+        ServerBanner.Print(_monitor, _helper);
+
+        Diagnostics.ModEventLog.Emit(
+            "invite_code_available",
+            new { prefix = code.Substring(0, 1), length = code.Length }
+        );
+    }
+
+    /// <summary>Withdraws the invite code (mirror + file). No-op if already withdrawn. Game thread only.</summary>
+    private static void WithdrawInviteCode(string reason)
+    {
+        if (_galaxyInviteCode == null)
+        {
+            return;
+        }
+        _galaxyInviteCode = null;
+        InviteCodeFile.Delete(_monitor);
+        Diagnostics.ModEventLog.Emit("invite_code_withdrawn", new { reason });
+    }
+
+    /// <summary>
+    /// Independent Galaxy recovery supervisor + degraded-only invite-code safety net, evaluated on a
+    /// shared ~5s wall-clock gate (TPS-independent) from the game-thread pump. Acts ONLY when the lobby
+    /// is known to be down (<see cref="IsGalaxyLobbyConnected"/> == <c>false</c>: the GalaxyNetServer and
+    /// its socket are present but <c>lobby == null</c>). A <c>null</c> reading (no server/socket: boot,
+    /// reload teardown, or a re-login already in flight) is deliberately NOT actionable — that is the
+    /// arming guard, and it is why this never fights vanilla recovery or a reload.
+    /// </summary>
+    private static void PumpGalaxyRecovery()
+    {
+        var now = DateTime.UtcNow;
+        if (now - _lastRecoveryEvalUtc < RecoveryEvalInterval)
+        {
+            return;
+        }
+        _lastRecoveryEvalUtc = now;
+
+        var connected = IsGalaxyLobbyConnected();
+
+        if (connected == true)
+        {
+            if (_galaxyRecovering)
+            {
+                // recovering -> connected: vanilla recreate or a re-login restored the lobby.
+                _galaxyRecovering = false;
+                _reloginBackoffSeconds = SupervisorInitialBackoffSeconds;
+                SetInviteCodeFromLiveLobby(); // reconcile any enter-event the recovery missed
+                Diagnostics.ModEventLog.Emit("galaxy_lobby_recovered");
+            }
+            else if (_galaxyInviteCode == null)
+            {
+                // Lobby is up but nothing mirrored a code yet (a missed enter-event). Reconcile once;
+                // self-limits — once the mirror is non-null this branch stops firing (no per-tick work).
+                SetInviteCodeFromLiveLobby();
+            }
+            _galaxyLobbyState = "connected";
+            return;
+        }
+
+        // connected == null means no GalaxyNetServer/socket. If we are NOT already recovering, this is
+        // a boot / reload teardown window — not actionable (this null-vs-recovering split is the arming
+        // guard that keeps the supervisor from firing into a reload). If we ARE already recovering, the
+        // server object went missing mid-recovery (a timed-out re-login removed it); keep escalating so
+        // we never get stuck transport-less (Gap 3b).
+        if (connected == null && !_galaxyRecovering)
+        {
+            return;
+        }
+
+        // Lobby down: either the GalaxyNetServer is present with lobby == null (connected == false), or
+        // it went missing mid-recovery (connected == null && already recovering).
+        SetInviteCodeFromLiveLobby(); // degraded safety net: withdraws the now-dead code
+        _galaxyLobbyState = "recovering";
+
+        if (!_galaxyRecovering)
+        {
+            _galaxyRecovering = true;
+            // Let vanilla's own ~20s recreate timer try first before escalating to a re-login.
+            _nextReloginAttemptUtc = now + SupervisorGraceWindow;
+            _reloginBackoffSeconds = SupervisorInitialBackoffSeconds;
+            Diagnostics.ModEventLog.Emit("galaxy_lobby_recovering");
+        }
+
+        // Don't escalate (or grow backoff) while a re-login is already in flight: BeginGalaxyReSignIn
+        // would no-op on its own in-flight guard, but bumping the backoff on every 5s eval during a
+        // logon-wait would inflate it to the cap within a single attempt and over-delay the next real
+        // one. Backoff must count attempts, not evals. (After a SignInSteam throw all three flags are
+        // clear, so the supervisor still re-drives — the Gap-3b guarantee holds.)
+        var reloginInProgress =
+            _galaxyReSignInInFlight || _pendingGalaxyReSignIn || _galaxyAwaitingReLogon;
+
+        if (now >= _nextReloginAttemptUtc && !reloginInProgress)
+        {
+            // Gated entry point — SKIPs if the lobby is actually connected, so it can never sever
+            // live clients.
+            TryBeginGalaxyReSignInGated("supervisor");
+
+            // Back off harder once auth is known permanently dead (Phase 3d): surface + slow, don't
+            // tight-loop, but keep checking so an operator's re-setup is picked up.
+            var cap =
+                _authReadiness == "unavailable"
+                    ? SupervisorAuthBlockedBackoffSeconds
+                    : SupervisorMaxBackoffSeconds;
+            _nextReloginAttemptUtc = now + TimeSpan.FromSeconds(_reloginBackoffSeconds);
+            _reloginBackoffSeconds = Math.Min(_reloginBackoffSeconds * 2, cap);
+        }
+    }
+
+    /// <summary>
+    /// Low-frequency (~5 min) off-thread poll of the steam-auth sidecar's <c>/health</c> to classify
+    /// token health into <see cref="_authReadiness"/> for <c>/status</c> and <c>/health</c> (Phase 2e).
+    /// Launched from the game-thread pump; the HTTP call runs on a background task with a clean
+    /// ExecutionContext. No-op in LAN mode or when a poll is already in flight.
+    /// </summary>
+    private static void PumpAuthReadinessPoll()
+    {
+        var now = DateTime.UtcNow;
+        if (_authPollInFlight || now - _lastAuthPollUtc < AuthPollInterval)
+        {
+            return;
+        }
+        _lastAuthPollUtc = now;
+        _authPollInFlight = true;
+
+        // SuppressFlow: this outlives the request/tick that launched it; a clean EC keeps its
+        // structured emits attributed correctly (asynclocal-pitfalls.md).
+        using (System.Threading.ExecutionContext.SuppressFlow())
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    var apiClient = GetOrCreateApiClient();
+                    if (apiClient == null)
+                    {
+                        return; // STEAM_AUTH_URL unset — leave readiness at its default
+                    }
+                    var health = apiClient.GetHealth();
+                    _authReadiness = ClassifyAuthReadiness(health);
+                }
+                catch (Exception ex)
+                {
+                    // An UNREACHABLE sidecar is ambiguous (network blip vs. a restarting sidecar) — it is
+                    // NOT a confirmed dead token, so we must not claim "unavailable". That value is
+                    // reserved for a REACHABLE sidecar reporting a spent token (ClassifyAuthReadiness),
+                    // which is what the supervisor's harder backoff (3d) keys on. Leave the last known
+                    // value; a persistent auth outage still surfaces via galaxyLobby="recovering".
+                    _monitor.Log(
+                        $"Auth-readiness poll failed (keeping last value '{_authReadiness}'): {ex.Message}",
+                        LogLevel.Trace
+                    );
+                }
+                finally
+                {
+                    _authPollInFlight = false;
+                }
+            });
+        }
+    }
+
+    /// <summary>
+    /// Classifies a SUCCESSFUL sidecar <c>/health</c> response into ok/expiring/unavailable (the
+    /// unreachable case is handled by the caller's catch, which keeps the last value). A logged-out
+    /// account whose token is spent is <c>unavailable</c> (the confirmed-dead-token signal 3d escalates
+    /// on); a token inside the sidecar's 14-day warning window is <c>expiring</c>.
+    /// </summary>
+    private static string ClassifyAuthReadiness(HealthResponse health)
+    {
+        var account = health?.accounts?.FirstOrDefault();
+        if (health == null || health.status != "ok" || account == null)
+        {
+            return "unavailable";
+        }
+        var days = account.token_days_remaining;
+        if (!account.logged_in && (days == null || days <= 0))
+        {
+            return "unavailable";
+        }
+        if (days is int d && d <= AuthExpiringThresholdDays)
+        {
+            return "expiring";
+        }
+        return "ok";
+    }
+
+    #endregion
 
     #region SteamHelper patches (GameServer mode)
 
@@ -774,10 +1074,12 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static void UpdateGalaxyLobbyWithSteamLobbyId()
     {
-        // Game thread: the published code is stale until the new stamp lands, and stays
-        // withdrawn if stamping fails.
+        // This method now owns ONLY the Steam-relay stamp / _steamLobbyPublished (steamRelayReady). The
+        // invite code itself is decoupled from publishing and mirrored by SetInviteCodeFromLiveLobby at
+        // lobby-lifecycle transitions — the code doesn't change when the stamp lands (it derives from
+        // the lobby id, not lobby data), so we must NOT do a live getInviteCode() read here: this runs
+        // inside the GetInviteCode postfix's call chain and would recurse.
         _steamLobbyPublished = false;
-        InviteCodeFile.Delete(_monitor);
         if (_steamLobbyId == 0)
         {
             _monitor.Log("Cannot update Galaxy lobby: Steam lobby ID not set", LogLevel.Warn);
@@ -799,15 +1101,6 @@ public class GalaxyAuthService : ModService
             galaxyServer.setLobbyData("SteamLobbyId", _steamLobbyId.ToString());
             _steamLobbyPublished = true;
             _monitor.Log($"Galaxy lobby updated with SteamLobbyId: {_steamLobbyId}", LogLevel.Info);
-
-            // The code is joinable from here: publish it for the CLI status line and print the banner.
-            // The banner prints once, so it waits for a code; the Galaxy code can arrive after this stamp.
-            var joinable = InviteCodes.Joinable;
-            if (joinable != null)
-            {
-                InviteCodeFile.Write(joinable, _monitor);
-                ServerBanner.Print(_monitor, _helper);
-            }
         }
         catch (Exception ex)
         {
@@ -886,7 +1179,12 @@ public class GalaxyAuthService : ModService
                 _steamLobbyId = newLobbyId;
                 _lastSteamLobbyPrivacy = null; // Reset cached privacy; new lobby needs fresh setup
                 _monitor.Log($"Steam lobby recreated: {_steamLobbyId}", LogLevel.Info);
-                UpdateGalaxyLobbyWithSteamLobbyId();
+                // Defer the Galaxy SDK stamp to the game-thread pump — this runs inside a Task.Run and
+                // Galaxy calls are not thread-safe (mirror of the create path in
+                // CreateSteamLobbyViaHttpAsync). The S-code stays shown throughout; only steamRelayReady
+                // blips false until the next tick re-stamps.
+                _steamLobbyPublished = false;
+                _pendingGalaxyLobbyUpdate = true;
                 return true;
             }
 
@@ -913,6 +1211,8 @@ public class GalaxyAuthService : ModService
         // SteamAuthService throws "Failed to set lobby privacy: NoMatch" or
         // "Failed to set lobby data: NoMatch" when the lobby is gone.
         // This propagates through the HTTP layer as a 500 error with the message intact.
+        // TODO: fragile — matches on a sidecar message substring. Give the sidecar a structured
+        // error code (e.g. {"error_code":"lobby_not_found"}) and key on that instead of "NoMatch".
         var message = ex.Message;
         return message.Contains("NoMatch", StringComparison.OrdinalIgnoreCase);
     }
@@ -1113,6 +1413,12 @@ public class GalaxyAuthService : ModService
 
                 ConsumePendingGalaxyReSignIn();
                 PumpGalaxyReLogonWait(__instance);
+
+                // Degraded-only invite-code safety net + independent Galaxy recovery supervisor, and
+                // the low-frequency sidecar auth-readiness poll. All wall-clock gated; nothing runs
+                // per tick in the healthy steady state.
+                PumpGalaxyRecovery();
+                PumpAuthReadinessPoll();
             }
         }
 
@@ -1139,6 +1445,25 @@ public class GalaxyAuthService : ModService
             // Remove the dead server first: its per-tick receiveMessages() would keep
             // hitting the SDK while signed out and throw at ERROR (poisons tests).
             TryRemoveGalaxyServer();
+
+            // Mark recovery in progress for BOTH triggers (reconnect path and supervisor). This (a)
+            // makes /status report galaxyLobby="recovering" instead of a stale "connected" while the
+            // code is withdrawn, and (b) — critically — arms the supervisor's null-branch, so if
+            // SignInSteam below throws after the server was removed, the supervisor still re-drives the
+            // re-login instead of treating the missing server as a not-actionable boot/reload window.
+            _galaxyRecovering = true;
+            _galaxyLobbyState = "recovering";
+
+            // Hold off the supervisor's next escalation by at least the grace window while THIS re-login
+            // settles. Without this, a reconnect-triggered re-login (which never set _nextReloginAttemptUtc)
+            // would let a supervisor eval fire during the brief window after logon succeeds but before the
+            // re-created lobby enters (IsGalaxyLobbyConnected == false there), tearing down the recovering
+            // server and thrashing. Max, so a supervisor path's longer backoff is never shortened.
+            var settleUntil = DateTime.UtcNow + SupervisorGraceWindow;
+            if (settleUntil > _nextReloginAttemptUtc)
+            {
+                _nextReloginAttemptUtc = settleUntil;
+            }
 
             // SignOut before SignInSteam: the SDK still reports SignedIn()==true after the
             // outage (never saw connectivity drop), so a bare SignInSteam throws "already signed
@@ -1218,11 +1543,15 @@ public class GalaxyAuthService : ModService
         }
         else if (++_galaxyReLogonWaitedTicks >= GalaxyReLogonTimeoutTicks)
         {
-            // Gave up — re-login never logged on. Stop waiting; the next Steam reconnect
-            // re-attempts. Warn (not Error) to avoid test poison.
+            // Gave up — re-login never logged on. ConsumePendingGalaxyReSignIn removed the
+            // GalaxyNetServer, so best-effort re-add one now (Gap 3b): a present-but-disconnected
+            // server lets vanilla's own recreate timer run, and — even if the re-add fails because
+            // Galaxy isn't connected — the supervisor keeps escalating (it treats a missing server
+            // during an active recovery as still-down, not as a no-op). Warn (not Error) — test poison.
             _galaxyAwaitingReLogon = false;
+            TryLateAddGalaxyServer();
             _monitor.Log(
-                "Galaxy re-login did not log on within timeout; will retry on next reconnect",
+                "Galaxy re-login did not log on within timeout; supervisor will retry on backoff",
                 LogLevel.Warn
             );
         }
@@ -1389,8 +1718,11 @@ public class GalaxyAuthService : ModService
         _steamLobbyId = 0;
         _lobbyCreationAttempted = false;
         _steamLobbyPublished = false;
-        _galaxyInviteCode = null;
-        InviteCodeFile.Delete(_monitor);
+        WithdrawInviteCode("shutdown");
+
+        // Reset recovery/observability state so a later re-init starts clean.
+        _galaxyRecovering = false;
+        _galaxyLobbyState = "down";
 
         // Reset Galaxy init state
         _galaxyInitComplete = false;
@@ -1583,9 +1915,13 @@ public class GalaxyAuthService : ModService
         try
         {
             _monitor.Log($"Galaxy invite code generated: {__result}", LogLevel.Debug);
-            _galaxyInviteCode = __result;
 
-            // If Steam lobby was already created, update Galaxy lobby with Steam lobby ID
+            // Route through the single writer. Pass __result (do NOT re-read getInviteCode from inside
+            // this postfix — that would recurse). This is the primary event hook: vanilla calls
+            // GetInviteCode on every lobby-enter.
+            SetInviteCodeFromLiveLobby(__result, codeProvided: true);
+
+            // If Steam lobby was already created, (re-)stamp the relay. This does not touch the code.
             if (_steamLobbyId != 0)
             {
                 _monitor.Log(
@@ -1597,7 +1933,9 @@ public class GalaxyAuthService : ModService
         }
         catch (Exception ex)
         {
-            _monitor.Log($"Failed to capture invite code: {ex.Message}", LogLevel.Error);
+            // Warn, not Error: a capture failure is recoverable (the safety net / next event reconciles)
+            // and Error is server-side test poison.
+            _monitor.Log($"Failed to capture invite code: {ex.Message}", LogLevel.Warn);
             _monitor.Log(ex.ToString(), LogLevel.Debug);
         }
     }

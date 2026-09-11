@@ -20,8 +20,16 @@ export interface StatusSignals {
 export interface ServerStatus extends StatusSignals {
     playerCount: number;
     maxPlayers: number;
+    /** The one code to show players: the universal S-code. Null until a Galaxy lobby exists. */
     steamInviteCode: string | null;
-    gogInviteCode: string | null;
+    /** Whether Steam clients can join the code right now (the Galaxy lobby carries the relay stamp). */
+    steamRelayReady: boolean;
+    /** Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode. */
+    galaxyLobby: string | null;
+    /** Steam GameServer session state: "connected" | "lost". */
+    steamSession: string;
+    /** Sidecar auth/token health: "ok" | "expiring" | "unavailable". Null in LAN-only mode. */
+    authReadiness: string | null;
     serverVersion: string;
     gameVersion: string;
     dayTransitionComplete: boolean;
@@ -60,14 +68,34 @@ export interface ServerState {
 const NO_GAME_DATA_HINT = "Game data appears once the save is loaded.";
 
 /**
- * The one invite code to show players: the Steam code, once the Steam lobby is published.
- * Both codes open the same lobby and a GOG client accepts either, but a Steam player who
- * joins with the GOG code gets a Galaxy identity and a farmhand their Steam identity never
- * sees. So nothing is shown until the Steam code is joinable, which is a few seconds after
- * the lobby exists; the GOG code stays on `/status` for tooling.
+ * The one invite code to show players: the universal S-code, exposed whenever a Galaxy lobby
+ * exists. GOG players can join it immediately; Steam players join once `steamRelayReady` is true
+ * (surfaced separately — see `describeInviteAvailability`). The G-code is never exposed, since a
+ * Steam player who used it would join over Galaxy and get a farmhand their Steam identity never sees.
  */
 export function joinableInviteCode(status: Pick<ServerStatus, "steamInviteCode">): string | null {
     return status.steamInviteCode || null;
+}
+
+/**
+ * A short note to show alongside the code (or in its place). When a code exists but the Steam relay
+ * is not yet ready, Steam players must wait; when there is no code, the connectivity state explains why.
+ */
+export function describeInviteAvailability(
+    status: Pick<ServerStatus, "steamInviteCode" | "steamRelayReady" | "galaxyLobby" | "steamSession">,
+): string | null {
+    if (joinableInviteCode(status)) {
+        // steamRelayReady is false both at normal startup (the stamp lands ~1s after the code) and
+        // during a relay recovery, so "connecting" fits both; GOG players can already join either way.
+        return status.steamRelayReady ? null : "Steam relay connecting — GOG players can join now";
+    }
+    if (status.galaxyLobby === "recovering") {
+        return "Galaxy lobby reconnecting";
+    }
+    if (status.steamSession === "lost") {
+        return "Steam session reconnecting";
+    }
+    return "connecting…";
 }
 
 /** The in-game calendar as "Spring 14, Year 1". */

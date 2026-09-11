@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { formatStardewDate, formatStardewTime, formatUptime, joinableInviteCode } from "./serverState";
+import {
+    describeInviteAvailability,
+    formatStardewDate,
+    formatStardewTime,
+    formatUptime,
+    joinableInviteCode,
+} from "./serverState";
 
 describe("formatStardewDate", () => {
     test("capitalized season, day, and year", () => {
@@ -19,6 +25,49 @@ describe("joinableInviteCode", () => {
     test("is null before the Steam lobby is published, never the GOG code", () => {
         expect(joinableInviteCode({ steamInviteCode: null })).toBeNull();
         expect(joinableInviteCode({ steamInviteCode: "" })).toBeNull();
+    });
+});
+
+describe("describeInviteAvailability", () => {
+    test("no note when the code is fully joinable", () => {
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: "SABC",
+                steamRelayReady: true,
+                galaxyLobby: "connected",
+                steamSession: "connected",
+            }),
+        ).toBeNull();
+    });
+
+    test("code present but relay not ready → GOG-can-join note", () => {
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: "SABC",
+                steamRelayReady: false,
+                galaxyLobby: "connected",
+                steamSession: "connected",
+            }),
+        ).toBe("Steam relay connecting — GOG players can join now");
+    });
+
+    test("no code → the connectivity reason", () => {
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: null,
+                steamRelayReady: false,
+                galaxyLobby: "recovering",
+                steamSession: "connected",
+            }),
+        ).toBe("Galaxy lobby reconnecting");
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: null,
+                steamRelayReady: false,
+                galaxyLobby: "down",
+                steamSession: "lost",
+            }),
+        ).toBe("Steam session reconnecting");
     });
 });
 

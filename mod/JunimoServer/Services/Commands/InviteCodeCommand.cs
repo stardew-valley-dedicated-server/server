@@ -35,7 +35,10 @@ public class InviteCodeCommand
 
                 if (inviteCode == null)
                 {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Invite code not yet available.");
+                    helper.SendPrivateMessage(
+                        msg.SourceFarmer,
+                        $"Invite code not yet available ({InviteCodes.UnavailableReason})."
+                    );
                     return;
                 }
 
@@ -55,7 +58,7 @@ public class InviteCodeCommand
     {
         if (Game1.server == null)
         {
-            _monitor.Log("Server is not running.", LogLevel.Error);
+            _monitor.Log("Server is not running.", LogLevel.Warn);
             return;
         }
 
@@ -63,7 +66,10 @@ public class InviteCodeCommand
 
         if (inviteCode == null)
         {
-            _monitor.Log("Invite code not yet available.", LogLevel.Warn);
+            _monitor.Log(
+                $"Invite code not yet available ({InviteCodes.UnavailableReason}).",
+                LogLevel.Warn
+            );
             return;
         }
 
