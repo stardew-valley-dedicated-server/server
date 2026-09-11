@@ -69,6 +69,17 @@ describe("describeInviteAvailability", () => {
             }),
         ).toBe("Steam session reconnecting");
     });
+
+    test("LAN-only server explains there will never be a code", () => {
+        expect(
+            describeInviteAvailability({
+                steamInviteCode: null,
+                steamRelayReady: false,
+                galaxyLobby: null,
+                steamSession: "lost",
+            }),
+        ).toBe("invite codes are disabled in LAN-only mode");
+    });
 });
 
 describe("formatStardewTime", () => {
