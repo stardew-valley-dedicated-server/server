@@ -127,6 +127,57 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
     if (user != null)
     {
         result[0] = (user, pass, token);
+        return result;
+    }
+
+    // No env account: the guided installer's flow. Interactive `setup`/`login` then save their
+    // session under a placeholder directory named after the command, because the username is
+    // only known after the prompt. Resolve that session as account 0 and mirror it into the
+    // per-username directory the account service reads, so `serve`, `download`, `renew` and
+    // `ticket` work without STEAM_USERNAME.
+    foreach (var placeholder in new[] { "setup", "login" })
+    {
+        var source = Path.Combine(sessionDir, placeholder, "session.json");
+        if (!File.Exists(source))
+        {
+            continue;
+        }
+
+        string? sessionUser;
+        try
+        {
+            sessionUser = JsonDocument
+                .Parse(File.ReadAllText(source))
+                .RootElement.GetProperty("username")
+                .GetString();
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException)
+        {
+            Logger.Log($"[SteamService] Ignoring unreadable session {source}: {ex.Message}");
+            continue;
+        }
+        if (string.IsNullOrEmpty(sessionUser))
+        {
+            continue;
+        }
+
+        // A re-run of `setup` rewrites the placeholder (fresh token); a renewal rewrites the
+        // per-username copy. Whichever is newer wins, so neither path can revive a stale token.
+        var target = Path.Combine(sessionDir, sessionUser, "session.json");
+        if (
+            !File.Exists(target)
+            || File.GetLastWriteTimeUtc(source) > File.GetLastWriteTimeUtc(target)
+        )
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(source, target, overwrite: true);
+        }
+
+        Logger.Log(
+            $"[SteamService] Using saved session from `{placeholder}` for {sessionUser} as account 0"
+        );
+        result[0] = (sessionUser, null, null);
+        return result;
     }
 
     return result;

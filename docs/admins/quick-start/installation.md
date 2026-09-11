@@ -24,40 +24,38 @@ cd junimoserver
 
 :::
 
-You configure the server through `.env` in the next step. Don't edit `docker-compose.yml` yourself, because updates overwrite it. To change a port or add extra mods, put those changes in a `docker-compose.override.yml` next to it, and Compose applies both files together. See [Upgrading](/admins/operations/upgrading#customizing-docker-compose) for how this works.
+When you run it, the script asks which release channel to use (preview or stable), then offers to **sign in to Steam and start the server for you**: answer yes, enter your Steam login when prompted, and it downloads the game, starts the server, and opens the console. If you accept, you're done. Jump to step 5 below to connect your game.
+
+Prefer to do it yourself, or ran the script non-interactively? Follow the steps below. Don't edit `docker-compose.yml` (updates overwrite it); for ports or extra mods use a `docker-compose.override.yml` next to it (see [Upgrading](/admins/operations/upgrading#customizing-docker-compose)).
 
 ::: details Set it up by hand instead
 Create the folder and download both files yourself:
 
 ```sh
 mkdir junimoserver && cd junimoserver
-curl -fsSL -o docker-compose.yml https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/docker-compose.yml
-curl -fsSL -o .env https://github.com/stardew-valley-dedicated-server/server/releases/latest/download/.env.example
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/stardew-valley-dedicated-server/server/master/.env.example
 ```
+
+Then set `IMAGE_VERSION` in `.env` to pick a channel (defaults to `latest`), and set a strong `API_KEY` (`openssl rand -hex 32`). Without it the server refuses to start unless you set `ALLOW_INSECURE_SETUP=true`.
 :::
 
-## 2. Configure
+## 2. Configure (optional)
 
-Open `.env` and set your Steam login and two passwords. The server won't start until both passwords are set:
+By default there's nothing to edit. The install script already put a strong random `API_KEY` in `.env`, and VNC stays off. Open `.env` only to change optional settings:
 
-```sh
-STEAM_USERNAME="your_steam_username"
-STEAM_PASSWORD="your_steam_password"
-VNC_PASSWORD="a_password_for_the_web_admin_page"
-API_KEY="a_long_random_secret"
-```
-
-`VNC_PASSWORD` protects the web admin page. `API_KEY` protects the HTTP API. Generate a strong key with `openssl rand -base64 32`. If you only run on a trusted local network and don't want passwords, set `ALLOW_INSECURE_SETUP=true` instead.
+- **`VNC_PASSWORD`**: set it to expose the VNC web GUI (max 8 characters). Left empty, VNC stays disabled.
+- You don't need to put Steam credentials in `.env`; you enter them in the next step.
 
 ::: warning The API key controls your server
-Anyone who has your API key can fully control the server through the HTTP API. Keep it secret and treat it like a password.
+The generated `API_KEY` grants full control through the HTTP API. Keep your `.env` private.
 :::
 
 See [Environment Variables](/admins/configuration/environment) for every available setting.
 
 ## 3. First-Time Setup
 
-Authenticate with Steam:
+The guided setup runs this for you. To do it by hand, authenticate with Steam:
 
 ```sh
 docker compose run --rm -it steam-auth setup
@@ -74,10 +72,12 @@ Follow the prompts for Steam Guard:
 This also downloads the game files. You can skip this step if Steam can log in without prompts, for example with a saved session or `STEAM_REFRESH_TOKEN`. In that case the server downloads the files itself the first time it starts.
 
 ::: tip Steam tokens expire
-Steam login tokens last about 200 days. steam-auth automatically renews saved-session tokens and, during the last 14 days before expiry, warns daily in its logs if one still needs attention. Re-run `docker compose run --rm -it steam-auth setup` before yours expires to keep the server authenticated. A token supplied via `STEAM_REFRESH_TOKEN` is not renewed — mint a new one with `setup` and `export-token` instead.
+Steam login tokens last about 200 days. steam-auth automatically renews saved-session tokens and, during the last 14 days before expiry, warns daily in its logs if one still needs attention. Re-run `docker compose run --rm -it steam-auth setup` before yours expires to keep the server authenticated. A token supplied via `STEAM_REFRESH_TOKEN` is not renewed; mint a new one with `setup` and `export-token` instead.
 :::
 
 ## 4. Start the Server
+
+The guided setup starts it for you. To start manually:
 
 ```sh
 docker compose up -d
