@@ -30,10 +30,7 @@ public class GalaxyAuthService : ModService
     /// Set in SteamHelperInitialize_Prefix, used when OnServerSteamIdReceived fires.
     /// </summary>
     private static SteamHelper _pendingSteamHelper;
-
-    // volatile: written on the game thread, but now read cross-thread by the GalaxyLobbyState /
-    // AuthReadiness getters (HTTP threads). Matters for read visibility on arm64 (the deploy target).
-    private static volatile bool _galaxyInitComplete;
+    private static bool _galaxyInitComplete;
 
     // Diagnostic-only: count GameServer-mode Galaxy auth-lost / state-change callbacks so a
     // total-connectivity-loss repro can tell whether the closed-source Galaxy SDK re-fires them after
@@ -142,8 +139,17 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static volatile string _galaxyLobbyState = "down";
 
-    /// <summary>See <see cref="_galaxyLobbyState"/>; null when Galaxy was never initialized (LAN).</summary>
-    public static string GalaxyLobbyState => _galaxyInitComplete ? _galaxyLobbyState : null;
+    /// <summary>
+    /// Whether Steam/Galaxy is configured at all (<c>STEAM_AUTH_URL</c> set). Without it the server is
+    /// LAN-only and the Galaxy-side status fields are null rather than "down"; with it they report
+    /// "down" from boot until the lobby exists.
+    /// </summary>
+    private static readonly bool SteamAuthConfigured = !string.IsNullOrEmpty(
+        Environment.GetEnvironmentVariable("STEAM_AUTH_URL")
+    );
+
+    /// <summary>See <see cref="_galaxyLobbyState"/>; null in LAN-only mode.</summary>
+    public static string GalaxyLobbyState => SteamAuthConfigured ? _galaxyLobbyState : null;
 
     /// <summary>True while the supervisor is driving recovery of a lobby known to be down.</summary>
     private static bool _galaxyRecovering;
@@ -176,8 +182,8 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static volatile string _authReadiness = "ok";
 
-    /// <summary>See <see cref="_authReadiness"/>; null when Galaxy was never initialized (LAN).</summary>
-    public static string AuthReadiness => _galaxyInitComplete ? _authReadiness : null;
+    /// <summary>See <see cref="_authReadiness"/>; null in LAN-only mode.</summary>
+    public static string AuthReadiness => SteamAuthConfigured ? _authReadiness : null;
 
     private static DateTime _lastAuthPollUtc = DateTime.MinValue;
     private static volatile bool _authPollInFlight;
@@ -190,6 +196,7 @@ public class GalaxyAuthService : ModService
     /// Cached Steam Auth API client (singleton pattern to avoid socket exhaustion)
     /// </summary>
     private static SteamAuthApiClient _cachedApiClient;
+    private static readonly object _apiClientLock = new();
 
     /// <summary>
     /// Validated STEAM_AUTH_URL (cached after first validation)
@@ -247,12 +254,12 @@ public class GalaxyAuthService : ModService
             return null;
         }
 
-        if (_cachedApiClient == null)
+        // Reached from two background tasks (ticket fetch, auth-readiness poll); create once.
+        lock (_apiClientLock)
         {
-            _cachedApiClient = new SteamAuthApiClient(steamAuthUrl);
+            _cachedApiClient ??= new SteamAuthApiClient(steamAuthUrl);
+            return _cachedApiClient;
         }
-
-        return _cachedApiClient;
     }
 
     #endregion
@@ -765,9 +772,10 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static void PumpGalaxyRecovery()
     {
-        // A lobby exists only while a world is hosted. During a reload/new-game teardown the server is
-        // gone but the recovering flag persists (it resets only on process exit), so without this the
+        // Only supervise a hosted world. During a reload/new-game teardown Game1.server is gone but the
+        // recovering flag persists (it resets only on process exit), so without this the
         // missing-server-while-recovering branch would re-login into the new world's server creation.
+        // A lobby that enters during load is still mirrored by the GetInviteCode postfix.
         if (!Context.IsWorldReady)
         {
             return;
@@ -1466,6 +1474,24 @@ public class GalaxyAuthService : ModService
             return;
         }
         _pendingGalaxyReSignIn = false;
+
+        // Re-check the gate here, not only at attempt start: the ticket fetch takes seconds, and
+        // vanilla's own recreate timer can bring a live lobby back meanwhile. Removing that server
+        // below would sever the clients that just rejoined it.
+        if (IsGalaxyLobbyConnected() == true)
+        {
+            _pendingReSignInTicket = null;
+            _monitor.Log(
+                "Galaxy lobby reconnected while the re-login ticket was fetched; dropping the re-login",
+                LogLevel.Info
+            );
+            Diagnostics.ModEventLog.Emit(
+                "auth_galaxy_relogin_skipped",
+                new { trigger = "consume", reason = "galaxy_lobby_connected" }
+            );
+            return;
+        }
+
         try
         {
             // Remove the dead server first: its per-tick receiveMessages() would keep

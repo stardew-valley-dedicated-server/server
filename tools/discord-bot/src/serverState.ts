@@ -89,6 +89,10 @@ export function describeInviteAvailability(
         // during a relay recovery, so "connecting" fits both; GOG players can already join either way.
         return status.steamRelayReady ? null : "Steam relay connecting — GOG players can join now";
     }
+    if (status.galaxyLobby === null) {
+        // LAN-only server (no Steam/Galaxy configured): there will never be a code.
+        return "invite codes are disabled in LAN-only mode";
+    }
     if (status.galaxyLobby === "recovering") {
         return "Galaxy lobby reconnecting";
     }
