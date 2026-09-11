@@ -135,48 +135,43 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
     // only known after the prompt. Resolve that session as account 0 and mirror it into the
     // per-username directory the account service reads, so `serve`, `download`, `renew` and
     // `ticket` work without STEAM_USERNAME.
+    //
+    // Both placeholders can exist (a `setup` followed later by a `login`, or vice versa), so pick
+    // the newest by write time rather than the first found — otherwise a stale `setup` could shadow
+    // a fresh `login`. Sessions are read through the shared parser, which rejects any that lack a
+    // refresh token (those cannot be logged in).
+    (string placeholder, string source, DateTime writtenUtc, string user)? newest = null;
     foreach (var placeholder in new[] { "setup", "login" })
     {
         var source = Path.Combine(sessionDir, placeholder, "session.json");
-        if (!File.Exists(source))
+        var session = SteamAuthService.TryLoadSession(source);
+        if (session == null)
         {
             continue;
         }
 
-        string? sessionUser;
-        try
+        var writtenUtc = File.GetLastWriteTimeUtc(source);
+        if (newest == null || writtenUtc > newest.Value.writtenUtc)
         {
-            sessionUser = JsonDocument
-                .Parse(File.ReadAllText(source))
-                .RootElement.GetProperty("username")
-                .GetString();
+            newest = (placeholder, source, writtenUtc, session.Value.username);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException)
-        {
-            Logger.Log($"[SteamService] Ignoring unreadable session {source}: {ex.Message}");
-            continue;
-        }
-        if (string.IsNullOrEmpty(sessionUser))
-        {
-            continue;
-        }
+    }
 
-        // A re-run of `setup` rewrites the placeholder (fresh token); a renewal rewrites the
+    if (newest is { } chosen)
+    {
+        // A re-run of `setup`/`login` rewrites the placeholder (fresh token); a renewal rewrites the
         // per-username copy. Whichever is newer wins, so neither path can revive a stale token.
-        var target = Path.Combine(sessionDir, sessionUser, "session.json");
-        if (
-            !File.Exists(target)
-            || File.GetLastWriteTimeUtc(source) > File.GetLastWriteTimeUtc(target)
-        )
+        var target = Path.Combine(sessionDir, chosen.user, "session.json");
+        if (!File.Exists(target) || chosen.writtenUtc > File.GetLastWriteTimeUtc(target))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(source, target, overwrite: true);
+            File.Copy(chosen.source, target, overwrite: true);
         }
 
         Logger.Log(
-            $"[SteamService] Using saved session from `{placeholder}` for {sessionUser} as account 0"
+            $"[SteamService] Using saved session from `{chosen.placeholder}` for {chosen.user} as account 0"
         );
-        result[0] = (sessionUser, null, null);
+        result[0] = (chosen.user, null, null);
         return result;
     }
 

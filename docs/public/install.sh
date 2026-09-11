@@ -143,6 +143,9 @@ if [ -f docker-compose.yml ]; then
     if [ -f .env ]; then current_version="$(get_env_value .env IMAGE_VERSION)"; fi
     [ -n "$current_version" ] || current_version="latest"
     channel_version="$(resolve_channel_version update "$current_version")"
+    # Apply the choice to every compose call this run, so the pull matches what we report even when
+    # there's no .env to persist it to (shell env overrides .env in Compose).
+    export IMAGE_VERSION="$channel_version"
     if [ "$channel_version" != "$current_version" ]; then
         echo "Switching channel: ${current_version} -> ${channel_version}"
         echo "Back up your saves first; save formats can differ between builds."
@@ -222,11 +225,10 @@ else
         set_env_var .env IMAGE_VERSION "$channel_version"
         # Secure by default: a strong random API key so the HTTP API is never left open.
         set_env_var .env API_KEY "$(generate_key)"
-        # TODO: remove once a published image no longer refuses to start without VNC_PASSWORD
-        # (the image-side gate now disables the VNC ports instead). Until then a fresh .env
-        # without it crash-loops the server.
-        set_env_var .env VNC_PASSWORD "$(generate_key | head -c 16)"
-        echo "Wrote docker-compose.yml and .env (IMAGE_VERSION=${channel_version}, API_KEY and VNC_PASSWORD generated)."
+        # VNC is left disabled by default: the image now serves the VNC ports only when VNC_PASSWORD
+        # is set (see docker/rootfs/etc/cont-env.d), so an unset password means the ports are off
+        # rather than an insecure open one. Set VNC_PASSWORD in .env later to enable the web GUI.
+        echo "Wrote docker-compose.yml and .env (IMAGE_VERSION=${channel_version}, API_KEY generated; VNC disabled until you set VNC_PASSWORD)."
     fi
 
     # Offer to finish now: sign in to Steam, start, open the console. Non-interactive prints steps.
@@ -267,6 +269,7 @@ EOF
             cid="$(docker compose ps -aq server 2>/dev/null | head -n1)"
             restarts0="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
             waited=0
+            ready=0
             while [ "$waited" -lt 600 ]; do
                 status="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo missing)"
                 restarts="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
@@ -286,9 +289,22 @@ EOF
                     echo ""
                     die "Server failed to start. Fix the issue above, then: docker compose up -d && docker compose exec server attach-cli"
                 fi
-                docker compose exec -T server sh -c 'test -f /tmp/server-output.log' 2>/dev/null && break
+                if docker compose exec -T server sh -c 'test -f /tmp/server-output.log' 2>/dev/null; then
+                    ready=1; break
+                fi
                 sleep 3; waited=$((waited + 3))
             done
+
+            # Attaching to a server that isn't ready hangs, so don't fall through to it on timeout.
+            # A 10-minute wait without a crash is almost always a slow first download still running.
+            if [ "$ready" != "1" ]; then
+                echo ""
+                echo "The server is still starting after 10 minutes and hasn't crashed — likely a slow"
+                echo "first download. Follow it, then attach once it's ready:"
+                echo "  docker compose logs -f steam-auth"
+                echo "  docker compose exec server attach-cli"
+                exit 0
+            fi
 
             echo ""
             echo "Opening the CLI..."

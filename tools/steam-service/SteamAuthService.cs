@@ -443,6 +443,22 @@ public class SteamAuthService
     private (string username, string refreshToken)? LoadSession()
     {
         var path = SessionFilePath;
+        var session = TryLoadSession(path);
+        if (session == null && File.Exists(path))
+        {
+            Logger.Log($"{_logPrefix} Failed to load session at {path}");
+        }
+        return session;
+    }
+
+    /// <summary>
+    /// Parses a session.json at <paramref name="path"/> into (username, refreshToken). This is the
+    /// one canonical reader for the session-file contract — every consumer goes through it. Returns
+    /// null if the file is missing, unreadable, or lacks either field (a session without a
+    /// refresh token cannot be logged in, so it is not a usable session).
+    /// </summary>
+    public static (string username, string refreshToken)? TryLoadSession(string path)
+    {
         if (!File.Exists(path))
         {
             return null;
@@ -450,15 +466,17 @@ public class SteamAuthService
 
         try
         {
-            var json = File.ReadAllText(path);
-            var doc = JsonDocument.Parse(json);
-            var username = doc.RootElement.GetProperty("username").GetString()!;
-            var token = doc.RootElement.GetProperty("refreshToken").GetString()!;
+            var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var username = doc.RootElement.GetProperty("username").GetString();
+            var token = doc.RootElement.GetProperty("refreshToken").GetString();
+            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(token))
+            {
+                return null;
+            }
             return (username, token);
         }
         catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException)
         {
-            Logger.Log($"{_logPrefix} Failed to load session: {ex.Message}");
             return null;
         }
     }

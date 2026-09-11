@@ -7,17 +7,24 @@
 #   tools/discord-notify-test.sh preview 1.5.0-preview.136            # no webhook: prints the payload (dry run)
 #
 # Arguments: <preview|release> <version> [changelog-markdown]. The changelog markdown is the
-# `## Changes` block that build-changelog.js emits; pass real output (piped in as the third
-# argument) or leave it out for a short sample.
+# `## Changes` block that build-changelog.js emits. Pass it as the third argument, pipe it on
+# stdin (e.g. `build-changelog | tools/discord-notify-test.sh preview 1.5.0`), or omit it for a
+# short sample.
 set -euo pipefail
 
 channel="${1:?usage: $0 <preview|release> <version> [changelog-markdown]}"
 version="${2:?usage: $0 <preview|release> <version> [changelog-markdown]}"
-changelog="${3:-"## Changes
+if [ -n "${3:-}" ]; then
+    changelog="$3"
+elif [ ! -t 0 ]; then
+    changelog="$(cat)"   # piped in, e.g. build-changelog | tools/discord-notify-test.sh preview VERSION
+else
+    changelog="## Changes
 ### Features
 - one-command install and update for operators ([#642](https://github.com/stardew-valley-dedicated-server/server/pull/642))
 ### Bug Fixes
-- keep Discord release posts within the embed limit ([#644](https://github.com/stardew-valley-dedicated-server/server/pull/644))"}"
+- keep Discord release posts within the embed limit ([#644](https://github.com/stardew-valley-dedicated-server/server/pull/644))"
+fi
 
 case "$channel" in
     preview) username="Preview Bot"; color="14524706"; word="Build" ;;   # amber, docs #dda122
