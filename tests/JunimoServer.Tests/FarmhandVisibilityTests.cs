@@ -125,7 +125,10 @@ public class FarmhandVisibilityTests : TestBase
             status.SteamRelayReady,
             "steamRelayReady must be true once the relay stamp landed"
         );
-        Assert.NotEqual("unavailable", status.AuthReadiness);
+        Assert.True(
+            status.AuthReadiness is "ok" or "expiring",
+            $"authReadiness must be ok or expiring on a Steam-authenticated server; got '{status.AuthReadiness ?? "null"}'"
+        );
 
         // /health carries the same joinability summary in its body and — crucially — still returns 200
         // (GetHealth throws on any non-2xx), proving the status code is not tied to Galaxy/relay state.
@@ -137,6 +140,7 @@ public class FarmhandVisibilityTests : TestBase
         );
         Assert.Equal("connected", health.GalaxyLobby);
         Assert.Equal("connected", health.SteamSession);
+        Assert.Equal(status.AuthReadiness, health.AuthReadiness);
         Assert.True(health.SteamRelayReady);
 
         // No /newgame: this runs on the shared steam server (see class doc); all assertions

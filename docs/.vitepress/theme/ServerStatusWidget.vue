@@ -810,7 +810,6 @@ onUnmounted(() => {
     color: var(--vp-c-text-3);
     font-size: 12px;
     font-style: italic;
-    white-space: nowrap;
 }
 
 .copy-icon {

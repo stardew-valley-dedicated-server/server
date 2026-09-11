@@ -125,9 +125,10 @@ public class GalaxyAuthService : ModService
     /// the consume site polls <c>IsLoggedOn()</c> each tick.</summary>
     private static bool _galaxyAwaitingReLogon;
 
-    /// <summary>Safety ceiling: give up waiting for the re-login to log on after this many ticks.</summary>
-    private const int GalaxyReLogonTimeoutTicks = 600;
-    private static int _galaxyReLogonWaitedTicks;
+    /// <summary>Safety ceiling: give up waiting for the re-login to log on after this long (wall-clock,
+    /// so the wait is the same at any SERVER_TPS).</summary>
+    private static readonly TimeSpan GalaxyReLogonTimeout = TimeSpan.FromSeconds(30);
+    private static DateTime _galaxyReLogonDeadlineUtc;
 
     #region Invite-code mirror + recovery supervisor state (game thread)
 
@@ -764,6 +765,14 @@ public class GalaxyAuthService : ModService
     /// </summary>
     private static void PumpGalaxyRecovery()
     {
+        // A lobby exists only while a world is hosted. During a reload/new-game teardown the server is
+        // gone but the recovering flag persists (it resets only on process exit), so without this the
+        // missing-server-while-recovering branch would re-login into the new world's server creation.
+        if (!Context.IsWorldReady)
+        {
+            return;
+        }
+
         var now = DateTime.UtcNow;
         if (now - _lastRecoveryEvalUtc < RecoveryEvalInterval)
         {
@@ -1500,7 +1509,7 @@ public class GalaxyAuthService : ModService
             // SignInSteam is async — wait for logon (PumpGalaxyReLogonWait) before re-creating the
             // server (too early throws "not logged on").
             _galaxyAwaitingReLogon = true;
-            _galaxyReLogonWaitedTicks = 0;
+            _galaxyReLogonDeadlineUtc = DateTime.UtcNow + GalaxyReLogonTimeout;
         }
         catch (Exception ex)
         {
@@ -1519,7 +1528,7 @@ public class GalaxyAuthService : ModService
     /// <see cref="ConsumePendingGalaxyReSignIn"/> logs on, re-creates the GalaxyNetServer and
     /// re-stamps the Steam lobby id. Polling <c>IsLoggedOn()</c> works because a FRESH login flips it
     /// true (it was only stale during the outage, with no fresh login) — the SDK gives no callback for
-    /// this. Gives up after <see cref="GalaxyReLogonTimeoutTicks"/>. Called per tick from
+    /// this. Gives up after <see cref="GalaxyReLogonTimeout"/>. Called per tick from
     /// <see cref="SteamHelperUpdate_Prefix"/>.
     /// </summary>
     private static void PumpGalaxyReLogonWait(SteamHelper __instance)
@@ -1557,7 +1566,7 @@ public class GalaxyAuthService : ModService
             }
             Diagnostics.ModEventLog.Emit("auth_galaxy_recovered");
         }
-        else if (++_galaxyReLogonWaitedTicks >= GalaxyReLogonTimeoutTicks)
+        else if (DateTime.UtcNow >= _galaxyReLogonDeadlineUtc)
         {
             // Gave up — re-login never logged on. ConsumePendingGalaxyReSignIn removed the
             // GalaxyNetServer, so best-effort re-add one now (Gap 3b): a present-but-disconnected
