@@ -6,6 +6,7 @@
 import { type APIEmbedField, EmbedBuilder } from "discord.js";
 import type { DiscordServerState } from "./discordState";
 import {
+    describeInviteAvailability,
     formatStardewDate,
     formatStardewTime,
     formatUptime,
@@ -51,11 +52,13 @@ export function buildStatusFields(status: ServerStatus, includeInvite = true): A
     ];
     if (includeInvite) {
         const inviteCode = joinableInviteCode(status);
-        fields.push({
-            name: "Invite code",
-            value: inviteCode ? `\`${inviteCode}\`` : "_not yet available_",
-            inline: false,
-        });
+        const note = describeInviteAvailability(status);
+        const value = inviteCode
+            ? note
+                ? `\`${inviteCode}\` _(${note})_`
+                : `\`${inviteCode}\``
+            : `_not yet available${note ? ` (${note})` : ""}_`;
+        fields.push({ name: "Invite code", value, inline: false });
     }
     return fields;
 }

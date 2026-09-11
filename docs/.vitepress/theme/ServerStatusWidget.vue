@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
+    describeInviteAvailability,
     formatStardewDate,
     formatStardewTime,
     formatUptime,
@@ -61,8 +62,10 @@ function writeCache(poll: CachedPoll | null) {
     }
 }
 
-/** The code players paste in-game; null until the lobby is published. */
+/** The code players paste in-game; null until a Galaxy lobby exists. */
 const inviteCode = computed(() => (status.value ? joinableInviteCode(status.value) : null));
+/** A short note: why there is no code, or that the Steam relay is reconnecting (GOG can still join). */
+const inviteNote = computed(() => (status.value ? describeInviteAvailability(status.value) : null));
 
 const stateColors: Record<ServerStateKind, string> = {
     online: "var(--vp-c-success-1)",
@@ -301,6 +304,7 @@ onUnmounted(() => {
                         <div class="invite-code-row">
                             <code v-if="inviteCode" class="invite-code">{{ inviteCode }}</code>
                             <span v-else class="invite-code pending">not yet available</span>
+                            <span v-if="inviteNote" class="invite-note">{{ inviteNote }}</span>
                             <span v-if="inviteCode" class="copy-icon" aria-hidden="true">
                                 <svg v-if="copied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M20 6 9 17l-5-5" />
@@ -800,6 +804,13 @@ onUnmounted(() => {
     font-family: inherit;
     font-style: italic;
     letter-spacing: normal;
+}
+
+.invite-note {
+    color: var(--vp-c-text-3);
+    font-size: 12px;
+    font-style: italic;
+    white-space: nowrap;
 }
 
 .copy-icon {

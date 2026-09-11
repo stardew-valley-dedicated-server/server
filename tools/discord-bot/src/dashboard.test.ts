@@ -31,7 +31,10 @@ const ONLINE_STATUS: ServerStatus = {
     playerCount: 1,
     maxPlayers: 10,
     steamInviteCode: "SGF0LUHHTYF5",
-    gogInviteCode: "GGF0LUHHTYF5",
+    steamRelayReady: true,
+    galaxyLobby: "connected",
+    steamSession: "connected",
+    authReadiness: "ok",
     serverVersion: "1.5.0-preview.134",
     gameVersion: "1.6.15",
     dayTransitionComplete: true,
@@ -89,8 +92,19 @@ describe("buildDashboardEmbed", () => {
         expect(fields({ ...ONLINE_STATUS, isPaused: true }).Players).toBe("`1 / 10` _(paused)_");
     });
 
-    test("the invite code is pending until the Steam lobby is published", () => {
-        expect(fields({ ...ONLINE_STATUS, steamInviteCode: null })["Invite code"]).toBe("_not yet available_");
+    test("no code yet shows the reason from the connectivity state", () => {
+        expect(fields({ ...ONLINE_STATUS, steamInviteCode: null, galaxyLobby: "down" })["Invite code"]).toBe(
+            "_not yet available (connecting…)_",
+        );
+        expect(fields({ ...ONLINE_STATUS, steamInviteCode: null, galaxyLobby: "recovering" })["Invite code"]).toBe(
+            "_not yet available (Galaxy lobby reconnecting)_",
+        );
+    });
+
+    test("a code with the Steam relay not ready shows the code plus a note (GOG can join)", () => {
+        expect(fields({ ...ONLINE_STATUS, steamRelayReady: false })["Invite code"]).toBe(
+            "`SGF0LUHHTYF5` _(Steam relay connecting — GOG players can join now)_",
+        );
     });
 
     test("a version the mod has not reported yet shows a dash", () => {
