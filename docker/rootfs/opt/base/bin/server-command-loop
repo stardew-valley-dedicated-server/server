@@ -6,7 +6,7 @@
 # Takes the session name as first argument.
 
 SESSION_NAME="$1"
-INPUT_FIFO="/tmp/smapi-input"
+INPUT_FIFO="/tmp/junimo/smapi-input"
 PASSWORD_MODE_FILE="/tmp/smapi-password-mode"
 HISTFILE="/tmp/server-command-history"
 HISTSIZE=1000

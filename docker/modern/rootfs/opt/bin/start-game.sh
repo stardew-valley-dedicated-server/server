@@ -191,10 +191,17 @@ init_permissions
 
 # Run the game through SMAPI with FIFO for command input
 LOG_FILE="/tmp/server-output.log"
-INPUT_FIFO="/tmp/smapi-input"
+# The command FIFO lives in a private dir, not directly in /tmp: with fs.protected_fifos enabled
+# on the host, a process cannot open a FIFO it does not own for writing inside a sticky
+# world-writable dir (/tmp is 1777). This game process runs as the app user and owns the FIFO, but
+# attach-cli's command loop and toggle-rendering run as root via `docker compose exec` — so a FIFO
+# in /tmp itself rejects their writes (EACCES). A non-world-writable dir sidesteps the check.
+FIFO_DIR="/tmp/junimo"
+INPUT_FIFO="${FIFO_DIR}/smapi-input"
 
 touch "${LOG_FILE}"
 
+mkdir -p "${FIFO_DIR}"
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 

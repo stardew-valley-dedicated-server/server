@@ -1,6 +1,6 @@
 #!/bin/bash
 # Sends rendering toggle command to SMAPI via the input FIFO
-INPUT_FIFO="/tmp/smapi-input"
+INPUT_FIFO="/tmp/junimo/smapi-input"
 
 if [ ! -p "$INPUT_FIFO" ]; then
     echo "SMAPI not running"
