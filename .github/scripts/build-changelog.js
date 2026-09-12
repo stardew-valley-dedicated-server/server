@@ -32,6 +32,9 @@ const GROUPS = [
     ["docs", "### Documentation"],
 ];
 const HIDDEN_TYPES = new Set(["style", "chore", "refactor", "test", "build", "ci"]);
+// Every type release-please knows. A body line only counts as an extra entry with one of these,
+// since prose like "Note: …" also fits the `word: text` shape.
+const KNOWN_TYPES = new Set([...GROUPS.map(([t]) => t), ...HIDDEN_TYPES]);
 
 // We measure length in code points (what Discord counts), not JS string length. The workflow
 // prepends only a short `# Build|Release [<version>](<hub>) is available!` line before this becomes
@@ -96,8 +99,8 @@ function parseSubject(subject) {
 /**
  * Expand one commit into the entries it contributes: itself (subject plus body, so a `BREAKING
  * CHANGE:` footer is seen), plus every body line that is itself a conventional commit (a squash of
- * a PR shipping several changes). Body entries carry the subject's `(#N)` so they link to the same
- * PR, and have no body of their own. Anything else in the body is ignored.
+ * a PR shipping several changes, with a known type). Body entries carry the subject's `(#N)` so
+ * they link to the same PR, and have no body of their own. Anything else in the body is ignored.
  * @param {string} subject - Raw `git log %s` subject line.
  * @param {string} body - Raw `git log %b` body (may be empty).
  * @returns {{subject: string, body: string}[]}
@@ -108,7 +111,7 @@ function expandCommit(subject, body) {
     const extra = body
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) => CONVENTIONAL_RE.test(line))
+        .filter((line) => KNOWN_TYPES.has((line.match(CONVENTIONAL_RE)?.[1] ?? "").toLowerCase()))
         .map((line) => ({ subject: `${line}${suffix}`, body: "" }));
     return [{ subject, body }, ...extra];
 }

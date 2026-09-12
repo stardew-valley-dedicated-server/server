@@ -273,6 +273,7 @@ test("a squash commit's conventional body lines become their own entries, linked
         "fix(docker): the console exits when the server isn't running",
         "  feat(docker): startup noise is hidden  ",
         "not a conventional line",
+        "Note: prose shaped like a commit line, but not a known type",
         "chore: internal tidy-up",
     ].join("\n");
     assert.deepEqual(expandCommit("feat(docker): quieter console (#661)", body), [
