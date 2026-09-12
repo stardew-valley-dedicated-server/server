@@ -101,47 +101,13 @@ public class FarmhandVisibilityTests : TestBase
     {
         var ct = TestCt;
 
-        // The S-code is gated on the Galaxy lobby carrying the SteamLobbyId stamp (not on
-        // GameServer init). By now the server is long booted, so the code must be exposed —
-        // this catches the gate ever wedging shut (the harness would silently fall back to
-        // the GOG code and every other assertion would still pass).
+        // The join below needs the invite code. Fail here, not deep in the join, if the long-booted
+        // server has no code (the /status contract itself is covered by ServerApiTests).
         var status = await ServerApi.GetStatus(ct);
         Assert.False(
             string.IsNullOrEmpty(status?.SteamInviteCode),
-            "SteamInviteCode should be exposed whenever the Galaxy lobby exists (this server is long booted)"
+            "no invite code on the long-booted Steam server"
         );
-        // The exposed code is the universal S-code, never a G-code (a Steam player who used a G-code
-        // would join over Galaxy and get a farmhand their Steam identity never sees).
-        Assert.True(
-            status!.SteamInviteCode!.StartsWith("S", StringComparison.Ordinal),
-            $"invite code must be the S-code; got '{status.SteamInviteCode}'"
-        );
-        Assert.Equal(status.SteamInviteCode, status.InviteCode); // no GOG fallback in the DTO
-
-        // Connectivity contract: a long-booted, Steam-authenticated server is fully joinable.
-        Assert.Equal("connected", status.GalaxyLobby);
-        Assert.Equal("connected", status.SteamSession);
-        Assert.True(
-            status.SteamRelayReady,
-            "steamRelayReady must be true once the relay stamp landed"
-        );
-        Assert.True(
-            status.AuthReadiness is "ok" or "expiring",
-            $"authReadiness must be ok or expiring on a Steam-authenticated server; got '{status.AuthReadiness ?? "null"}'"
-        );
-
-        // /health carries the same joinability summary in its body and — crucially — still returns 200
-        // (GetHealth throws on any non-2xx), proving the status code is not tied to Galaxy/relay state.
-        var health = await ServerApi.GetHealth(ct);
-        Assert.NotNull(health);
-        Assert.True(
-            health!.InviteCodePresent,
-            "/health.inviteCodePresent must be true when a code exists"
-        );
-        Assert.Equal("connected", health.GalaxyLobby);
-        Assert.Equal("connected", health.SteamSession);
-        Assert.Equal(status.AuthReadiness, health.AuthReadiness);
-        Assert.True(health.SteamRelayReady);
 
         // No /newgame: this runs on the shared steam server (see class doc); all assertions
         // are scoped to this test's own farmhand uid, and the cabin pool replenishes fresh

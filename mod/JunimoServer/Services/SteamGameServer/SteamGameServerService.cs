@@ -46,6 +46,9 @@ public class SteamGameServerService : ModService
     /// <summary>Whether the Steam GameServer session is currently connected (up vs lost).</summary>
     public static bool SteamSessionConnected => _steamSessionConnected;
 
+    /// <summary>Steam session state as reported on <c>/status</c> and <c>/health</c>: "connected" | "lost".</summary>
+    public static string SteamSessionState => _steamSessionConnected ? "connected" : "lost";
+
     /// <summary>
     /// The Steam ID of this game server. Clients use this to connect via P2P.
     /// </summary>
@@ -238,9 +241,8 @@ public class SteamGameServerService : ModService
             _monitor.Log("Still retrying connection...", LogLevel.Info);
         }
 
-        // The one Steam callback that previously only logged: a never-succeeds boot (bad config,
-        // blocked ports) was invisible in the diagnostic stream. Below Error (test-poison rule) —
-        // the retry itself is correct.
+        // Makes a never-succeeds boot (bad config, blocked ports) visible in the diagnostic stream.
+        // Below Error (test-poison rule) — the retry itself is correct.
         Diagnostics.ModEventLog.Emit(
             "steam_session_connect_failure",
             new

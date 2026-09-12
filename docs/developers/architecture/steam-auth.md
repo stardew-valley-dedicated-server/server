@@ -152,7 +152,7 @@ signals so a monitor can explain a missing or non-working code without reading l
 | `steamRelayReady` | Whether Steam clients can use the code right now (the relay stamp is present) |
 | `galaxyLobby` | `connected` \| `recovering` \| `down` (null in LAN-only mode) |
 | `steamSession` | `connected` \| `lost` — the Steam GameServer session |
-| `authReadiness` | `ok` \| `expiring` \| `unavailable` — sidecar token health (null in LAN mode) |
+| `authReadiness` | `unknown` \| `ok` \| `expiring` \| `unavailable` — sidecar token health; `unknown` until the first poll reaches the sidecar (null in LAN mode) |
 
 `/health` carries the same summary in its body but keeps its HTTP status and `status` field tied to
 game-thread liveness only, so an alive-but-recovering server stays `200` (the Docker healthcheck and
