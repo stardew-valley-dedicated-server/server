@@ -28,7 +28,7 @@ export interface ServerStatus extends StatusSignals {
     galaxyLobby: string | null;
     /** Steam GameServer session state: "connected" | "lost". */
     steamSession: string;
-    /** Sidecar auth/token health: "ok" | "expiring" | "unavailable". Null in LAN-only mode. */
+    /** Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null in LAN-only mode. */
     authReadiness: string | null;
     serverVersion: string;
     gameVersion: string;

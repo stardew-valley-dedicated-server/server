@@ -19,9 +19,9 @@ public static class ServerBanner
 
     /// <summary>
     /// Prints the server startup banner with IP addresses and invite code (if available).
-    /// Prints once, PLUS exactly one refresh the first time an invite code becomes available — so a
-    /// banner printed by the ~5s startup fallback (before the code exists) does not lock forever on
-    /// "not yet available" (the old wart). Once printed with a code, it is idempotent.
+    /// Prints once, plus exactly one refresh the first time an invite code becomes available, so a
+    /// banner printed by the ~5s startup fallback (before the code exists) is not the last word.
+    /// Once printed with a code, it is idempotent.
     /// </summary>
     public static void Print(IMonitor monitor, IModHelper helper)
     {

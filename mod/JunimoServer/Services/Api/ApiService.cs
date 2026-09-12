@@ -10,6 +10,7 @@ using System.Runtime.Serialization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using JunimoServer.Services.Auth;
 using JunimoServer.Services.CabinManager;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameCreator;
@@ -20,6 +21,7 @@ using JunimoServer.Services.PersistentOption;
 using JunimoServer.Services.Roles;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Services.Settings;
+using JunimoServer.Services.SteamGameServer;
 using JunimoServer.Shared;
 using JunimoServer.Util;
 using Newtonsoft.Json;
@@ -65,7 +67,7 @@ public class ServerStatus
     /// <summary>Steam GameServer session state: "connected" | "lost".</summary>
     public string SteamSession { get; set; } = "lost";
 
-    /// <summary>Sidecar auth/token health: "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
     public string? AuthReadiness { get; set; }
 
     /// <summary>Server mod version.</summary>
@@ -398,7 +400,7 @@ public class HealthResponse
     /// <summary>Whether an invite code is currently exposed (a Galaxy lobby exists).</summary>
     public bool InviteCodePresent { get; set; }
 
-    /// <summary>Sidecar auth/token health: "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
     public string? AuthReadiness { get; set; }
 }
 
@@ -2801,16 +2803,10 @@ public partial class ApiService : ModService
         // It is shown whenever a lobby exists; SteamRelayReady reports whether Steam clients can use it
         // right now. The G-code is never exposed.
         var steamInviteCode = InviteCodes.Steam;
-        var steamRelayReady = JunimoServer.Services.Auth.GalaxyAuthService.SteamLobbyPublished;
-        var galaxyLobby = JunimoServer.Services.Auth.GalaxyAuthService.GalaxyLobbyState;
-        var authReadiness = JunimoServer.Services.Auth.GalaxyAuthService.AuthReadiness;
-        var steamSession = JunimoServer
-            .Services
-            .SteamGameServer
-            .SteamGameServerService
-            .SteamSessionConnected
-            ? "connected"
-            : "lost";
+        var steamRelayReady = GalaxyAuthService.SteamLobbyPublished;
+        var galaxyLobby = GalaxyAuthService.GalaxyLobbyState;
+        var authReadiness = GalaxyAuthService.AuthReadiness;
+        var steamSession = SteamGameServerService.SteamSessionState;
 
         if (!snap.IsOnline)
         {
@@ -3482,17 +3478,11 @@ public partial class ApiService : ModService
             TickCount = totalTicks,
             IsFrozen = isFrozen,
             // Body-only joinability summary; Status above stays tick-liveness only (200 for alive).
-            SteamSession = JunimoServer
-                .Services
-                .SteamGameServer
-                .SteamGameServerService
-                .SteamSessionConnected
-                ? "connected"
-                : "lost",
-            GalaxyLobby = JunimoServer.Services.Auth.GalaxyAuthService.GalaxyLobbyState,
-            SteamRelayReady = JunimoServer.Services.Auth.GalaxyAuthService.SteamLobbyPublished,
+            SteamSession = SteamGameServerService.SteamSessionState,
+            GalaxyLobby = GalaxyAuthService.GalaxyLobbyState,
+            SteamRelayReady = GalaxyAuthService.SteamLobbyPublished,
             InviteCodePresent = InviteCodes.Joinable != null,
-            AuthReadiness = JunimoServer.Services.Auth.GalaxyAuthService.AuthReadiness,
+            AuthReadiness = GalaxyAuthService.AuthReadiness,
         };
     }
 

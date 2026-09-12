@@ -40,7 +40,7 @@ public class ServerStatus
     [JsonPropertyName("steamSession")]
     public string? SteamSession { get; set; }
 
-    /// <summary>Sidecar auth/token health: "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
     [JsonPropertyName("authReadiness")]
     public string? AuthReadiness { get; set; }
 

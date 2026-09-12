@@ -78,7 +78,7 @@ public class GalaxyOutageReproTests : TestBase
         // so recovery exercises a dead-lobby re-login rather than a too-fast flap. Override without
         // a rebuild via SDVD_OUTAGE_DWELL_MS.
         var dwell = TimeSpan.FromMilliseconds(
-            int.TryParse(TestEnvLoader.Get("SDVD_OUTAGE_DWELL_MS"), out var ms) ? ms : 10_000
+            int.TryParse(TestEnvLoader.Get("SDVD_OUTAGE_DWELL_MS"), out var ms) ? ms : 30_000
         );
         // Steam reconnect after a full outage can take minutes; bound it generously.
         var reconnectBudget = TimeSpan.FromMinutes(5);
