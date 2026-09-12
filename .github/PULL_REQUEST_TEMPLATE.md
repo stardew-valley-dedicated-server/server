@@ -6,12 +6,6 @@
 
 <!-- Describe your changes in detail. Why is this change required? What problem does it solve? -->
 
-### 📝 Changelog
-
-<!-- Only if the PR ships more than one player/admin-facing change. One conventional-commit line
-     per change (e.g. "fix(docker): ..."); the maintainer passes these as the squash-commit body so
-     each becomes its own release-notes line. Delete this section otherwise. -->
-
 <!----------------------------------------------------------------------
 Before creating the pull request, please make sure you do the following:
 
