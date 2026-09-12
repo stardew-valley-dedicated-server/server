@@ -339,11 +339,8 @@ init_permissions
 
 # Run the game through SMAPI (with FIFO to pipe commands via CLI).
 LOG_FILE="/tmp/server-output.log"
-# The command FIFO lives in a private dir, not directly in /tmp: with fs.protected_fifos enabled
-# on the host, a process cannot open a FIFO it does not own for writing inside a sticky
-# world-writable dir (/tmp is 1777). This game process runs as the app user and owns the FIFO, but
-# attach-cli's command loop and toggle-rendering run as root via `docker compose exec` — so a FIFO
-# in /tmp itself rejects their writes (EACCES). A non-world-writable dir sidesteps the check.
+# Not directly in /tmp: with fs.protected_fifos set on the host, root (attach-cli, toggle-rendering)
+# cannot write to a FIFO owned by the app user inside a sticky world-writable dir.
 FIFO_DIR="/tmp/junimo"
 INPUT_FIFO="${FIFO_DIR}/smapi-input"
 
@@ -355,15 +352,13 @@ mkdir -p "${FIFO_DIR}"
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 
-# Start SMAPI, piping stdin from FIFO and output to log file + stdout
-# Using `script` to create a PTY so SMAPI prints colored output (make it think it's a terminal)
-# Using `tail -f` on the FIFO to keep it open and avoid blocking
-# Caveat: the PTY covers stdout only, and the FIFO only ever delivers \n-terminated lines — SMAPI
-# prompts that read a raw keystroke (Console.ReadKey: crash/update markers, PressAnyKeyToExit)
-# can't be answered through this channel; prevent them upstream (see clear_smapi_marker_prompts)
+# Start SMAPI with stdin from the FIFO. `script` gives it a PTY so it prints colors and copies
+# output to both stdout (docker logs) and LOG_FILE (tailed by attach-cli). `tail -f` keeps the
+# FIFO open between writers.
+# The FIFO only delivers newline-terminated lines, so prompts that read a raw keystroke
+# (Console.ReadKey: crash/update markers, PressAnyKeyToExit) cannot be answered here. They are
+# prevented upstream in clear_smapi_marker_prompts.
 echo "Starting SMAPI..."
-# `script` writes to both stdout (docker logs) and the typescript file (${LOG_FILE}, tailed by
-# attach-cli and read by `cat`).
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
 

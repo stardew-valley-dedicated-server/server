@@ -9,7 +9,7 @@ client that runs on demand — including against remote servers.
 ## How commands work today
 
 The launch in `docker/modern/rootfs/opt/bin/start-game.sh` runs SMAPI with its stdin coming from a
-named pipe (`tail -f` on `/tmp/smapi-input` piped into SMAPI, wrapped in `script` to get a PTY for
+named pipe (`tail -f` on `/tmp/junimo/smapi-input` piped into SMAPI, wrapped in `script` to get a PTY for
 coloured output). Anything written to that FIFO becomes a SMAPI console command. Two shell pieces
 write to it:
 
