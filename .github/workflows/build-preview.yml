@@ -200,15 +200,22 @@ jobs:
           # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_PREVIEW || vars.DISCORD_BOT_USERNAME || 'Preview Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_PREVIEW || vars.DISCORD_BOT_AVATAR_URL }}
-          title: Preview ${{ needs.calculate-version.outputs.preview_version }}
-          color: "16753920"
+          # Amber (docs #dda122) for preview builds; the release channel uses the logo green. No
+          # title — the version headline is inline in the description so it can link to the image tag.
+          color: "14524706"
           description: |
+            # Build [${{ needs.calculate-version.outputs.preview_version }}](https://hub.docker.com/r/sdvd/server/tags?name=${{ needs.calculate-version.outputs.preview_version }}) is available!
             ${{ steps.changelog.outputs.markdown }}
-
-            ${{ steps.changelog.outputs.upgrade-notes }}**Update** ([documentation](https://docs.junimoserver.com/admins/operations/upgrading))
-            Set `IMAGE_VERSION=preview` in `.env`, then run:
-            Linux/macOS: `curl -fsSL https://docs.junimoserver.com/update.sh | bash`
-            Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
+          embed2-description: |
+            ## Install or update
+            Run from your server folder to update, or from an empty folder for a new server.
+            ### Linux/macOS
+            `curl -fsSL https://docs.junimoserver.com/install.sh | bash`
+            ### Windows (PowerShell)
+            `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`
+          buttons: >-
+            [{"label":"Upgrade guide","url":"https://docs.junimoserver.com/admins/operations/upgrading"},
+             {"label":"See all changes","url":"${{ steps.changelog.outputs.compare-url }}"}]
 
       - name: Update preview tracking tag
         env:

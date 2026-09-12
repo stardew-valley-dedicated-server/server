@@ -94,19 +94,19 @@ JunimoServer gives you everything you need to host Stardew Valley:
 
 ### Updating to a new version
 
-When a new version is released, run:
+When a new version is released, run the same script from your server folder:
 
 ```sh
-curl -fsSL https://docs.junimoserver.com/update.sh | bash
+curl -fsSL https://docs.junimoserver.com/install.sh | bash
 ```
 
-On Windows: `powershell -c "irm https://docs.junimoserver.com/update.ps1 | iex"`
+On Windows: `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`
 
-This pulls the new image, installs the matching `docker-compose.yml`, and restarts. Your `.env`, saves, and settings are untouched. Keep your own compose changes in a `docker-compose.override.yml` (see [Upgrading](https://docs.junimoserver.com/admins/operations/upgrading)).
+This pulls the new image and installs the matching `docker-compose.yml`, then asks before restarting to apply it; a run with no terminal (or with `NO_TTY=1`) restarts automatically. Your `.env`, saves, and settings are untouched. Keep your own compose changes in a `docker-compose.override.yml` (see [Upgrading](https://docs.junimoserver.com/admins/operations/upgrading)).
 
 ### Using preview releases
 
-> **Note:** JunimoServer is under heavy development. If the latest stable release isn't working for you, try the preview release — it often contains fixes that haven't been officially released yet. As the project matures, stable releases will become more reliable.
+> **Note:** JunimoServer is under heavy development. If the latest stable release isn't working for you, try the preview release; it often contains fixes that haven't been officially released yet. As the project matures, stable releases will become more reliable.
 
 Preview builds are published automatically with every code change. To use a preview release, add this to your `.env` file:
 
@@ -121,7 +121,7 @@ To switch back to stable releases, remove the line or set it to `latest`:
 IMAGE_VERSION=latest
 ```
 
-After changing the version, run the update command above — it pulls the matching image and `docker-compose.yml` for whichever `IMAGE_VERSION` you set (stable, preview, or pinned).
+After changing the version, run the update command above. It pulls the matching image and `docker-compose.yml` for whichever `IMAGE_VERSION` you set (stable, preview, or pinned).
 
 You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
 

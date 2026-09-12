@@ -127,6 +127,52 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
     if (user != null)
     {
         result[0] = (user, pass, token);
+        return result;
+    }
+
+    // No env account: the guided installer's flow. Interactive `setup`/`login` then save their
+    // session under a placeholder directory named after the command, because the username is
+    // only known after the prompt. Resolve that session as account 0 and mirror it into the
+    // per-username directory the account service reads, so `serve`, `download`, `renew` and
+    // `ticket` work without STEAM_USERNAME.
+    //
+    // Both placeholders can exist (a `setup` followed later by a `login`, or vice versa), so pick
+    // the newest by write time rather than the first found — otherwise a stale `setup` could shadow
+    // a fresh `login`. Sessions are read through the shared parser, which rejects any that lack a
+    // refresh token (those cannot be logged in).
+    (string placeholder, string source, DateTime writtenUtc, string user)? newest = null;
+    foreach (var placeholder in new[] { "setup", "login" })
+    {
+        var source = Path.Combine(sessionDir, placeholder, "session.json");
+        var session = SteamAuthService.TryLoadSession(source);
+        if (session == null)
+        {
+            continue;
+        }
+
+        var writtenUtc = File.GetLastWriteTimeUtc(source);
+        if (newest == null || writtenUtc > newest.Value.writtenUtc)
+        {
+            newest = (placeholder, source, writtenUtc, session.Value.username);
+        }
+    }
+
+    if (newest is { } chosen)
+    {
+        // A re-run of `setup`/`login` rewrites the placeholder (fresh token); a renewal rewrites the
+        // per-username copy. Whichever is newer wins, so neither path can revive a stale token.
+        var target = Path.Combine(sessionDir, chosen.user, "session.json");
+        if (!File.Exists(target) || chosen.writtenUtc > File.GetLastWriteTimeUtc(target))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(chosen.source, target, overwrite: true);
+        }
+
+        Logger.Log(
+            $"[SteamService] Using saved session from `{chosen.placeholder}` for {chosen.user} as account 0"
+        );
+        result[0] = (chosen.user, null, null);
+        return result;
     }
 
     return result;

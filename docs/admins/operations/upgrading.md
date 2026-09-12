@@ -7,18 +7,20 @@ Run this from your server directory:
 ::: code-group
 
 ```sh [Linux / macOS]
-curl -fsSL https://docs.junimoserver.com/update.sh | bash
+curl -fsSL https://docs.junimoserver.com/install.sh | bash
 ```
 
 ```powershell [Windows]
-irm https://docs.junimoserver.com/update.ps1 | iex
+irm https://docs.junimoserver.com/install.ps1 | iex
 ```
 
 :::
 
 It pulls the image for your configured `IMAGE_VERSION` (stable, preview, or pinned), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
 
-Prefer to do it by hand (on `latest`)? Download `docker-compose.yml` from the [latest release](https://github.com/stardew-valley-dedicated-server/server/releases/latest), replace yours, then run `docker compose pull && docker compose up -d --remove-orphans`. On `preview` or a pinned version, use the script above (it fetches the `docker-compose.yml` matching your image) or the file linked by the startup warning below.
+On an interactive run it asks two things: which channel to use (press Enter to keep your current one, or type `preview` or `stable` to switch, see [Using Preview Builds](#using-preview-builds)), then whether to restart to apply the update. Answer no and the update is staged (image pulled, `docker-compose.yml` updated) but not applied until you run `docker compose up -d`. A run with no terminal (CI, cron) or with `NO_TTY=1` set skips both questions: it keeps your current channel and restarts automatically.
+
+To upgrade by hand, run `docker compose pull && docker compose up -d --remove-orphans` after replacing `docker-compose.yml` with the version matching your image. The script above fetches that file automatically; to get it yourself, use the one linked by the startup warning below.
 
 A **docker-compose.yml does not match this image** warning at startup links the matching file.
 
@@ -39,11 +41,11 @@ Settings such as ports and passwords go in `.env`; see [Environment Variables](/
 
 ### Updates replace `docker-compose.yml`
 
-The update command overwrites `docker-compose.yml`, saving the previous file as a timestamped `.bak` first. Keep hand edits (extra mod mounts, port changes) in a `docker-compose.override.yml` instead, so they survive every update. See [Customizing docker-compose](#customizing-docker-compose).
+The update command replaces `docker-compose.yml` with the version matching the new image, saving the previous file as a timestamped `.bak` first. It's a generated file, so keep your own changes (extra mod mounts, port changes) in a `docker-compose.override.yml` instead; Compose merges both and your changes survive every update. See [Customizing docker-compose](#customizing-docker-compose).
 
-### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
+### Empty `VNC_PASSWORD` disables VNC instead of aborting startup
 
-Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The current release surfaces it as a warning and aborts only when an insecure setup is detected (empty `VNC_PASSWORD`, or empty `API_KEY` with the API enabled). Set `ALLOW_INSECURE_SETUP=true` on closed networks to keep the warnings but skip the abort. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
+Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. Now an empty password keeps the VNC web interface and VNC port unreachable from outside the container, and the server starts normally; set a password to enable them. Startup still aborts when `API_KEY` is empty with the API enabled. Set `ALLOW_INSECURE_SETUP=true` on closed networks to start anyway and to leave VNC reachable without a password. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
 
 ### The game runs as a non-root user
 
@@ -67,7 +69,7 @@ Set the image version in your `.env` file:
 IMAGE_VERSION=preview
 ```
 
-Then run the [Quick Upgrade](#quick-upgrade) command — it pulls the preview image and installs the `docker-compose.yml` from that build's commit automatically.
+Then run the [Quick Upgrade](#quick-upgrade) command. It pulls the preview image and installs the matching `docker-compose.yml` automatically.
 
 ::: warning
 Preview builds may contain experimental features or bugs. Back up your saves before switching.
@@ -145,7 +147,7 @@ If you need to revert to a previous version:
 IMAGE_VERSION=1.0.0
 ```
 
-Replace `1.0.0` with your desired version from [GitHub Releases](https://github.com/stardew-valley-dedicated-server/server/releases).
+Replace `1.0.0` with your desired version from [Docker Hub tags](https://hub.docker.com/r/sdvd/server/tags).
 
 **2. Pull and restart**
 
