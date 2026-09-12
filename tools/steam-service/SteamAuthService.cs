@@ -417,9 +417,13 @@ public class SteamAuthService
     private string SessionFilePath => Path.Combine(_sessionDir, "session.json");
     private string TicketCachePath => Path.Combine(_sessionDir, "app-ticket.json");
 
+    /// <summary>
+    /// True when a usable saved session exists. A file that is missing, unreadable or lacks a
+    /// refresh token is not a session, so callers fall through to their next auth method.
+    /// </summary>
     public bool HasSavedSession()
     {
-        return File.Exists(SessionFilePath);
+        return LoadSession() != null;
     }
 
     /// <summary>

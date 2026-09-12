@@ -18,7 +18,7 @@ irm https://docs.junimoserver.com/install.ps1 | iex
 
 It pulls the image for your configured `IMAGE_VERSION` (stable, preview, or pinned), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
 
-On an interactive run it asks two things: which channel to use (press Enter to keep your current one, or type `preview` or `stable` to switch, see [Using Preview Builds](#using-preview-builds)), then whether to restart to apply the update. Answer no and the update is staged (image pulled, `docker-compose.yml` updated) but not applied until you run `docker compose up -d`. A piped or scripted run keeps your current channel and restarts automatically.
+On an interactive run it asks two things: which channel to use (press Enter to keep your current one, or type `preview` or `stable` to switch, see [Using Preview Builds](#using-preview-builds)), then whether to restart to apply the update. Answer no and the update is staged (image pulled, `docker-compose.yml` updated) but not applied until you run `docker compose up -d`. A run with no terminal (CI, cron) or with `NO_TTY=1` set skips both questions: it keeps your current channel and restarts automatically.
 
 To upgrade by hand, run `docker compose pull && docker compose up -d --remove-orphans` after replacing `docker-compose.yml` with the version matching your image. The script above fetches that file automatically; to get it yourself, use the one linked by the startup warning below.
 

@@ -33,6 +33,13 @@ if [ "${ALLOW_INSECURE_SETUP:-}" = "true" ]; then
     exit 0
 fi
 
+# 10-nginx.sh always writes listen.conf; if it is missing, the base image changed where nginx's
+# listen directives live and this gate no longer covers them.
+if [ ! -f /var/tmp/nginx/listen.conf ]; then
+    echo "ERROR: /var/tmp/nginx/listen.conf not found; refusing to start with the VNC web UI possibly reachable without a password." >&2
+    exit 1
+fi
+
 # Address forms nginx accepts: `IPv4:port`, `[IPv6]:port`, bare `port`. All become loopback.
 for conf in /var/tmp/nginx/listen.conf /var/tmp/nginx/stream_listen.conf; do
     [ -f "${conf}" ] || continue

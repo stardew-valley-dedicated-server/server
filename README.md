@@ -102,7 +102,7 @@ curl -fsSL https://docs.junimoserver.com/install.sh | bash
 
 On Windows: `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`
 
-This pulls the new image and installs the matching `docker-compose.yml`, then (on an interactive run) asks before restarting to apply it; a scripted run restarts automatically. Your `.env`, saves, and settings are untouched. Keep your own compose changes in a `docker-compose.override.yml` (see [Upgrading](https://docs.junimoserver.com/admins/operations/upgrading)).
+This pulls the new image and installs the matching `docker-compose.yml`, then asks before restarting to apply it; a run with no terminal (or with `NO_TTY=1`) restarts automatically. Your `.env`, saves, and settings are untouched. Keep your own compose changes in a `docker-compose.override.yml` (see [Upgrading](https://docs.junimoserver.com/admins/operations/upgrading)).
 
 ### Using preview releases
 
