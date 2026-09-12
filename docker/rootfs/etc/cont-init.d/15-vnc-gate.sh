@@ -9,7 +9,8 @@
 # already set, so nothing inside the image can make them depend on VNC_PASSWORD. Instead the listen
 # directives nginx already generated are re-bound to loopback (nginx stays up, so its readiness
 # check and the services that depend on it are unaffected), and a marker tells services.d/xvnc/run
-# to drop Xvnc's TCP port.
+# to drop Xvnc's TCP port. If a directive survives in a form this script doesn't know, the container
+# refuses to start rather than boot with the web UI open.
 
 set -e
 
@@ -32,13 +33,18 @@ if [ "${ALLOW_INSECURE_SETUP:-}" = "true" ]; then
     exit 0
 fi
 
+# Address forms nginx accepts: `IPv4:port`, `[IPv6]:port`, bare `port`. All become loopback.
 for conf in /var/tmp/nginx/listen.conf /var/tmp/nginx/stream_listen.conf; do
     [ -f "${conf}" ] || continue
     sed -i \
         -e 's/^listen 0\.0\.0\.0:/listen 127.0.0.1:/' \
         -e 's/^listen \[::\]:/listen [::1]:/' \
-        -e 's/^listen \([0-9][0-9]*\) ssl;/listen 127.0.0.1:\1 ssl;/' \
+        -e 's/^listen \([0-9][0-9]*\)\([ ;]\)/listen 127.0.0.1:\1\2/' \
         "${conf}"
+    if grep '^listen ' "${conf}" | grep -v -e '^listen 127\.0\.0\.1:' -e '^listen \[::1\]:' -e '^listen unix:'; then
+        echo "ERROR: ${conf} still has a listen directive that is not loopback (above); refusing to start with the VNC web UI reachable without a password." >&2
+        exit 1
+    fi
 done
 touch "${VNC_DISABLED_MARKER}"
 echo "VNC_PASSWORD is not set: the VNC web UI and VNC port are disabled. Set VNC_PASSWORD in .env to enable them."
