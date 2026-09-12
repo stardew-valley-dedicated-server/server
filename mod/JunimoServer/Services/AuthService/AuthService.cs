@@ -131,8 +131,9 @@ public class GalaxyAuthService : ModService
 
     /// <summary>
     /// Galaxy lobby state surfaced on <c>/status</c> and <c>/health</c>: <c>connected</c> |
-    /// <c>recovering</c> | <c>down</c>. Writers: <see cref="PumpGalaxyRecovery"/> (connected),
-    /// <see cref="EnterRecovering"/> (recovering, from both the supervisor and the reconnect re-login),
+    /// <c>recovering</c> | <c>down</c>. Writers: <see cref="PumpGalaxyRecovery"/> (connected; down at a
+    /// reload teardown), <see cref="EnterRecovering"/> (recovering, from both the supervisor and the
+    /// reconnect re-login),
     /// <see cref="SetInviteCodeFromLiveLobby"/> on a non-null code (connected), and
     /// <see cref="SteamHelperShutdown_Prefix"/> (down).
     /// <see cref="GalaxyLobbyState"/> returns null in LAN mode (no Galaxy).
@@ -772,9 +773,16 @@ public class GalaxyAuthService : ModService
         // Only supervise a hosted world. During a reload/new-game teardown Game1.server is gone but the
         // recovering flag persists (it resets only on process exit), so without this the
         // missing-server-while-recovering branch would re-login into the new world's server creation.
-        // A lobby that enters during load is still mirrored by the GetInviteCode postfix.
+        // A lobby that enters during load is still mirrored by the GetInviteCode postfix. The teardown
+        // itself (ExitToTitle stops the Galaxy server and nulls Game1.server) fires no GetInviteCode,
+        // so withdraw the dead code here: nothing else would until the new lobby enters.
         if (!Context.IsWorldReady)
         {
+            if (Game1.server == null && _galaxyInviteCode != null)
+            {
+                WithdrawInviteCode("no_lobby");
+                _galaxyLobbyState = "down";
+            }
             return;
         }
 

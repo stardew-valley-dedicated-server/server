@@ -2824,6 +2824,7 @@ public partial class ApiService : ModService
                 StartedAtUtc = ServerCommand.StartTimeUtc?.ToString("o"),
                 Tps = tps,
                 Version = snap.Version,
+                SteamInviteCode = steamInviteCode,
                 SteamRelayReady = steamRelayReady,
                 GalaxyLobby = galaxyLobby,
                 SteamSession = steamSession,
