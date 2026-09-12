@@ -22,13 +22,15 @@ outputs:
     description: Changelog markdown (at most 3200 code points)
     value: ${{ steps.changelog.outputs.markdown }}
   count:
-    description: Commits in the range
+    description: >
+      Changelog entries in the range: one per commit, plus one per conventional-commit line in a
+      squash commit's body
     value: ${{ steps.changelog.outputs.count }}
   visible-count:
-    description: Commits listed individually (visible sections plus Other)
+    description: Entries listed individually (visible sections plus Other)
     value: ${{ steps.changelog.outputs.visible-count }}
   hidden-count:
-    description: Commits folded into the internal-changes line
+    description: Entries folded into the internal-changes line
     value: ${{ steps.changelog.outputs.hidden-count }}
   base-tag:
     description: Tag the range starts from (the previous build)
@@ -63,7 +65,7 @@ runs:
         BASE_TAG: ${{ steps.range.outputs.base-tag }}
         REPO_URL: ${{ github.server_url }}/${{ github.repository }}
       run: |
-        git log --first-parent --format='%H%x1f%s' "$BASE_OID..$HEAD_OID" \
+        git log --first-parent --format='%H%x1f%s%x1f%b%x1e' "$BASE_OID..$HEAD_OID" \
           | node "$GITHUB_ACTION_PATH/../../scripts/build-changelog.js"
 
     - name: Flag changed operator files

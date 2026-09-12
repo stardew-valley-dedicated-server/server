@@ -8,7 +8,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { buildChangelog, BUDGET } = require("./build-changelog.js");
+const { buildChangelog, expandCommit, BUDGET } = require("./build-changelog.js");
 
 const OPTS = {
     repoUrl: "https://github.com/o/r",
@@ -185,6 +185,27 @@ test("release-please's release commit is excluded from every count", () => {
     assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [2, 1, 1]);
     // A plain chore mentioning "release" without a version is NOT the release commit.
     assert.equal(buildChangelog(["chore: release notes cleanup"], OPTS).hiddenCount, 1);
+});
+
+test("a squash commit's conventional body lines become their own entries, linked to the same PR", () => {
+    const body = [
+        "Prose describing the change, which is not an entry.",
+        "",
+        "fix(docker): the console exits when the server isn't running",
+        "  feat(docker): startup noise is hidden  ",
+        "not a conventional line",
+        "chore: internal tidy-up",
+    ].join("\n");
+    assert.deepEqual(expandCommit("feat(docker): quieter console (#661)", body), [
+        "feat(docker): quieter console (#661)",
+        "fix(docker): the console exits when the server isn't running (#661)",
+        "feat(docker): startup noise is hidden (#661)",
+        "chore: internal tidy-up (#661)",
+    ]);
+    // Without a PR suffix on the subject, body entries get none either.
+    assert.deepEqual(expandCommit("fix: direct push", "feat: extra"), ["fix: direct push", "feat: extra"]);
+    // An empty body contributes nothing.
+    assert.deepEqual(expandCommit("fix: alone (#1)", ""), ["fix: alone (#1)"]);
 });
 
 test("zero commits reports no changes since the base tag", () => {

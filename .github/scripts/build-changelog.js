@@ -2,9 +2,13 @@
 // ordered the way release-please orders its release notes, trimmed to fit a Discord embed. Used
 // by .github/actions/build-changelog; the core function is exported so `npm test` can call it.
 //
-// How the action runs it: it pipes `git log --first-parent --format='%H%x1f%s' BASE..HEAD` in on
-// stdin and sets the BASE_TAG, HEAD_OID and REPO_URL env vars. We write markdown / count /
+// How the action runs it: it pipes `git log --first-parent --format='%H%x1f%s%x1f%b%x1e' BASE..HEAD`
+// in on stdin and sets the BASE_TAG, HEAD_OID and REPO_URL env vars. We write markdown / count /
 // visible-count / hidden-count / compare-url to $GITHUB_OUTPUT (or print them to stdout locally).
+//
+// A squash commit whose body carries further conventional-commit lines (release-please's
+// "multiple fixes or features in one PR" convention) contributes one entry per such line on top
+// of its subject, so the Discord post lists the same changes the release notes will.
 
 // The heading above the list. One flat list, no per-type sub-headings.
 const HEADER = "**Changes**";
@@ -65,6 +69,25 @@ function parseSubject(subject) {
         breaking: conv ? conv[3] === "!" || /\bBREAKING[ -]CHANGE\b/.test(text) : false,
         pr,
     };
+}
+
+/**
+ * Expand one commit into the subjects it contributes: its own subject, plus every body line that
+ * is itself a conventional commit (a squash of a PR shipping several changes). Body entries carry
+ * the subject's `(#N)` so they link to the same PR. Anything else in the body is ignored.
+ * @param {string} subject - Raw `git log %s` subject line.
+ * @param {string} body - Raw `git log %b` body (may be empty).
+ * @returns {string[]}
+ */
+function expandCommit(subject, body) {
+    const pr = subject.match(PR_SUFFIX_RE);
+    const suffix = pr ? ` (#${pr[1]})` : "";
+    const extra = body
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => CONVENTIONAL_RE.test(line))
+        .map((line) => `${line}${suffix}`);
+    return [subject, ...extra];
 }
 
 /** @returns {string} one `- …` bullet. A breaking change gets a ⚠ prefix; the PR link goes on the end. */
@@ -145,7 +168,7 @@ function buildChangelog(subjects, { repoUrl, baseTag, headOid }) {
     return { ...result, markdown };
 }
 
-module.exports = { buildChangelog, parseSubject, escapeMarkdown, BUDGET };
+module.exports = { buildChangelog, expandCommit, parseSubject, escapeMarkdown, BUDGET };
 
 // --- CLI entry (composite-action wiring) ---------------------------------------------
 
@@ -167,12 +190,15 @@ function main() {
     const headOid = requireEnv("HEAD_OID");
     const repoUrl = requireEnv("REPO_URL");
 
-    // Each line is `<sha>\x1f<subject>`. We split on the \x1f, which guarantees one line per commit
-    // even when the subject is empty, so the commit count stays correct.
+    // Each record is `<sha>\x1f<subject>\x1f<body>\x1e`. Bodies span lines, so records are split
+    // on the \x1e terminator and fields on \x1f; a record with an empty subject still counts.
     const subjects = readFileSync(0, "utf8")
-        .split("\n")
-        .filter((line) => line.includes("\x1f"))
-        .map((line) => line.slice(line.indexOf("\x1f") + 1));
+        .split("\x1e")
+        .filter((record) => record.includes("\x1f"))
+        .flatMap((record) => {
+            const [, subject = "", body = ""] = record.split("\x1f");
+            return expandCommit(subject.trim(), body);
+        });
 
     const result = buildChangelog(subjects, { repoUrl, baseTag, headOid });
     const delimiter = `EOF_${randomUUID()}`;
@@ -190,7 +216,7 @@ function main() {
     if (process.env.GITHUB_OUTPUT) {
         appendFileSync(process.env.GITHUB_OUTPUT, output);
     }
-    console.log(`${result.count} commits (${result.visibleCount} visible, ${result.hiddenCount} internal)`);
+    console.log(`${result.count} entries (${result.visibleCount} visible, ${result.hiddenCount} internal)`);
     console.log(result.markdown);
 }
 
