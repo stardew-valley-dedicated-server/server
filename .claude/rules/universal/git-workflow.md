@@ -16,7 +16,7 @@
 - Branch must be up to date with `master`, approved, green. Behind: use the PR's **Update branch** button.
 - Approve: comment `!approve` on the PR (`gh pr review --approve` fails for the author).
 - Merge: `gh pr merge <num> --squash [--auto]`. Squash uses the PR title as the commit subject and drops the body, so the PR title is the changelog line.
-- A PR that ships several player/admin-facing changes gets one changelog line per change by passing them as the squash body: `gh pr merge <num> --squash --body-file <file>`, one `type(scope): subject` per line (each meeting the subject rule below). release-please and the Discord changelog list every such line. Keep the lines in the PR description under a `### 📝 Changelog` heading so reviewers see them.
+- Exception, several changes in one PR: `gh pr merge <num> --squash --body-file <file>` with one `type(scope): subject` per line; release-please and the Discord changelog list each.
 - `--rebase` only when the PR is a series of independent player/admin-facing changes that each deserve their own line; then every commit subject must meet the subject rule below.
 
 ## Chained PRs
@@ -41,7 +41,7 @@ gh pr merge <child-num> --squash --auto
 - No `Co-Authored-By` trailer. No co-author attribution in PRs.
 - Subjects (PR title, commit subject) are changelog lines: lead with the player/admin-facing outcome ("festivals no longer kick players who moved their cabin"), not the mechanism, and say what kind of thing shipped ("embeddable live server status widget for web pages", not "status widget backed by /status").
 - Commit body in plain English — what changed, why, what tests cover it — no unexplained in-house terms.
-- A squashed PR is one changelog line by default, so it holds one change. A fix that belongs to a sibling feature still in review moves into that feature's PR instead of riding along. A PR that has already grown several changes uses the squash-body mechanism above rather than being split after the fact.
+- A squashed PR is one changelog line, so it holds one change. A fix that belongs to a sibling feature still in review moves into that feature's PR instead of riding along.
 - PR description: bullet points of changes.
 
 ## Bot review threads
