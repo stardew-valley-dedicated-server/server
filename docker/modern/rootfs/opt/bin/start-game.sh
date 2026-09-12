@@ -208,7 +208,9 @@ export LD_PRELOAD="/opt/lib/pthread_shim.so${LD_PRELOAD:+:$LD_PRELOAD}"
 
 # Start SMAPI with stdin from the FIFO. `script` gives it a PTY so it prints colors and copies
 # output to both stdout (docker logs) and LOG_FILE (tailed by attach-cli). `tail -f` keeps the
-# FIFO open between writers.
+# FIFO open between writers. Keep this pipeline unfiltered: startup noise is filtered at the read
+# site instead (attach-cli tails through strip-startup-noise.awk). A filter interposed on
+# script's stdout here stalled the session under `wait`, so don't reintroduce one.
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
 

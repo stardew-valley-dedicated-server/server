@@ -16,6 +16,7 @@
 - Branch must be up to date with `master`, approved, green. Behind: use the PR's **Update branch** button.
 - Approve: comment `!approve` on the PR (`gh pr review --approve` fails for the author).
 - Merge: `gh pr merge <num> --squash [--auto]`. Squash uses the PR title as the commit subject and drops the body, so the PR title is the changelog line.
+- Exception, several changes in one PR: `gh pr merge <num> --squash --body-file <file>` with one `type(scope): subject` per line; release-please and the Discord changelog list each.
 - `--rebase` only when the PR is a series of independent player/admin-facing changes that each deserve their own line; then every commit subject must meet the subject rule below.
 
 ## Chained PRs

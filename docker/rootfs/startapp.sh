@@ -318,6 +318,10 @@ init_steam_sdk() {
         echo "Steam SDK already linked"
     fi
 
+    # Ensure the SDK's own dlopen("steamclient.so") resolves on the first (bare)
+    # attempt, so the loader skips the "dlopen failed" fallback probe on startup.
+    export LD_LIBRARY_PATH="${STEAM_SDK_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
     # Create steam_appid.txt with Stardew Valley's AppID
     # The SDK defaults to 480 (Spacewar) which causes SDR connection failures
     echo "413150" > "${GAME_DEST_DIR}/steam_appid.txt"

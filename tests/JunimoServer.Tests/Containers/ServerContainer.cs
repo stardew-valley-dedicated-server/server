@@ -1042,13 +1042,26 @@ public class ServerContainer : IAsyncDisposable
             // Continuation line belonging to the current error
             _currentErrorDetails.Add(line.TrimEnd());
         }
-        else if (line.StartsWith("Process terminated.", StringComparison.Ordinal))
+        else if (IsUnprefixedCrashHeader(line))
         {
-            // .NET runtime FailFast (e.g. missing libicu) prints unprefixed to
-            // stderr — start a fatal error block so startup fails as an app
-            // crash instead of masquerading as a daemon/transport timeout.
+            // The .NET runtime writes these unprefixed to stderr — start a fatal
+            // error block so startup fails as an app crash instead of
+            // masquerading as a daemon/transport timeout.
             _currentErrorHeader = line;
         }
+    }
+
+    // Fatal crash headers the runtime writes without a SMAPI prefix: FailFast
+    // (e.g. missing libicu), an unhandled exception that escaped SMAPI's
+    // handlers, or a stack overflow. Keep in sync with the terminator set in
+    // docker/rootfs/opt/base/bin/strip-startup-noise.awk (the attach-cli
+    // startup-noise filter ends its suppression window on the same headers).
+    private static bool IsUnprefixedCrashHeader(string line)
+    {
+        return line.StartsWith("Process terminated.", StringComparison.Ordinal)
+            || line.StartsWith("Unhandled exception.", StringComparison.Ordinal)
+            || line.StartsWith("Unhandled Exception:", StringComparison.Ordinal)
+            || line.StartsWith("Stack overflow.", StringComparison.Ordinal);
     }
 
     private void FlushError()
