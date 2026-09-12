@@ -466,7 +466,7 @@ public class SteamAuthService
 
         try
         {
-            var doc = JsonDocument.Parse(File.ReadAllText(path));
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var username = doc.RootElement.GetProperty("username").GetString();
             var token = doc.RootElement.GetProperty("refreshToken").GetString();
             if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(token))
@@ -475,7 +475,17 @@ public class SteamAuthService
             }
             return (username, token);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException)
+        // A wrong-shaped file (root not an object, non-string fields) throws InvalidOperationException
+        // from GetProperty/GetString, and a permission failure throws UnauthorizedAccessException.
+        // Both mean "not a usable session" -- swallow them so one bad candidate can't abort discovery.
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or JsonException
+                        or KeyNotFoundException
+                        or InvalidOperationException
+            )
         {
             return null;
         }
