@@ -78,13 +78,18 @@ public class AttachCliTests : TestBase
         """;
 
     /// <summary>
-    /// Feeds a sample XACT error block through the in-image startup-noise filter and checks
+    /// Feeds sample XACT error blocks through the in-image startup-noise filter and checks
     /// what survives. The filter (strip-startup-noise.awk, which attach-cli tails the console
     /// through) suppresses the benign headless-audio XACT block, but must NOT swallow a real
     /// crash the runtime writes without a SMAPI prefix — an unhandled exception or a stack
     /// overflow — that lands inside the XACT suppression window. Runs the shipped artifact, not
     /// a copy. Creates no tmux session, so it does not race AttachCli_StartsSessionWithLivePanes
     /// on the shared server (that test's one-concurrent-run caveat is about tmux, avoided here).
+    ///
+    /// Each crash header gets its OWN XACT block: a header that clears suppression also clears
+    /// it for everything after, so a single shared block would let the first header's assertion
+    /// mask a missing terminator for the second (the second line would print merely because
+    /// suppression was already off). Independent blocks exercise each terminator branch.
     /// </summary>
     private const string NoiseFilterScenario = """
         set -u
@@ -96,9 +101,12 @@ public class AttachCliTests : TestBase
           '   at Microsoft.Xna.Framework.Audio.AudioEngine..ctor()' \
           'Unhandled Exception:' \
           'System.NullReferenceException: boom' \
+          '[12:01:00 ERROR game] Game.Initialize() caught exception initializing XACT: no audio' \
+          'Microsoft.Xna.Framework.Audio.NoAudioHardwareException: No audio device' \
+          '   at Microsoft.Xna.Framework.Audio.AudioEngine..ctor()' \
           'Stack overflow.' \
           '   at StardewValley.Deep.Recursion()' \
-          '[12:00:05 INFO SMAPI] Continuing' | awk -f "$filter")
+          '[12:02:00 INFO SMAPI] Continuing' | awk -f "$filter")
         printf '%s\n' "$out" | grep -q 'caught exception initializing XACT' && echo "VERDICT:XACT_LEAKED" || echo "VERDICT:XACT_DROPPED"
         printf '%s\n' "$out" | grep -q '^Unhandled Exception:' && echo "VERDICT:UNHANDLED_KEPT" || echo "VERDICT:UNHANDLED_SWALLOWED"
         printf '%s\n' "$out" | grep -q '^Stack overflow\.' && echo "VERDICT:STACKOVERFLOW_KEPT" || echo "VERDICT:STACKOVERFLOW_SWALLOWED"
