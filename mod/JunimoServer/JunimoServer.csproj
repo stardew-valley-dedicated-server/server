@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<AssemblyName>JunimoServer</AssemblyName>
 		<RootNamespace>JunimoServer</RootNamespace>
-		<Version>1.4.1</Version>
+		<Version>1.5.0</Version>
 		<TargetFramework>net6.0</TargetFramework>
 		<EnableHarmony>true</EnableHarmony>
 		<EnableModDeploy>false</EnableModDeploy>
@@ -27,7 +27,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\JunimoServer.Shared\JunimoServer.Shared.csproj" />
+        <ProjectReference Include="..\JunimoServer.Shared\JunimoServer.Shared.csproj"/>
     </ItemGroup>
 
     <!--
@@ -86,8 +86,7 @@
              .deps.json/.pdb are excluded by the *.dll glob. $(OutDir) (not $(OutputPath)) is used because
              it always ends in a separator, including when the output is redirected via `dotnet build -o`. -->
         <ItemGroup>
-            <ModFiles Include="$(OutDir)*.dll"
-                      Exclude="$(OutDir)Newtonsoft.Json.dll"/>
+            <ModFiles Include="$(OutDir)*.dll" Exclude="$(OutDir)Newtonsoft.Json.dll"/>
             <ModFiles Include="$(MSBuildProjectDirectory)\manifest.json"/>
         </ItemGroup>
         <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(DestPath)"/>
