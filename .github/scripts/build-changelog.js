@@ -41,8 +41,10 @@ const BUDGET = 3900;
 const CONVENTIONAL_RE = /^([a-z]+)(?:\(([^()]*)\))?(!)?: (.*)$/i;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)$/;
 // A commit is breaking with a `!` in the subject or a `BREAKING CHANGE:` / `BREAKING-CHANGE:`
-// footer in the body — release-please honours both, so the callout must recognise both too.
-const BREAKING_RE = /\bBREAKING[ -]CHANGE\b/;
+// footer in the body — release-please honours both, so the callout must recognise both too. The
+// token must start a line and carry the colon (a real footer), so ordinary prose that merely
+// mentions "a BREAKING CHANGE" doesn't trigger a false callout.
+const BREAKING_RE = /^BREAKING(?: CHANGE|-CHANGE):/m;
 // release-please's own "release" commit (e.g. "chore(master): release 1.5.0") is what
 // a release tag points at, so it falls inside its own range. It's release plumbing, not a real
 // change, so we drop it from every count — otherwise it would inflate the hidden-change count.

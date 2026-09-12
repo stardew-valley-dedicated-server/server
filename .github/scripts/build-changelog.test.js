@@ -111,6 +111,22 @@ test("a commit breaking only via a body footer still gets the callout", () => {
     );
 });
 
+test("prose mentioning 'BREAKING CHANGE' without a footer gets no callout", () => {
+    const result = buildChangelog(
+        [
+            {
+                subject: "feat(api): tidy auth (#21)",
+                body: "This is not a BREAKING CHANGE for users; the API is unchanged.",
+            },
+        ],
+        OPTS,
+    );
+    assert.equal(
+        result.markdown,
+        ["## Changes", "### Features", "- api: tidy auth ([#21](https://github.com/o/r/pull/21))"].join("\n"),
+    );
+});
+
 test("a subject without (#N) is listed without a PR link", () => {
     const result = buildChangelog(["feat(tools): add request-correlation context"], OPTS);
     assert.equal(
