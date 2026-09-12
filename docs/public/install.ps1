@@ -124,6 +124,13 @@ if (Test-Path docker-compose.yml) {
     $target = if ($env:DIR) { $env:DIR } else { 'junimoserver' }
     New-Item -ItemType Directory -Force -Path $target | Out-Null
 }
+# The update path sets $env:IMAGE_VERSION so this run's compose calls pull the chosen channel.
+# Under `irm | iex` that would persist in the caller's session and later be read back by
+# Resolve-ChannelVersion as an explicit choice, silently skipping the channel prompt. Snapshot it
+# now and restore (or clear) it in the finally so a run leaves the caller's environment untouched.
+$imageVersionWasSet = Test-Path env:IMAGE_VERSION
+$originalImageVersion = $env:IMAGE_VERSION
+
 # Push into the target so the script never leaves the caller's session in a different directory,
 # even on abort (Pop-Location in the finally restores it).
 Push-Location $target
@@ -319,6 +326,8 @@ Update later by re-running this in the same folder:
 }
 } finally {
     Pop-Location
+    if ($imageVersionWasSet) { $env:IMAGE_VERSION = $originalImageVersion }
+    else { Remove-Item env:IMAGE_VERSION -ErrorAction SilentlyContinue }
 }
 
 } catch {
