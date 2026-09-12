@@ -339,22 +339,25 @@ init_permissions
 
 # Run the game through SMAPI (with FIFO to pipe commands via CLI).
 LOG_FILE="/tmp/server-output.log"
-INPUT_FIFO="/tmp/smapi-input"
+# Not directly in /tmp: with fs.protected_fifos set on the host, root (attach-cli, toggle-rendering)
+# cannot write to a FIFO owned by the app user inside a sticky world-writable dir.
+FIFO_DIR="/tmp/junimo"
+INPUT_FIFO="${FIFO_DIR}/smapi-input"
 
 # Ensure log file exists
 touch "${LOG_FILE}"
 
 # Ensure FIFO pipe exists
+mkdir -p "${FIFO_DIR}"
 rm -f "${INPUT_FIFO}"
 mkfifo "${INPUT_FIFO}"
 
-# Start SMAPI, piping stdin from FIFO and output to log file + stdout
-# Using `script` to create a PTY so SMAPI prints colored output (make it think it's a terminal)
-# Using `tail -f` on the FIFO to keep it open and avoid blocking
-# Note: `script` writes to both stdout (for docker logs) and the typescript file simultaneously
-# Caveat: the PTY covers stdout only, and the FIFO only ever delivers \n-terminated lines — SMAPI
-# prompts that read a raw keystroke (Console.ReadKey: crash/update markers, PressAnyKeyToExit)
-# can't be answered through this channel; prevent them upstream (see clear_smapi_marker_prompts)
+# Start SMAPI with stdin from the FIFO. `script` gives it a PTY so it prints colors and copies
+# output to both stdout (docker logs) and LOG_FILE (tailed by attach-cli). `tail -f` keeps the
+# FIFO open between writers.
+# The FIFO only delivers newline-terminated lines, so prompts that read a raw keystroke
+# (Console.ReadKey: crash/update markers, PressAnyKeyToExit) cannot be answered here. They are
+# prevented upstream in clear_smapi_marker_prompts.
 echo "Starting SMAPI..."
 script -q -f --return -c "tail -f \"${INPUT_FIFO}\" | \"${SMAPI_EXECUTABLE}\"" "${LOG_FILE}" &
 SMAPI_PID=$!
