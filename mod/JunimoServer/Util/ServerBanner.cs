@@ -15,17 +15,20 @@ public static class ServerBanner
 {
     private static bool _hasPrinted = false;
     private static bool _printedWithCode = false;
+    private static int _printGeneration;
     private static readonly object _lock = new object();
 
     /// <summary>
     /// Prints the server startup banner with IP addresses and invite code (if available).
     /// Prints once, plus exactly one refresh the first time an invite code becomes available, so a
     /// banner printed by the ~5s startup fallback (before the code exists) is not the last word.
-    /// Once printed with a code, it is idempotent.
+    /// Once printed with a code, it is idempotent. Prints are ordered: a print that awaits the
+    /// external IP lookup longer than a later one is dropped, so the last banner logged is the newest.
     /// </summary>
     public static void Print(IMonitor monitor, IModHelper helper)
     {
         string inviteCode;
+        int generation;
         lock (_lock)
         {
             // Snapshot under the lock and print that snapshot: the async print awaits an external IP
@@ -43,12 +46,18 @@ public static class ServerBanner
 
             _hasPrinted = true;
             _printedWithCode = codeAvailable;
+            generation = ++_printGeneration;
         }
 
-        _ = PrintAsync(monitor, helper, inviteCode);
+        _ = PrintAsync(monitor, helper, inviteCode, generation);
     }
 
-    private static async Task PrintAsync(IMonitor monitor, IModHelper helper, string inviteCode)
+    private static async Task PrintAsync(
+        IMonitor monitor,
+        IModHelper helper,
+        string inviteCode,
+        int generation
+    )
     {
         var modInfo = helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
@@ -79,6 +88,13 @@ public static class ServerBanner
             $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "not yet available")}"
         );
 
+        lock (_lock)
+        {
+            if (generation != _printGeneration)
+            {
+                return; // a newer print (with the code) started while this one awaited
+            }
+        }
         monitor.LogBanner(bannerLines.ToArray());
     }
 
@@ -114,6 +130,7 @@ public static class ServerBanner
         {
             _hasPrinted = false;
             _printedWithCode = false;
+            _printGeneration++;
         }
     }
 }
