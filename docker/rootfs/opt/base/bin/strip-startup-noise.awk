@@ -15,14 +15,15 @@
 #      accurate, but not actionable on a dedicated server.
 #
 # Matching is done on an ANSI-SGR-stripped copy so colorized and plain lines are
-# handled alike; the original line is printed unchanged (color preserved). The XACT
+# handled alike; the original line is printed with its color intact, except that black
+# text is recolored gray so trace logs stay readable on a dark pane. The XACT
 # block ends at the next SMAPI log line (prefix mirrors ServerContainer
 # .SmapiLogLinePrefix) or any unprefixed fatal-crash header the runtime writes without a
 # SMAPI prefix — .NET FailFast ("Process terminated."), an unhandled exception, or a
 # stack overflow — so a real crash landing in the XACT window is never swallowed. Every
 # drop is an exact message match, never a level match, so real warnings/errors always
 # pass through.
-BEGIN { esc = sprintf("%c", 27); sgr = esc "[[][0-9;]*m"; suppress = 0 }
+BEGIN { esc = sprintf("%c", 27); sgr = esc "[[][0-9;]*m"; black = esc "[[]30m"; gray = esc "[90m"; suppress = 0 }
 {
     clean = $0
     gsub(sgr, "", clean)
@@ -57,6 +58,7 @@ BEGIN { esc = sprintf("%c", 27); sgr = esc "[[][0-9;]*m"; suppress = 0 }
         next
     }
 
+    gsub(black, gray)
     print
     fflush()
 }

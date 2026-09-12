@@ -61,29 +61,21 @@ start_output_pane() {
     local session_name="$1"
     local log_file="$2"
 
-    # Build the startup-noise filter (see strip-startup-noise.awk). Fall back to a no-op
-    # passthrough if awk or the filter is unusable, so the console is never blanked.
-    # mawk block-buffers stdout and ignores fflush(), so under `tail -f` (no EOF) its output
-    # never reaches the pane — it needs `-W interactive`. busybox/gawk flush via fflush() in
-    # the program and warn on/reject -W, so only add it for mawk (which accepts it silently).
-    local noise_filter="/opt/base/bin/strip-startup-noise.awk"
-    local log_filter="cat"
-    if command -v awk >/dev/null 2>&1 && [ -r "$noise_filter" ]; then
-        local awk_flush=""
-        if [ -z "$(awk -W interactive 'BEGIN{}' </dev/null 2>&1)" ]; then
-            awk_flush="-W interactive"
-        fi
-        if printf '\n' | awk $awk_flush -f "$noise_filter" >/dev/null 2>&1; then
-            log_filter="awk $awk_flush -f $noise_filter"
-        fi
+    # Startup-noise filter (see strip-startup-noise.awk). mawk block-buffers stdout and ignores
+    # fflush(), so under `tail -f` (no EOF) its output never reaches the pane — it needs
+    # `-W interactive`. busybox/gawk flush via fflush() in the program and warn on -W, so only
+    # add it for mawk (which accepts it silently).
+    local awk_flush=""
+    if [ -z "$(awk -W interactive 'BEGIN{}' </dev/null 2>&1)" ]; then
+        awk_flush="-W interactive"
     fi
+    local log_filter="awk $awk_flush -f /opt/base/bin/strip-startup-noise.awk"
 
     # Pin default-shell before the first pane spawns: the baseimage writes /sbin/nologin as every
     # account's shell, and tmux would adopt it (killing each pane and #() job instantly) since
     # Debian 13's usr-merge makes that path resolvable
     # Using `stty` to prevent user input (focus is still possible, and needed for scrolling)
-    # Using `sed` to replace black text with gray to make trace logs easier to read
-    tmux start-server \; set-option -g default-shell /bin/sh \; new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | ${log_filter} | sed 's/\x1b\[30m/\x1b[90m/g'"
+    tmux start-server \; set-option -g default-shell /bin/sh \; new-session -d -s "$session_name" "stty -echo; tail -n 1000 -f ${log_file} | ${log_filter}"
 }
 
 # Add command input pane at bottom (exactly 2 lines - tmux minimum)
