@@ -10,7 +10,6 @@ These must be set for the server to function:
 |----------|-------------|
 | `STEAM_USERNAME` | Steam account username |
 | `STEAM_PASSWORD` | Steam account password |
-| `VNC_PASSWORD` | Password for VNC web interface |
 
 ## Runtime Variables
 
@@ -19,6 +18,7 @@ These must be set for the server to function:
 | `GAME_PORT` | UDP port for multiplayer connections | `24642` |
 | `QUERY_PORT` | UDP port for Steam query protocol | `27015` |
 | `VNC_PORT` | TCP port for VNC web interface | `5800` |
+| `VNC_PASSWORD` | Password for the VNC web interface (max 8 characters) | (empty = VNC disabled) |
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
 | `PUBLIC_HOST` | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); when set, `VNC_PORT` and `API_PORT` bind to loopback | - |
@@ -42,7 +42,7 @@ These must be set for the server to function:
 | `MAX_LOGIN_ATTEMPTS` | Failed login attempts before kick | `3` |
 | `AUTH_TIMEOUT_SECONDS` | Seconds before unauthenticated players are kicked | `120` |
 | `API_KEY` | API key for authenticating write requests | (empty = disabled) |
-| `ALLOW_INSECURE_SETUP` | Allow startup when `VNC_PASSWORD` or `API_KEY` is empty | `false` |
+| `ALLOW_INSECURE_SETUP` | Start without `API_KEY`, and keep VNC reachable without `VNC_PASSWORD` | `false` |
 
 ## Host / Permissions
 
@@ -184,7 +184,7 @@ openssl rand -base64 32
 
 ### ALLOW_INSECURE_SETUP
 
-The server refuses to start without `VNC_PASSWORD`, or without `API_KEY` while `API_ENABLED=true`. Set `ALLOW_INSECURE_SETUP=true` to start anyway. Only do this on networks where the VNC and API ports are not reachable by untrusted clients.
+The server refuses to start without `API_KEY` while `API_ENABLED=true`, and without `VNC_PASSWORD` it keeps the VNC web interface (port 5800) and the VNC port (5900) unreachable from outside the container. Set `ALLOW_INSECURE_SETUP=true` to start anyway and to leave VNC reachable without a password. Only do this on networks where the VNC and API ports are not reachable by untrusted clients.
 
 ## Port Summary
 

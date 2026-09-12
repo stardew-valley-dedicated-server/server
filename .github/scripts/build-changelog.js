@@ -21,7 +21,9 @@ const HEADER = "## Changes";
 // release-please uses (see release-please-config.json). Grouping by type makes the per-line type
 // prefix redundant, so entries render with the type dropped and the scope unwrapped. Anything else
 // (an unknown type, or a subject that isn't a conventional commit) is listed under "Other" — we
-// never drop a commit just because we couldn't parse it. Hidden types below are omitted entirely.
+// never drop a commit just because we couldn't parse it. Hidden types below are omitted entirely,
+// unless the commit is breaking: release-please keeps a breaking commit whatever its type, so it is
+// listed in the callout and under "Other" (full subject, since no section carries its type).
 const GROUPS = [
     ["feat", "### Features"],
     ["fix", "### Bug Fixes"],
@@ -86,7 +88,7 @@ function parseSubject(subject) {
         type: conv ? conv[1].toLowerCase() : null,
         scope: conv ? (conv[2] ?? "") : "",
         subject: conv ? conv[4] : text,
-        breaking: conv ? conv[3] === "!" || BREAKING_RE.test(text) : false,
+        breaking: conv ? conv[3] === "!" : false,
         pr,
     };
 }
@@ -116,7 +118,8 @@ const GROUP_TYPES = new Set(GROUPS.map(([t]) => t));
 /**
  * One `- …` bullet with the PR link on the end. For a commit in a type section the type is dropped
  * and the scope unwrapped (`feat(steam): x` → `steam: x`), since the section heading carries the
- * type. An "Other" entry (unknown type or non-conventional) keeps its full subject verbatim —
+ * type. An "Other" entry (unknown type, hidden-but-breaking type, or non-conventional) keeps its
+ * full subject verbatim —
  * there's no heading to convey its type, so dropping it would mangle the line.
  * @returns {string}
  */
@@ -162,7 +165,7 @@ function buildChangelog(commits, { repoUrl, baseTag, headOid }) {
         const entry = parseSubject(subject);
         // Breaking can be declared by `!` in the subject (parsed above) or a `BREAKING CHANGE:` body footer.
         entry.breaking = entry.breaking || BREAKING_RE.test(body ?? "");
-        if (entry.type !== null && HIDDEN_TYPES.has(entry.type)) {
+        if (entry.type !== null && HIDDEN_TYPES.has(entry.type) && !entry.breaking) {
             hiddenCount += 1;
             continue;
         }

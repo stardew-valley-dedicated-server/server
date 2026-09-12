@@ -1,7 +1,0 @@
-#!/bin/sh
-# Same gate for the raw VNC port (default 5900): off unless a VNC password is set.
-if [ -n "${VNC_PASSWORD:-}" ]; then
-    echo 5900
-else
-    echo -1
-fi

@@ -41,11 +41,11 @@ Settings such as ports and passwords go in `.env`; see [Environment Variables](/
 
 ### Updates replace `docker-compose.yml`
 
-The update command replaces `docker-compose.yml` with the version matching the new image. It's a generated file, so keep your own changes (extra mod mounts, port changes) in a `docker-compose.override.yml` instead; Compose merges both and your changes survive every update. See [Customizing docker-compose](#customizing-docker-compose).
+The update command replaces `docker-compose.yml` with the version matching the new image, saving the previous file as a timestamped `.bak` first. It's a generated file, so keep your own changes (extra mod mounts, port changes) in a `docker-compose.override.yml` instead; Compose merges both and your changes survive every update. See [Customizing docker-compose](#customizing-docker-compose).
 
-### Empty `VNC_PASSWORD` no longer aborts startup unconditionally
+### Empty `VNC_PASSWORD` disables VNC instead of aborting startup
 
-Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. The current release surfaces it as a warning and aborts only when an insecure setup is detected (empty `VNC_PASSWORD`, or empty `API_KEY` with the API enabled). Set `ALLOW_INSECURE_SETUP=true` on closed networks to keep the warnings but skip the abort. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
+Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. Now an empty password keeps the VNC web interface and VNC port unreachable from outside the container, and the server starts normally; set a password to enable them. Startup still aborts when `API_KEY` is empty with the API enabled. Set `ALLOW_INSECURE_SETUP=true` on closed networks to start anyway and to leave VNC reachable without a password. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
 
 ### The game runs as a non-root user
 

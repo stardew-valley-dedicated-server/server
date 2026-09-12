@@ -29,6 +29,13 @@ function Test-Interactive { -not $NoTty -and [Environment]::UserInteractive }
 # Prompt on the console and return the reply, trimmed and lowercased.
 function Read-Reply($prompt) { (Read-Host $prompt).Trim().ToLower() }
 
+# Run a native command with its stderr discarded. Windows PowerShell 5.1 turns each redirected stderr
+# line into an error record, and under $ErrorActionPreference = 'Stop' the first one is terminating,
+# so the redirect happens with the preference relaxed. $LASTEXITCODE is still set by the command.
+function Invoke-Quiet([scriptblock]$command) {
+    & { $ErrorActionPreference = 'Continue'; & $command 2>$null }
+}
+
 # The IMAGE_VERSION value for the recommended channel (stable -> latest, otherwise preview).
 function Get-RecommendedVersion { if ($RecommendedChannel -eq 'stable') { 'latest' } else { 'preview' } }
 
@@ -36,11 +43,8 @@ function Get-RecommendedVersion { if ($RecommendedChannel -eq 'stable') { 'lates
 # (docker/Dockerfile bakes it as ENV SDVD_GIT_SHA), or master when unknown. This is how
 # docker-compose.yml / .env.example are fetched to match the image, without needing releases.
 function Get-RawBaseForImage($image) {
-    $sha = $null
-    try {
-        $envLines = docker image inspect $image --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null
-        $sha = $envLines | ForEach-Object { if ($_ -match '^SDVD_GIT_SHA=(.*)$') { $matches[1] } } | Select-Object -First 1
-    } catch { }
+    $envLines = Invoke-Quiet { docker image inspect $image --format '{{range .Config.Env}}{{println .}}{{end}}' }
+    $sha = $envLines | ForEach-Object { if ($_ -match '^SDVD_GIT_SHA=(.*)$') { $matches[1] } } | Select-Object -First 1
     # Only a plain commit hash resolves on GitHub; local builds stamp "unknown" or "<sha>-dirty".
     if ($sha -match '^[0-9a-f]+$') { "https://raw.githubusercontent.com/$repo/$sha" } else { $master }
 }
@@ -77,6 +81,16 @@ function Set-EnvVar($file, $key, $value) {
     Set-Content -Path $file -Value $out -Encoding utf8
 }
 
+# Write a fresh .env from the .env.example matching the image: the channel pinned and a strong random
+# API key, so the HTTP API is never left open. VNC stays off until VNC_PASSWORD is set (the image keeps
+# the VNC ports unreachable without one; see docker/rootfs/etc/cont-init.d/15-vnc-gate.sh).
+function New-EnvFile($rawBase, $channelVersion) {
+    Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/.env.example" -OutFile '.env'
+    Set-EnvVar '.env' 'IMAGE_VERSION' $channelVersion
+    Set-EnvVar '.env' 'API_KEY' (New-SecretKey)
+    Write-Host "Wrote .env (IMAGE_VERSION=$channelVersion, API_KEY generated; VNC disabled until you set VNC_PASSWORD)."
+}
+
 # Resolve the IMAGE_VERSION to write. $mode is install|update; $current is the existing value (update).
 # Precedence: explicit $env:IMAGE_VERSION > interactive prompt > keep current (update) / recommended.
 function Resolve-ChannelVersion($mode, $current) {
@@ -87,7 +101,9 @@ function Resolve-ChannelVersion($mode, $current) {
     }
     if ($mode -eq 'update') {
         $default = if ($current) { $current } else { Get-RecommendedVersion }
-        $reply = Read-Reply "Release channel? preview or stable [$default]"
+        # The prompt asks in channel words, so show the default the same way.
+        $display = if ($default -eq 'latest') { 'stable' } else { $default }
+        $reply = Read-Reply "Release channel? preview or stable [$display]"
     } else {
         $default = Get-RecommendedVersion
         $note = if ($RecommendedNote) { "; $RecommendedNote" } else { '' }
@@ -163,34 +179,42 @@ if (Test-Path docker-compose.yml) {
     Write-Host ''
 
     # Fetch the docker-compose.yml matching the image we just pulled (honors .env and any override).
-    $serverImage = docker compose config --images 2>$null | Where-Object { $_ -match '^sdvd/server:' } | Select-Object -First 1
+    $serverImage = Invoke-Quiet { docker compose config --images } | Where-Object { $_ -match '^sdvd/server:' } | Select-Object -First 1
     if (-not $serverImage) { $serverImage = 'sdvd/server:latest' }
     $rawBase = Get-RawBaseForImage $serverImage
 
     Write-Host 'Fetching docker-compose.yml...'
     $tmpCompose = New-TemporaryFile
     Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/docker-compose.yml" -OutFile $tmpCompose
+    # Keep the old file: hand edits belong in docker-compose.override.yml, but anyone who made them
+    # here can still recover them.
+    $backup = "docker-compose.yml.$(Get-Date -Format 'yyyyMMdd-HHmmss').bak"
+    Copy-Item docker-compose.yml $backup
     Move-Item $tmpCompose docker-compose.yml -Force
-    Write-Host 'Updated docker-compose.yml to match the new image.'
+    Write-Host "Updated docker-compose.yml to match the new image (previous file saved as $backup)."
+
+    # A server folder without .env (an interrupted install) gets one now, so the chosen channel is
+    # persisted for the deferred `docker compose up -d` and every later run, not just this one.
+    if (-not (Test-Path .env)) {
+        New-EnvFile $rawBase $channelVersion
+    }
 
     # New options ship in .env.example but your .env is never touched, so surface any you're missing.
     # Keys are matched commented or not, so an option you deliberately left commented isn't re-flagged.
-    if (Test-Path .env) {
-        $tmpExample = New-TemporaryFile
-        try {
-            Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/.env.example" -OutFile $tmpExample
-            $newKeys = Get-EnvKeys $tmpExample | Where-Object { $_ -notin (Get-EnvKeys '.env') }
-            if ($newKeys) {
-                Write-Host ''
-                Write-Host 'New .env options are available this release (your .env is unchanged):'
-                $newKeys | ForEach-Object { Write-Host "  - $_" }
-                Write-Host 'Add any you want to your .env. Docs: https://docs.junimoserver.com/admins/configuration/environment'
-            }
-        } catch {
-            # Non-fatal: if the matching .env.example can't be fetched, skip the heads-up.
-        } finally {
-            Remove-Item $tmpExample -Force -ErrorAction SilentlyContinue
+    $tmpExample = New-TemporaryFile
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/.env.example" -OutFile $tmpExample
+        $newKeys = Get-EnvKeys $tmpExample | Where-Object { $_ -notin (Get-EnvKeys '.env') }
+        if ($newKeys) {
+            Write-Host ''
+            Write-Host 'New .env options are available this release (your .env is unchanged):'
+            $newKeys | ForEach-Object { Write-Host "  - $_" }
+            Write-Host 'Add any you want to your .env. Docs: https://docs.junimoserver.com/admins/configuration/environment'
         }
+    } catch {
+        # Non-fatal: if the matching .env.example can't be fetched, skip the heads-up.
+    } finally {
+        Remove-Item $tmpExample -Force -ErrorAction SilentlyContinue
     }
     Write-Host ''
 
@@ -233,14 +257,8 @@ if (Test-Path docker-compose.yml) {
     if (Test-Path .env) {
         Write-Host "Wrote docker-compose.yml. Kept existing .env (IMAGE_VERSION=$channelVersion, not overwritten)."
     } else {
-        Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/.env.example" -OutFile '.env'
-        Set-EnvVar '.env' 'IMAGE_VERSION' $channelVersion
-        # Secure by default: a strong random API key so the HTTP API is never left open.
-        Set-EnvVar '.env' 'API_KEY' (New-SecretKey)
-        # VNC is left disabled by default: the image now serves the VNC ports only when VNC_PASSWORD
-        # is set (see docker/rootfs/etc/cont-env.d), so an unset password means the ports are off
-        # rather than an insecure open one. Set VNC_PASSWORD in .env later to enable the web GUI.
-        Write-Host "Wrote docker-compose.yml and .env (IMAGE_VERSION=$channelVersion, API_KEY generated; VNC disabled until you set VNC_PASSWORD)."
+        Write-Host 'Wrote docker-compose.yml.'
+        New-EnvFile $rawBase $channelVersion
     }
 
     # Offer to finish now: sign in to Steam, start, open the console. Non-interactive prints steps.
@@ -276,14 +294,14 @@ Update later by re-running this in the same folder:
         # Wait until the server is ready (its game log appears) or crashes, whichever comes first.
         # Attaching into a crashed/crash-looping server hangs forever, so surface the logs instead.
         # A crash shows as State.Status != running or a climbing RestartCount (not a clean exit).
-        $cid = docker compose ps -aq server 2>$null | Select-Object -First 1
-        $r0 = docker inspect -f '{{.RestartCount}}' $cid 2>$null
+        $cid = Invoke-Quiet { docker compose ps -aq server } | Select-Object -First 1
+        $r0 = Invoke-Quiet { docker inspect -f '{{.RestartCount}}' $cid }
         $restarts0 = if ($r0) { [int]$r0 } else { 0 }
         $waited = 0
         $ready = $false
         while ($waited -lt 600) {
-            $status = docker inspect -f '{{.State.Status}}' $cid 2>$null
-            $r = docker inspect -f '{{.RestartCount}}' $cid 2>$null
+            $status = Invoke-Quiet { docker inspect -f '{{.State.Status}}' $cid }
+            $r = Invoke-Quiet { docker inspect -f '{{.RestartCount}}' $cid }
             $restarts = if ($r) { [int]$r } else { 0 }
             if ($status -ne 'running' -or $restarts -gt $restarts0) {
                 Write-Host ''
@@ -291,20 +309,21 @@ Update later by re-running this in the same folder:
                 Write-Host ''
                 # Stop the restart loop first, then show only the failed run: Docker has usually
                 # restarted the container by now, so a plain tail would end in the next boot's
-                # first lines with the crash buried above them.
+                # first lines with the crash buried above them. `docker logs --tail` takes the last
+                # lines before `--until` filters them, so the cut-off is applied after instead. cmd
+                # merges the two output streams as docker emits them; a PowerShell redirect reorders them.
                 docker compose stop server
                 if ($restarts -gt $restarts0) {
-                    $startedAt = docker inspect -f '{{.State.StartedAt}}' $cid 2>$null
-                    docker logs --tail 200 --until $startedAt $cid
+                    $startedAt = Invoke-Quiet { docker inspect -f '{{.State.StartedAt}}' $cid }
+                    cmd /c "docker logs --until $startedAt $cid 2>&1" | Select-Object -Last 200
                 } else {
-                    docker logs --tail 200 $cid
+                    cmd /c "docker logs --tail 200 $cid 2>&1"
                 }
                 Write-Host ''
                 Die 'Server failed to start. Fix the issue above, then: docker compose up -d; docker compose exec server attach-cli'
             }
-            $ready = $false
-            try { docker compose exec -T server sh -c 'test -f /tmp/server-output.log' 2>$null; if ($LASTEXITCODE -eq 0) { $ready = $true } } catch { }
-            if ($ready) { break }
+            Invoke-Quiet { docker compose exec -T server sh -c 'test -f /tmp/server-output.log' } | Out-Null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
             Start-Sleep 3; $waited += 3
         }
 
@@ -312,7 +331,7 @@ Update later by re-running this in the same folder:
         # A 10-minute wait without a crash is almost always a slow first download still running.
         if (-not $ready) {
             Write-Host ''
-            Write-Host "The server is still starting after 10 minutes and hasn't crashed — likely a slow"
+            Write-Host "The server is still starting after 10 minutes and hasn't crashed, likely a slow"
             Write-Host 'first download. Follow it, then attach once it''s ready:'
             Write-Host '  docker compose logs -f steam-auth'
             Write-Host '  docker compose exec server attach-cli'

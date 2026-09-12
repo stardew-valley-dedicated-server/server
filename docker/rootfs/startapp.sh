@@ -26,8 +26,8 @@ EXPECTED_COMPOSE_REV=3
 validate_environment() {
     local has_warnings=false
 
-    # Security warnings. VNC needs no check here: its ports are disabled unless VNC_PASSWORD is set
-    # (see /etc/cont-env.d/WEB_LISTENING_PORT).
+    # Security warnings. VNC needs no check here: without VNC_PASSWORD its ports are unreachable from
+    # outside the container (see /etc/cont-init.d/15-vnc-gate.sh).
     if [ "${API_ENABLED:-true}" = "true" ] && [ -z "${API_KEY:-}" ]; then
         echo ""
         echo -e "\e[33m╔═══════════════════════════════════════════════════════════════════════╗\e[0m"

@@ -1,8 +1,0 @@
-#!/bin/sh
-# Expose the noVNC web GUI only when a VNC password is set; otherwise disable it (-1 = off) so it is
-# never reachable without a password. The game keeps running on the Xvnc display either way.
-if [ -n "${VNC_PASSWORD:-}" ]; then
-    echo 5800
-else
-    echo -1
-fi

@@ -4,8 +4,8 @@
 // These lock in how the Discord "Changes" changelog looks: a `## Changes` heading, a breaking
 // callout when any commit is breaking, one `###` section per visible type in release-please's
 // order and sort (scope, then subject), the type dropped and scope unwrapped on each line, nothing
-// user-facing ever dropped except when over the code-point budget (whole trailing sections only,
-// with an "…and N more" note), and markdown special characters escaped.
+// user-facing ever dropped except when over the code-point budget (trailing entries at a line
+// boundary, with an "…and N more" note), and markdown special characters escaped.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -125,6 +125,32 @@ test("prose mentioning 'BREAKING CHANGE' without a footer gets no callout", () =
         result.markdown,
         ["## Changes", "### Features", "- api: tidy auth ([#21](https://github.com/o/r/pull/21))"].join("\n"),
     );
+});
+
+test("a breaking commit of a hidden type is still listed, in the callout and under Other", () => {
+    const result = buildChangelog(
+        [
+            "chore!: drop the armv7 image (#30)",
+            { subject: "ci: bump action (#31)", body: "BREAKING CHANGE: runners need Node 22." },
+            "fix: small fix (#29)",
+        ],
+        OPTS,
+    );
+    assert.equal(
+        result.markdown,
+        [
+            "## Changes",
+            "### ⚠️ Breaking changes",
+            "- ci: bump action ([#31](https://github.com/o/r/pull/31))",
+            "- chore!: drop the armv7 image ([#30](https://github.com/o/r/pull/30))",
+            "### Bug Fixes",
+            "- small fix ([#29](https://github.com/o/r/pull/29))",
+            "### Other",
+            "- ci: bump action ([#31](https://github.com/o/r/pull/31))",
+            "- chore!: drop the armv7 image ([#30](https://github.com/o/r/pull/30))",
+        ].join("\n"),
+    );
+    assert.deepEqual([result.count, result.visibleCount, result.hiddenCount], [3, 3, 0]);
 });
 
 test("a subject without (#N) is listed without a PR link", () => {

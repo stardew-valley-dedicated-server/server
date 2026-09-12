@@ -79,11 +79,22 @@ set_env_var() {
     fi
 }
 
+# Write a fresh .env from the .env.example matching the image: the channel pinned and a strong random
+# API key, so the HTTP API is never left open. VNC stays off until VNC_PASSWORD is set (the image keeps
+# the VNC ports unreachable without one; see docker/rootfs/etc/cont-init.d/15-vnc-gate.sh).
+write_new_env() {
+    local raw_base="$1" channel_version="$2"
+    curl -fsSL -o .env "${raw_base}/.env.example" || die "Could not download .env.example from ${raw_base}/.env.example"
+    set_env_var .env IMAGE_VERSION "$channel_version"
+    set_env_var .env API_KEY "$(generate_key)"
+    echo "Wrote .env (IMAGE_VERSION=${channel_version}, API_KEY generated; VNC disabled until you set VNC_PASSWORD)."
+}
+
 # Resolve the IMAGE_VERSION to write. Args: mode (install|update), current value (update only).
 # Precedence: explicit IMAGE_VERSION env > interactive prompt > keep current (update) / recommended.
 # The prompt goes to the terminal; only the chosen value is written to stdout for the caller.
 resolve_channel_version() {
-    local mode="$1" current="${2:-}" default prompt reply
+    local mode="$1" current="${2:-}" default display prompt reply
     if [ -n "${IMAGE_VERSION:-}" ]; then echo "$IMAGE_VERSION"; return; fi
     if ! is_interactive; then
         if [ "$mode" = "update" ] && [ -n "$current" ]; then echo "$current"; else recommended_version; fi
@@ -91,7 +102,9 @@ resolve_channel_version() {
     fi
     if [ "$mode" = "update" ]; then
         default="${current:-$(recommended_version)}"
-        prompt="Release channel? preview or stable [${default}]: "
+        # The prompt asks in channel words, so show the default the same way.
+        display="$default"; [ "$display" = "latest" ] && display="stable"
+        prompt="Release channel? preview or stable [${display}]: "
     elif [ "$RECOMMENDED_CHANNEL" = "preview" ]; then
         default="$(recommended_version)"
         prompt="Release channel? preview (recommended${RECOMMENDED_NOTE:+; $RECOMMENDED_NOTE}) or stable [preview]: "
@@ -166,13 +179,23 @@ if [ -f docker-compose.yml ]; then
     echo "Fetching docker-compose.yml..."
     tmp_compose="$(mktemp)"
     curl -fsSL -o "$tmp_compose" "${raw_base}/docker-compose.yml" || die "Could not download docker-compose.yml from ${raw_base}/docker-compose.yml"
+    # Keep the old file: hand edits belong in docker-compose.override.yml, but anyone who made them
+    # here can still recover them.
+    backup="docker-compose.yml.$(date +%Y%m%d-%H%M%S).bak"
+    cp docker-compose.yml "$backup"
     mv "$tmp_compose" docker-compose.yml
-    echo "Updated docker-compose.yml to match the new image."
+    echo "Updated docker-compose.yml to match the new image (previous file saved as ${backup})."
+
+    # A server folder without .env (an interrupted install) gets one now, so the chosen channel is
+    # persisted for the deferred `docker compose up -d` and every later run, not just this one.
+    if [ ! -f .env ]; then
+        write_new_env "$raw_base" "$channel_version"
+    fi
 
     # New options ship in .env.example but your .env is never touched, so surface any you're missing.
     # Keys are matched commented or not, so an option you deliberately left commented isn't re-flagged.
     tmp_example="$(mktemp)"
-    if [ -f .env ] && curl -fsSL -o "$tmp_example" "${raw_base}/.env.example" 2>/dev/null; then
+    if curl -fsSL -o "$tmp_example" "${raw_base}/.env.example" 2>/dev/null; then
         new_keys="$(comm -23 <(env_keys "$tmp_example") <(env_keys .env))"
         if [ -n "$new_keys" ]; then
             echo ""
@@ -221,14 +244,8 @@ else
     if [ -f .env ]; then
         echo "Wrote docker-compose.yml. Kept existing .env (IMAGE_VERSION=${channel_version}, not overwritten)."
     else
-        curl -fsSL -o .env "${raw_base}/.env.example" || die "Could not download .env.example from ${raw_base}/.env.example"
-        set_env_var .env IMAGE_VERSION "$channel_version"
-        # Secure by default: a strong random API key so the HTTP API is never left open.
-        set_env_var .env API_KEY "$(generate_key)"
-        # VNC is left disabled by default: the image now serves the VNC ports only when VNC_PASSWORD
-        # is set (see docker/rootfs/etc/cont-env.d), so an unset password means the ports are off
-        # rather than an insecure open one. Set VNC_PASSWORD in .env later to enable the web GUI.
-        echo "Wrote docker-compose.yml and .env (IMAGE_VERSION=${channel_version}, API_KEY generated; VNC disabled until you set VNC_PASSWORD)."
+        echo "Wrote docker-compose.yml."
+        write_new_env "$raw_base" "$channel_version"
     fi
 
     # Offer to finish now: sign in to Steam, start, open the console. Non-interactive prints steps.
@@ -279,10 +296,11 @@ EOF
                     echo ""
                     # Stop the restart loop first, then show only the failed run: Docker has usually
                     # restarted the container by now, so a plain tail would end in the next boot's
-                    # first lines with the crash buried above them.
+                    # first lines with the crash buried above them. `docker logs --tail` takes the last
+                    # lines before `--until` filters them, so the cut-off is applied after instead.
                     docker compose stop server >/dev/null 2>&1 || true
                     if [ "${restarts:-0}" -gt "${restarts0:-0}" ]; then
-                        docker logs --tail 200 --until "$(docker inspect -f '{{.State.StartedAt}}' "$cid")" "$cid" 2>&1
+                        docker logs --until "$(docker inspect -f '{{.State.StartedAt}}' "$cid")" "$cid" 2>&1 | tail -n 200
                     else
                         docker logs --tail 200 "$cid" 2>&1
                     fi
@@ -299,7 +317,7 @@ EOF
             # A 10-minute wait without a crash is almost always a slow first download still running.
             if [ "$ready" != "1" ]; then
                 echo ""
-                echo "The server is still starting after 10 minutes and hasn't crashed — likely a slow"
+                echo "The server is still starting after 10 minutes and hasn't crashed, likely a slow"
                 echo "first download. Follow it, then attach once it's ready:"
                 echo "  docker compose logs -f steam-auth"
                 echo "  docker compose exec server attach-cli"
