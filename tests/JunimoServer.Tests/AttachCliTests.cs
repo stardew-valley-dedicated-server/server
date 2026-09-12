@@ -77,6 +77,34 @@ public class AttachCliTests : TestBase
         exit 0
         """;
 
+    /// <summary>
+    /// Feeds a sample XACT error block through the in-image startup-noise filter and checks
+    /// what survives. The filter (strip-startup-noise.awk, which attach-cli tails the console
+    /// through) suppresses the benign headless-audio XACT block, but must NOT swallow a real
+    /// crash the runtime writes without a SMAPI prefix — an unhandled exception or a stack
+    /// overflow — that lands inside the XACT suppression window. Runs the shipped artifact, not
+    /// a copy. Creates no tmux session, so it does not race AttachCli_StartsSessionWithLivePanes
+    /// on the shared server (that test's one-concurrent-run caveat is about tmux, avoided here).
+    /// </summary>
+    private const string NoiseFilterScenario = """
+        set -u
+        filter=/opt/base/bin/strip-startup-noise.awk
+        if [ ! -r "$filter" ]; then echo "VERDICT:NO_FILTER"; exit 0; fi
+        out=$(printf '%s\n' \
+          '[12:00:00 ERROR game] Game.Initialize() caught exception initializing XACT: no audio' \
+          'Microsoft.Xna.Framework.Audio.NoAudioHardwareException: No audio device' \
+          '   at Microsoft.Xna.Framework.Audio.AudioEngine..ctor()' \
+          'Unhandled Exception:' \
+          'System.NullReferenceException: boom' \
+          'Stack overflow.' \
+          '   at StardewValley.Deep.Recursion()' \
+          '[12:00:05 INFO SMAPI] Continuing' | awk -f "$filter")
+        printf '%s\n' "$out" | grep -q 'caught exception initializing XACT' && echo "VERDICT:XACT_LEAKED" || echo "VERDICT:XACT_DROPPED"
+        printf '%s\n' "$out" | grep -q '^Unhandled Exception:' && echo "VERDICT:UNHANDLED_KEPT" || echo "VERDICT:UNHANDLED_SWALLOWED"
+        printf '%s\n' "$out" | grep -q '^Stack overflow\.' && echo "VERDICT:STACKOVERFLOW_KEPT" || echo "VERDICT:STACKOVERFLOW_SWALLOWED"
+        exit 0
+        """;
+
     public AttachCliTests() { }
 
     /// <summary>
@@ -138,6 +166,44 @@ public class AttachCliTests : TestBase
         Assert.True(
             symptomLines == "0",
             $"attach-cli output must contain neither 'no server running' nor 'no sessions' (the reported regression symptoms); got {symptomLines} matching line(s). attach-cli output (excerpt): {attachLog}"
+        );
+    }
+
+    /// <summary>
+    /// The startup-noise filter must strip the headless-audio XACT block while letting an
+    /// unprefixed fatal-crash header (unhandled exception, stack overflow) that lands in the
+    /// XACT window pass through to the console — otherwise a real crash is invisible to an
+    /// operator watching attach-cli.
+    /// </summary>
+    [Fact]
+    public async Task StartupNoiseFilter_StripsXactBlock_ButKeepsUnprefixedCrash()
+    {
+        var result = await Server
+            .Container.ExecAsync(new[] { "sh", "-c", NoiseFilterScenario }, TestCt)
+            .WaitAsync(TestCt);
+
+        Log($"noise-filter scenario output:\n{result.Stdout}");
+        if (!string.IsNullOrWhiteSpace(result.Stderr))
+        {
+            Log($"noise-filter scenario stderr:\n{result.Stderr}");
+        }
+
+        Assert.True(
+            result.ExitCode == DockerExitCodes.Success,
+            $"Scenario script must exit 0 (verdicts ride stdout sentinels); got {result.ExitCode}: {result.Stderr}"
+        );
+
+        Assert.True(
+            result.Stdout.Contains("VERDICT:XACT_DROPPED", StringComparison.Ordinal),
+            $"Filter must drop the benign headless-audio XACT block; got: {result.Stdout}"
+        );
+        Assert.True(
+            result.Stdout.Contains("VERDICT:UNHANDLED_KEPT", StringComparison.Ordinal),
+            $"An 'Unhandled Exception:' header landing in the XACT window must NOT be swallowed; got: {result.Stdout}"
+        );
+        Assert.True(
+            result.Stdout.Contains("VERDICT:STACKOVERFLOW_KEPT", StringComparison.Ordinal),
+            $"A 'Stack overflow.' header landing in the XACT window must NOT be swallowed; got: {result.Stdout}"
         );
     }
 

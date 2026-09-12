@@ -17,16 +17,23 @@
 # Matching is done on an ANSI-SGR-stripped copy so colorized and plain lines are
 # handled alike; the original line is printed unchanged (color preserved). The XACT
 # block ends at the next SMAPI log line (prefix mirrors ServerContainer
-# .SmapiLogLinePrefix) or a "Process terminated." fatal sentinel — both always print,
-# so a real crash is never swallowed. Every drop is an exact message match, never a
-# level match, so real warnings/errors always pass through.
+# .SmapiLogLinePrefix) or any unprefixed fatal-crash header the runtime writes without a
+# SMAPI prefix — .NET FailFast ("Process terminated."), an unhandled exception, or a
+# stack overflow — so a real crash landing in the XACT window is never swallowed. Every
+# drop is an exact message match, never a level match, so real warnings/errors always
+# pass through.
 BEGIN { esc = sprintf("%c", 27); sgr = esc "[[][0-9;]*m"; suppress = 0 }
 {
     clean = $0
     gsub(sgr, "", clean)
 
-    # A new SMAPI log line or the .NET FailFast sentinel ends suppression and prints.
-    if (clean ~ /^\[[0-9:]+[ \t]+[A-Za-z]+[ \t]+/ || clean ~ /^Process terminated\./) {
+    # A new SMAPI log line, or any unprefixed fatal-crash header (FailFast, an unhandled
+    # exception, or a stack overflow), ends suppression and prints — so a crash landing
+    # in the XACT window is never swallowed.
+    if (clean ~ /^\[[0-9:]+[ \t]+[A-Za-z]+[ \t]+/ ||
+        clean ~ /^Process terminated\./ ||
+        clean ~ /^Unhandled [Ee]xception[.:]/ ||
+        clean ~ /^Stack overflow\./) {
         suppress = 0
     } else if (suppress) {
         next
