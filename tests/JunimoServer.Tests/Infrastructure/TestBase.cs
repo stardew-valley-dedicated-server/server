@@ -945,36 +945,17 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// OwnerName and IsAssigned for several seconds after a fresh customization.
     /// On timeout dumps <see cref="FailureContext"/>.
     /// </summary>
-    protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+    protected Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
         long playerId,
         CancellationToken ct = default
-    )
-    {
-        CabinInfoResponse? result = null;
-        CabinsResponse? lastCabins = null;
-        await PollingHelper.WaitUntilAsync(
+    ) =>
+        WaitForCabinAssignedCoreAsync(
             WaitName.Polling_TestBase_WaitForCabinAssignedById,
-            async () =>
-            {
-                lastCabins = await ServerApi.GetCabins(ct);
-                result = lastCabins?.Cabins.FirstOrDefault(c => c.OwnerId == playerId);
-                return result != null;
-            },
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await FailureContext.DumpAsync(
-                    ServerApi,
-                    reason: "WaitForCabinAssignedAsync_timeout",
-                    extras: new Dictionary<string, object?>
-                    {
-                        ["playerId"] = playerId,
-                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
-                    }
-                )
+            c => c.OwnerId == playerId,
+            "playerId",
+            playerId,
+            ct
         );
-        return result;
-    }
 
     /// <summary>
     /// Polls /cabins until a cabin owned by the given farmer name appears.
@@ -982,23 +963,34 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// customization sync (OwnerName can be empty briefly after fresh joins).
     /// On timeout dumps <see cref="FailureContext"/>.
     /// </summary>
-    protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+    protected Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
         string farmerName,
         CancellationToken ct = default
+    ) =>
+        WaitForCabinAssignedCoreAsync(
+            WaitName.Polling_TestBase_WaitForCabinAssignedByName,
+            c => c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned,
+            "farmerName",
+            farmerName,
+            ct
+        );
+
+    private async Task<CabinInfoResponse?> WaitForCabinAssignedCoreAsync(
+        WaitName name,
+        Func<CabinInfoResponse, bool> isMatch,
+        string extrasKey,
+        object extrasValue,
+        CancellationToken ct
     )
     {
-        CabinInfoResponse? result = null;
+        // Captured so the timeout dump can show the last snapshot the poll saw.
         CabinsResponse? lastCabins = null;
-        await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_TestBase_WaitForCabinAssignedByName,
+        return await PollingHelper.WaitForResultAsync<CabinInfoResponse>(
+            name,
             async () =>
             {
                 lastCabins = await ServerApi.GetCabins(ct);
-                result = lastCabins?.Cabins.FirstOrDefault(c =>
-                    c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
-                    && c.IsAssigned
-                );
-                return result != null;
+                return lastCabins?.Cabins.FirstOrDefault(isMatch);
             },
             TestTimings.CabinAssignmentTimeout,
             cancellationToken: ct,
@@ -1008,12 +1000,11 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
                     reason: "WaitForCabinAssignedAsync_timeout",
                     extras: new Dictionary<string, object?>
                     {
-                        ["farmerName"] = farmerName,
+                        [extrasKey] = extrasValue,
                         ["lastCabinsSnapshot"] = lastCabins?.Cabins,
                     }
                 )
         );
-        return result;
     }
 
     #endregion
