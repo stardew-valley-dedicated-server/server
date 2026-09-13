@@ -106,7 +106,7 @@ This pulls the new image and installs the matching `docker-compose.yml`, then as
 
 ### Using preview releases
 
-> **Note:** JunimoServer is under heavy development. If the latest stable release isn't working for you, try the preview release; it often contains fixes that haven't been officially released yet. As the project matures, stable releases will become more reliable.
+> **Note:** JunimoServer is under heavy development. If the `latest` release isn't working for you, try the preview release; it often contains fixes that haven't been officially released yet. As the project matures, `latest` releases will become more reliable.
 
 Preview builds are published automatically with every code change. To use a preview release, add this to your `.env` file:
 
@@ -115,13 +115,13 @@ Preview builds are published automatically with every code change. To use a prev
 IMAGE_VERSION=preview
 ```
 
-To switch back to stable releases, remove the line or set it to `latest`:
+To switch back to `latest`, remove the line or set it to `latest`:
 
 ```sh
 IMAGE_VERSION=latest
 ```
 
-After changing the version, run the update command above. It pulls the matching image and `docker-compose.yml` for whichever `IMAGE_VERSION` you set (stable, preview, or pinned).
+After changing the version, run the update command above. It pulls the matching image and `docker-compose.yml` for whichever `IMAGE_VERSION` you set (`latest`, `preview`, or pinned).
 
 You can also pin to a specific version (e.g., `IMAGE_VERSION=1.0.0` or `IMAGE_VERSION=1.1.0-preview.3`). Check [Docker Hub](https://hub.docker.com/r/sdvd/server/tags) for available tags.
 

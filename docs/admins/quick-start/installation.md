@@ -24,7 +24,7 @@ cd junimoserver
 
 :::
 
-When you run it, the script asks which release channel to use (preview or stable), then offers to **sign in to Steam and start the server for you**: answer yes, enter your Steam login when prompted, and it downloads the game, starts the server, and opens the console. If you accept, you're done. Jump to step 5 below to connect your game.
+When you run it, the script asks which release channel to use (`preview` or `latest`), then offers to **sign in to Steam and start the server for you**: answer yes, enter your Steam login when prompted, and it downloads the game, starts the server, and opens the console. If you accept, you're done. Jump to step 5 below to connect your game.
 
 Prefer to do it yourself, or ran the script non-interactively? Follow the steps below. Don't edit `docker-compose.yml` (updates overwrite it); for ports or extra mods use a `docker-compose.override.yml` next to it (see [Upgrading](/admins/operations/upgrading#customizing-docker-compose)).
 

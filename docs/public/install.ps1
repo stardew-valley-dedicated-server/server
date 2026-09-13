@@ -14,11 +14,11 @@ $ErrorActionPreference = 'Stop'
 $repo = 'stardew-valley-dedicated-server/server'
 $master = "https://raw.githubusercontent.com/$repo/master"
 
-# Channel recommended to new installs. Preview is recommended while a working stable ('latest')
-# release is still being finalized; flip to 'stable' once latest ships.
+# Channel recommended to new installs. Preview is recommended while a working latest release is
+# still being finalized; flip to 'latest' once it ships.
 $RecommendedChannel = 'preview'
-# Shown in the channel prompt so users don't reflexively pick stable. Clear it once stable is ready.
-$RecommendedNote = "stable isn't ready yet"
+# Shown in the channel prompt so users don't reflexively pick latest. Clear it once latest is ready.
+$RecommendedNote = "latest isn't ready yet"
 $NoTty = ($env:NO_TTY -eq '1')
 
 function Die($msg) { throw $msg }
@@ -35,9 +35,6 @@ function Read-Reply($prompt) { (Read-Host $prompt).Trim().ToLower() }
 function Invoke-Quiet([scriptblock]$command) {
     & { $ErrorActionPreference = 'Continue'; & $command 2>$null }
 }
-
-# The IMAGE_VERSION value for the recommended channel (stable -> latest, otherwise preview).
-function Get-RecommendedVersion { if ($RecommendedChannel -eq 'stable') { 'latest' } else { 'preview' } }
 
 # The raw.githubusercontent base URL for the commit an already-pulled image was built from
 # (docker/Dockerfile bakes it as ENV SDVD_GIT_SHA), or master when unknown. This is how
@@ -97,22 +94,20 @@ function Resolve-ChannelVersion($mode, $current) {
     if ($env:IMAGE_VERSION) { return $env:IMAGE_VERSION }
     if (-not (Test-Interactive)) {
         if ($mode -eq 'update' -and $current) { return $current }
-        return (Get-RecommendedVersion)
+        return $RecommendedChannel
     }
     if ($mode -eq 'update') {
-        $default = if ($current) { $current } else { Get-RecommendedVersion }
-        # The prompt asks in channel words, so show the default the same way.
-        $display = if ($default -eq 'latest') { 'stable' } else { $default }
-        $reply = Read-Reply "Release channel? preview or stable [$display]"
+        $default = if ($current) { $current } else { $RecommendedChannel }
+        $reply = Read-Reply "Release channel? preview or latest [$default]"
     } else {
-        $default = Get-RecommendedVersion
+        $default = $RecommendedChannel
         $note = if ($RecommendedNote) { "; $RecommendedNote" } else { '' }
-        $hint = if ($RecommendedChannel -eq 'preview') { "preview (recommended$note) or stable [preview]" } else { "preview or stable (recommended$note) [stable]" }
+        $hint = if ($RecommendedChannel -eq 'preview') { "preview (recommended$note) or latest [preview]" } else { "preview or latest (recommended$note) [latest]" }
         $reply = Read-Reply "Release channel? $hint"
     }
     switch ($reply) {
         { $_ -in 'p', 'preview' } { return 'preview' }
-        { $_ -in 's', 'stable' }  { return 'latest' }
+        { $_ -in 'l', 'latest' }  { return 'latest' }
         default { return $default }
     }
 }

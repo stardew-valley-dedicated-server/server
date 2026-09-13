@@ -16,9 +16,9 @@ irm https://docs.junimoserver.com/install.ps1 | iex
 
 :::
 
-It pulls the image for your configured `IMAGE_VERSION` (stable, preview, or pinned), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
+It pulls the image for your configured `IMAGE_VERSION` (`latest`, `preview`, or a pinned version), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
 
-On an interactive run it asks two things: which channel to use (press Enter to keep your current one, or type `preview` or `stable` to switch, see [Using Preview Builds](#using-preview-builds)), then whether to restart to apply the update. Answer no and the update is staged (image pulled, `docker-compose.yml` updated) but not applied until you run `docker compose up -d`. A run with no terminal (CI, cron) or with `NO_TTY=1` set skips both questions: it keeps your current channel and restarts automatically.
+On an interactive run it asks two things: which channel to use (press Enter to keep your current one, or type `preview` or `latest` to switch, see [Using Preview Builds](#using-preview-builds)), then whether to restart to apply the update. Answer no and the update is staged (image pulled, `docker-compose.yml` updated) but not applied until you run `docker compose up -d`. A run with no terminal (CI, cron) or with `NO_TTY=1` set skips both questions: it keeps your current channel and restarts automatically.
 
 To upgrade by hand, run `docker compose pull && docker compose up -d --remove-orphans` after replacing `docker-compose.yml` with the version matching your image. The script above fetches that file automatically; to get it yourself, use the one linked by the startup warning below.
 
@@ -58,7 +58,7 @@ values to your own user, or `0` on rootless Docker, before that start (see
 
 Preview builds contain the latest changes from the `master` branch. Use these when:
 
-- The latest stable release has known issues
+- The `latest` release has known issues
 - You want to test new features before official release
 
 ### Enable Preview Builds
@@ -75,7 +75,7 @@ Then run the [Quick Upgrade](#quick-upgrade) command. It pulls the preview image
 Preview builds may contain experimental features or bugs. Back up your saves before switching.
 :::
 
-### Return to Stable
+### Return to Latest
 
 Remove or comment out the `IMAGE_VERSION` line in `.env` (defaults to `latest`):
 

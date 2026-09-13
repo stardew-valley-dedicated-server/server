@@ -15,11 +15,11 @@ set -euo pipefail
 REPO="stardew-valley-dedicated-server/server"
 MASTER="https://raw.githubusercontent.com/${REPO}/master"
 
-# Channel recommended to new installs. Preview is recommended while a working stable ('latest')
-# release is still being finalized; flip to "stable" once latest ships.
+# Channel recommended to new installs. Preview is recommended while a working latest release is
+# still being finalized; flip to "latest" once it ships.
 RECOMMENDED_CHANNEL="preview"
-# Shown in the channel prompt so users don't reflexively pick stable. Clear it once stable is ready.
-RECOMMENDED_NOTE="stable isn't ready yet"
+# Shown in the channel prompt so users don't reflexively pick latest. Clear it once latest is ready.
+RECOMMENDED_NOTE="latest isn't ready yet"
 NO_TTY="${NO_TTY:-0}"
 
 die() { echo "Error: $*" >&2; exit 1; }
@@ -34,9 +34,6 @@ ask_tty() {
     IFS= read -r reply < /dev/tty || reply=""
     printf '%s' "$reply" | tr '[:upper:]' '[:lower:]'
 }
-
-# The IMAGE_VERSION value for the recommended channel (stable -> latest, otherwise preview).
-recommended_version() { [ "$RECOMMENDED_CHANNEL" = "stable" ] && echo "latest" || echo "preview"; }
 
 # Echo the uncommented value of a key in an env file; empty if only commented or absent.
 get_env_value() {
@@ -94,28 +91,26 @@ write_new_env() {
 # Precedence: explicit IMAGE_VERSION env > interactive prompt > keep current (update) / recommended.
 # The prompt goes to the terminal; only the chosen value is written to stdout for the caller.
 resolve_channel_version() {
-    local mode="$1" current="${2:-}" default display prompt reply
+    local mode="$1" current="${2:-}" default prompt reply
     if [ -n "${IMAGE_VERSION:-}" ]; then echo "$IMAGE_VERSION"; return; fi
     if ! is_interactive; then
-        if [ "$mode" = "update" ] && [ -n "$current" ]; then echo "$current"; else recommended_version; fi
+        if [ "$mode" = "update" ] && [ -n "$current" ]; then echo "$current"; else echo "$RECOMMENDED_CHANNEL"; fi
         return
     fi
     if [ "$mode" = "update" ]; then
-        default="${current:-$(recommended_version)}"
-        # The prompt asks in channel words, so show the default the same way.
-        display="$default"; [ "$display" = "latest" ] && display="stable"
-        prompt="Release channel? preview or stable [${display}]: "
+        default="${current:-$RECOMMENDED_CHANNEL}"
+        prompt="Release channel? preview or latest [${default}]: "
     elif [ "$RECOMMENDED_CHANNEL" = "preview" ]; then
-        default="$(recommended_version)"
-        prompt="Release channel? preview (recommended${RECOMMENDED_NOTE:+; $RECOMMENDED_NOTE}) or stable [preview]: "
+        default="$RECOMMENDED_CHANNEL"
+        prompt="Release channel? preview (recommended${RECOMMENDED_NOTE:+; $RECOMMENDED_NOTE}) or latest [preview]: "
     else
-        default="$(recommended_version)"
-        prompt="Release channel? preview or stable (recommended${RECOMMENDED_NOTE:+; $RECOMMENDED_NOTE}) [stable]: "
+        default="$RECOMMENDED_CHANNEL"
+        prompt="Release channel? preview or latest (recommended${RECOMMENDED_NOTE:+; $RECOMMENDED_NOTE}) [latest]: "
     fi
     reply="$(ask_tty "$prompt")"
     case "$reply" in
         p|preview) echo "preview" ;;
-        s|stable)  echo "latest" ;;
+        l|latest)  echo "latest" ;;
         *)         echo "$default" ;;
     esac
 }
