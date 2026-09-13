@@ -120,6 +120,15 @@ function Confirm-Restart {
     return -not ($reply -eq 'n' -or $reply -eq 'no')
 }
 
+# True when the file is a JunimoServer compose. It counts as one only if it has the canonical
+# `- SDVD_COMPOSE_REV=<n>` line that validate-pr.yml checks for, so a stray mention of the name in
+# a comment or value does not match. This guard matters because an update overwrites
+# docker-compose.yml and runs `docker compose up -d --remove-orphans`, which would tear down the
+# containers of an unrelated project if we adopted its compose by mistake.
+function Test-JunimoCompose($file) {
+    return [bool](Select-String -Path $file -Pattern '^\s*- SDVD_COMPOSE_REV=\d+\s*$' -Quiet)
+}
+
 # Turn a Die (throw) into a clean one-line error instead of a PowerShell stack trace, without exit
 # (which would close an `irm | iex` session).
 try {
@@ -148,6 +157,9 @@ Push-Location $target
 try {
 
 if (Test-Path docker-compose.yml) {
+    if (-not (Test-JunimoCompose 'docker-compose.yml')) {
+        Die "This folder's docker-compose.yml isn't a JunimoServer one, so you're probably in the wrong directory. To set up a new server, run the installer from a folder that has no docker-compose.yml and it will create .\junimoserver. If this is an older JunimoServer server, re-download it from $master/docker-compose.yml and run the installer again."
+    }
     # -- Update -----------------------------------------------------------------------------------
     Write-Host "Updating server in $((Get-Location).Path)"
     Write-Host ''

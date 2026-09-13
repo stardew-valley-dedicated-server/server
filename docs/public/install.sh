@@ -125,6 +125,13 @@ should_restart() {
     esac
 }
 
+# True when the file is a JunimoServer compose. It counts as one only if it has the canonical
+# `- SDVD_COMPOSE_REV=<n>` line that validate-pr.yml checks for, so a stray mention of the name in
+# a comment or value does not match. This guard matters because an update overwrites
+# docker-compose.yml and runs `docker compose up -d --remove-orphans`, which would tear down the
+# containers of an unrelated project if we adopted its compose by mistake.
+is_junimo_compose() { grep -qE '^[[:space:]]*- SDVD_COMPOSE_REV=[0-9]+[[:space:]]*$' "$1" 2>/dev/null; }
+
 command -v docker >/dev/null 2>&1 || die "Docker is not installed or not on PATH."
 docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin is required (docker compose v2)."
 command -v curl >/dev/null 2>&1 || die "curl is required."
@@ -142,6 +149,7 @@ fi
 cd "$target"
 
 if [ -f docker-compose.yml ]; then
+    is_junimo_compose docker-compose.yml || die "This folder's docker-compose.yml isn't a JunimoServer one, so you're probably in the wrong directory. To set up a new server, run the installer from a folder that has no docker-compose.yml and it will create ./junimoserver. If this is an older JunimoServer server, re-download it from ${MASTER}/docker-compose.yml and run the installer again."
     # ── Update ────────────────────────────────────────────────────────────────────────────────
     echo "Updating server in $(pwd)"
     echo ""
