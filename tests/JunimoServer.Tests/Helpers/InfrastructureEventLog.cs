@@ -29,10 +29,13 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// <item><b>HTTP traffic</b>:
 /// <c>http_request</c> (client-side, TracingHandler: <c>clientKind, method, path,
-/// status, durationMs, reqBytes?, respBytes?, snapshotAgeMs?,
-/// predicateChangedMsAgo?, respSummary?, error?</c>) · <c>http_503_retry</c>
+/// status, durationMs, reqBytes?, respBytes?, respBody?, snapshotAgeMs?,
+/// predicateChangedMsAgo?, error?</c>; <c>respBytes</c>/<c>respBody</c> are
+/// <c>Full</c>-only — <c>respBody</c> is the buffered response text, truncated
+/// and scrubbed by the in-place <c>ReportRedactor</c> pass) · <c>http_503_retry</c>
 /// (ServerApiClient retried a 503) · <c>http_served</c> (mod, ApiService:
-/// <c>method, path, status, durationMs</c>).</item>
+/// <c>method, path, status, durationMs</c>; the envelope also carries
+/// <c>testId</c> — the originating test — at every tracing level).</item>
 ///
 /// <item><b>Polling &amp; failure context</b>:
 /// <c>poll_completed</c> (<c>label, succeeded, iterations, durationMs, timeoutMs,
@@ -390,7 +393,12 @@ namespace JunimoServer.Tests.Helpers;
 ///
 /// <item><b>Capacity &amp; exclusivity (broker scheduler)</b>:
 /// <c>capacity_acquired</c> · <c>capacity_released</c> · <c>pool_expansion</c> ·
-/// <c>server_acquired</c> (<c>server, instanceId, host_id, refCount, exclusive</c>) ·
+/// <c>server_acquired</c> (<c>server, instanceId, host_id, refCount, exclusive</c>;
+/// fires only when THIS test took the lease) ·
+/// <c>test_instance_bound</c> (<c>serverInstanceId</c>; emitted once per test method
+/// from <c>TestBase.MarkActiveAndArmBudget</c>, so the envelope <c>test</c> gives a
+/// durable per-test → instance binding for <b>every</b> isolation mode — including
+/// KeepConnected/adopted sessions where <c>server_acquired</c> doesn't re-fire) ·
 /// <c>exclusive_acquired</c> (<c>server, instanceId, test, refCount,
 /// kind:"with_ref"|"gate_only", inheritedFromClass</c>) ·
 /// <c>exclusive_released</c> (<c>server, instanceId,

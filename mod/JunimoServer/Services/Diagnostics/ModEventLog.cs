@@ -63,6 +63,7 @@ public static class ModEventLog
             {
                 ts = DateTime.UtcNow,
                 requestId = ModRequestContext.RequestId,
+                testId = ModRequestContext.TestId,
                 service = "server",
                 tickMs,
                 @event = eventType,

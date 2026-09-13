@@ -13,8 +13,8 @@ namespace JunimoServer.Tests.Helpers;
 /// Galaxy-reinit repro needs: during total connectivity loss the HTTP API is dark, but
 /// stdout (and therefore this file) keeps flowing.
 ///
-/// Each line is a JSON object: <c>{ ts, requestId, service, tickMs, event, data,
-/// forwardedVia }</c> (the mod's <c>ModEventLog.Emit</c> envelope plus the
+/// Each line is a JSON object: <c>{ ts, requestId, testId, service, tickMs, event,
+/// data, forwardedVia }</c> (the mod's <c>ModEventLog.Emit</c> envelope plus the
 /// harness-added <c>forwardedVia</c> slug, e.g. <c>server-0</c>). Events are
 /// returned in file order, which is arrival order (the writer appends
 /// sequentially).

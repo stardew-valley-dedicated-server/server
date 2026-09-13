@@ -184,6 +184,18 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         if (Lease != null && _testDisplayName != null)
         {
             _runningTestToken = Lease.Managed.RegisterRunningTest(_testDisplayName);
+
+            // Durable, per-test, per-method test→instance binding in
+            // infrastructure.jsonl. server_acquired only fires when THIS test took
+            // the lease; under KeepConnected/adopted persistent sessions one lease
+            // spans many methods, so those methods would otherwise have no on-disk
+            // binding (the leased-instance link is UI-IPC-only). Emit auto-stamps
+            // the envelope test, so this answers "which instance did test T run on"
+            // for every isolation mode, independent of the run-events ring buffer.
+            InfrastructureEventLog.Emit(
+                "test_instance_bound",
+                new { serverInstanceId = Lease.ServerInstanceId }
+            );
         }
 
         // Per-test progress heartbeat for the stall watchdog: a long KeepConnected class
