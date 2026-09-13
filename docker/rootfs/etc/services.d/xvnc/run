@@ -1,11 +1,19 @@
 #!/bin/sh
 
-# Filter out arguments matching -InternalConnectionSecurityTypes=*
+# Wraps the base image's Xvnc launch. Drops the -InternalConnectionSecurityTypes option (it crashes
+# this GL-enabled Xvnc build) and, when cont-init.d/15-vnc-gate.sh found no VNC password, replaces
+# the TCP port with -1 so Xvnc serves only its unix socket (which the web UI's proxy uses).
 filtered_args=""
 for arg in "$@"; do
     case "$arg" in
         -InternalConnectionSecurityTypes=*)
             ;; # Skip this argument
+        -rfbport=*)
+            if [ -f /var/run/sdvd-vnc-disabled ]; then
+                arg="-rfbport=-1"
+            fi
+            filtered_args="$filtered_args \"$arg\""
+            ;;
         *)
             filtered_args="$filtered_args \"$arg\""
             ;;

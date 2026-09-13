@@ -378,7 +378,7 @@ All secrets use the `DEPLOY_` prefix.
 | `DEPLOY_STEAM_REFRESH_TOKEN` | No¹ | Steam OAuth refresh token |
 | `DEPLOY_STEAM_USERNAME` | Yes | Steam account username |
 | `DEPLOY_VNC_PASSWORD` | Yes | VNC access password |
-| `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web interface |
+| `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web UI |
 
 _¹ Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both; if both are set, refresh token is used)._
 
@@ -433,7 +433,7 @@ The script outputs the private key to add as `DEPLOY_SSH_KEY` in GitHub.
 ```sh
 # Example for the public-test-preview environment
 ufw allow 24642/udp  # Game port
-ufw allow 5800/tcp   # VNC web interface
+ufw allow 5800/tcp   # VNC web UI
 ```
 
 ### Manual Deployment
@@ -475,7 +475,7 @@ GitHub Actions caches can accumulate over time. This pipeline removes every cach
 
 CI posts to Discord in two clearly separated streams, all through the shared composite action `.github/actions/discord-notify`:
 
-- **Public release feeds**: `#releases` (stable releases) and `#releases-preview` (preview builds). Each post carries the full changelog since the previous build — every first-parent commit as one **Changes** list ordered like the GitHub release page, with hidden types folded into a trailing `+N internal changes` line and a `[diff]` link to the range (built by `.github/actions/build-changelog` on top of `.github/scripts/build-changelog.js`) — plus the exact `IMAGE_VERSION=…` value to deploy it.
+- **Public release feeds**: `#releases` (stable releases, logo green) and `#releases-preview` (preview builds, amber). Each post leads with a `Release <version>` / `Build <version>` headline linking the image tag, then a `## Changes` changelog — for `#releases` everything since the previous stable release, for `#releases-preview` everything since the previous build of either channel — first-parent commits grouped into `###` sections by type in release-please order (with a `### ⚠️ Breaking changes` callout when any commit is breaking; hidden types omitted), built by `.github/actions/build-changelog` on top of `.github/scripts/build-changelog.js` — then an `## Install or update` block with the one-line install/update commands, and `Upgrade guide` + `See all changes` buttons.
 - **Internal CI feed** for maintainers: `#internal-ci` gets docs deploys (with the versions per half), server deploys (with the resolved image version and commit), and deploy failures.
 
 ### Secrets

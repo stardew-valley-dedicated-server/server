@@ -129,7 +129,7 @@ public static class Logger
         }
     }
 
-    public static void LogTotal(string prefix = "[Steam] Total time:")
+    public static void LogTotal(string prefix)
     {
         lock (_lock)
         {

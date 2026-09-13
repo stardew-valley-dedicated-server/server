@@ -42,7 +42,7 @@ joinable over direct IP — even for the account's own player. See
 |------|----------|---------|-------------------|
 | 24642 | UDP | Steam SDR game port | No (relay handles NAT) |
 | 27015 | UDP | Steam SDR query port | No (relay handles NAT) |
-| 5800 | TCP | VNC web interface | Only for remote access |
+| 5800 | TCP | VNC web UI | Only for remote access |
 | 8080 | TCP | HTTP API | Only for external tools |
 | 80, 443 | TCP | HTTPS proxy (optional) | Only with a proxy in front (bundled or your own) |
 
@@ -167,7 +167,7 @@ If you need to configure firewalls, allow:
 
 **For remote VNC access:**
 
-- Inbound TCP 5800, VNC web interface
+- Inbound TCP 5800, VNC web UI
 
 **For external API access:**
 

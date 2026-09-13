@@ -44,6 +44,7 @@ const uint SteamworksSdkAppId = 1007; // Steamworks SDK Redistributable (steamcl
 
 // Parse command
 var command = args.Length > 0 ? args[0].ToLower() : "serve";
+var isInteractiveCommand = command is "setup" or "login";
 
 string? GetEnvTrimmed(string name)
 {
@@ -127,6 +128,31 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
     if (user != null)
     {
         result[0] = (user, pass, token);
+        return result;
+    }
+
+    // No env account (guided installer): the newest saved session becomes account 0 so the headless
+    // commands work without STEAM_USERNAME; newest wins so a re-run or renewal never revives a
+    // stale token. Interactive commands stay account-less so they reach the picker in
+    // LoginInteractiveAsync instead.
+    if (isInteractiveCommand)
+    {
+        return result;
+    }
+
+    var sessions = SteamAuthService.FindSessions(sessionDir);
+    if (sessions.Count > 0)
+    {
+        var chosen = sessions[0].username;
+        Logger.Log($"[SteamService] Using saved session for {chosen} as account 0");
+        if (sessions.Count > 1)
+        {
+            var others = string.Join(", ", sessions.Skip(1).Select(s => s.username));
+            Logger.Log(
+                $"[SteamService] Other saved sessions: {others}. Set STEAM_USERNAME to use one of them."
+            );
+        }
+        result[0] = (chosen, null, null);
     }
 
     return result;
@@ -168,13 +194,10 @@ async Task LoginAccountAsync(
     {
         await svc.EnsureLoggedInAsync(loginConfig);
     }
-    catch (InvalidOperationException)
+    catch (InvalidOperationException ex)
     {
-        // No auth method configured — match prior log message for operators.
-        Logger.Log(
-            $"[SteamService] A{svc.AccountIndex}: No authentication method for {config.user}"
-        );
-        Logger.Log($"[SteamService] Provide credentials via STEAM_ACCOUNTS JSON or run 'setup'");
+        // No auth method; the exception text tells the operator what to set.
+        Logger.Log($"[SteamService] {ex.Message}");
     }
 }
 
@@ -241,8 +264,9 @@ switch (command)
         if (accounts.Count == 0)
         {
             // No accounts configured; run interactive setup for account 0
+            Console.WriteLine();
             Logger.Log("[SteamService] No accounts configured, running interactive setup...");
-            var svc = new SteamAuthService(0, "setup", sessionDir, gameDir);
+            var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
             if (svc.IsLoggedIn)
             {
@@ -280,8 +304,9 @@ switch (command)
     case "login":
         if (accounts.Count == 0)
         {
+            Console.WriteLine();
             Logger.Log("[SteamService] No accounts configured, running interactive login...");
-            var svc = new SteamAuthService(0, "login", sessionDir, gameDir);
+            var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
             svc.Disconnect();
         }
