@@ -1,7 +1,7 @@
-# Web Interface (VNC)
+# VNC
 
-::: warning Advanced Tool
-VNC is for debugging and advanced troubleshooting only. For normal operation, use the [CLI](/admins/operations/commands) and connect to your server with your game client like any multiplayer game.
+::: warning Debugging tool
+VNC is for debugging and troubleshooting only. For normal operation, use the [CLI](/admins/operations/commands) and connect to your server with your game client like any multiplayer game.
 
 By default, rendering is disabled (`SERVER_FPS=0`) for performance. VNC will show a "Rendering Disabled" notice. This is intentional.
 :::
@@ -48,7 +48,7 @@ Do **not** use the `Remote Resizing` scaling mode. This can cause stability issu
 
 ## Clipboard
 
-Copy and paste works through the VNC interface, but requires a special method:
+Copy and paste works through the VNC web UI, but requires a special method:
 
 1. Open the settings panel on the left
 2. Use the clipboard text area to transfer text

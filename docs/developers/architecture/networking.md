@@ -99,7 +99,7 @@ Steam lobbies require an authenticated Steam client. Since the GameServer API ru
 |------|----------|---------|
 | 24642 | UDP | Steam SDR game port |
 | 27015 | UDP | Steam SDR query port |
-| 5800 | TCP | VNC web interface |
+| 5800 | TCP | VNC web UI |
 | 8080 | TCP | HTTP REST API |
 | 3001 | TCP | Steam auth internal API |
 

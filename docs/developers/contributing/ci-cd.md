@@ -378,7 +378,7 @@ All secrets use the `DEPLOY_` prefix.
 | `DEPLOY_STEAM_REFRESH_TOKEN` | No¹ | Steam OAuth refresh token |
 | `DEPLOY_STEAM_USERNAME` | Yes | Steam account username |
 | `DEPLOY_VNC_PASSWORD` | Yes | VNC access password |
-| `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web interface |
+| `DEPLOY_VNC_PORT` | Yes | TCP port for VNC web UI |
 
 _¹ Steam authentication: Provide `DEPLOY_STEAM_PASSWORD` OR `DEPLOY_STEAM_REFRESH_TOKEN` (or both; if both are set, refresh token is used)._
 
@@ -433,7 +433,7 @@ The script outputs the private key to add as `DEPLOY_SSH_KEY` in GitHub.
 ```sh
 # Example for the public-test-preview environment
 ufw allow 24642/udp  # Game port
-ufw allow 5800/tcp   # VNC web interface
+ufw allow 5800/tcp   # VNC web UI
 ```
 
 ### Manual Deployment

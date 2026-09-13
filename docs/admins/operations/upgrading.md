@@ -45,7 +45,7 @@ The update command replaces `docker-compose.yml` with the version matching the n
 
 ### Empty `VNC_PASSWORD` disables VNC instead of aborting startup
 
-Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. Now an empty password keeps the VNC web interface and VNC port unreachable from outside the container, and the server starts normally; set a password to enable them. Startup still aborts when `API_KEY` is empty with the API enabled. Set `ALLOW_INSECURE_SETUP=true` on closed networks to start anyway and to leave VNC reachable without a password. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
+Earlier versions exited at startup whenever `VNC_PASSWORD` was empty. Now an empty password keeps the VNC web UI and VNC port unreachable from outside the container, and the server starts normally; set a password to enable them. Startup still aborts when `API_KEY` is empty with the API enabled. Set `ALLOW_INSECURE_SETUP=true` on closed networks to start anyway and to leave VNC reachable without a password. See [`ALLOW_INSECURE_SETUP`](/admins/configuration/environment#allow-insecure-setup).
 
 ### The game runs as a non-root user
 

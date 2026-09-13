@@ -17,8 +17,8 @@ These must be set for the server to function:
 |----------|-------------|---------|
 | `GAME_PORT` | UDP port for multiplayer connections | `24642` |
 | `QUERY_PORT` | UDP port for Steam query protocol | `27015` |
-| `VNC_PORT` | TCP port for VNC web interface | `5800` |
-| `VNC_PASSWORD` | Password for the VNC web interface (max 8 characters) | (empty = VNC disabled) |
+| `VNC_PORT` | TCP port for VNC web UI | `5800` |
+| `VNC_PASSWORD` | Password for the VNC web UI (max 8 characters) | (empty = VNC disabled) |
 | `API_PORT` | Port for the HTTP REST API | `8080` |
 | `API_ENABLED` | Enable HTTP API for external tools | `true` |
 | `PUBLIC_HOST` | Public IP or domain of the [HTTPS proxy](/admins/operations/reverse-proxy); when set, `VNC_PORT` and `API_PORT` bind to loopback | - |
@@ -184,7 +184,7 @@ openssl rand -base64 32
 
 ### ALLOW_INSECURE_SETUP
 
-The server refuses to start without `API_KEY` while `API_ENABLED=true`, and without `VNC_PASSWORD` it keeps the VNC web interface (port 5800) and the VNC port (5900) unreachable from outside the container. Set `ALLOW_INSECURE_SETUP=true` to start anyway and to leave VNC reachable without a password. Only do this on networks where the VNC and API ports are not reachable by untrusted clients.
+The server refuses to start without `API_KEY` while `API_ENABLED=true`, and without `VNC_PASSWORD` it keeps the VNC web UI (port 5800) and the VNC port (5900) unreachable from outside the container. Set `ALLOW_INSECURE_SETUP=true` to start anyway and to leave VNC reachable without a password. Only do this on networks where the VNC and API ports are not reachable by untrusted clients.
 
 ## Port Summary
 
@@ -192,7 +192,7 @@ The server refuses to start without `API_KEY` while `API_ENABLED=true`, and with
 |------|----------|---------|-------------------|
 | 24642 | UDP | Game (Steam SDR) | No (relay handles NAT) |
 | 27015 | UDP | Steam query | No (relay handles NAT) |
-| 5800 | TCP | VNC web interface | Only for remote access |
+| 5800 | TCP | VNC web UI | Only for remote access |
 | 8080 | TCP | REST API | Only for external tools |
 | 80, 443 | TCP | HTTPS proxy (optional) | Only with the `proxy` profile |
 | 3001 | TCP | Steam auth (internal) | No |

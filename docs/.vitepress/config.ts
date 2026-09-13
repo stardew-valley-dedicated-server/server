@@ -219,7 +219,6 @@ export default withMermaid(
                             { text: "Importing Saves", link: "/admins/operations/importing-saves" },
                             { text: "Networking", link: "/admins/operations/networking" },
                             { text: "Upgrading", link: "/admins/operations/upgrading" },
-                            { text: "VNC (Advanced)", link: "/admins/operations/vnc" },
                             { text: "Modern Docker Image", link: "/admins/operations/modern-docker" },
                             { text: "HTTPS & Reverse Proxy", link: "/admins/operations/reverse-proxy" },
                             { text: "Public Server Status", link: "/admins/operations/public-status" },
@@ -227,7 +226,10 @@ export default withMermaid(
                     },
                     {
                         text: "Troubleshooting",
-                        items: [{ text: "Common Issues", link: "/admins/troubleshooting" }],
+                        items: [
+                            { text: "Common Issues", link: "/admins/troubleshooting" },
+                            { text: "VNC", link: "/admins/operations/vnc" },
+                        ],
                     },
                 ],
                 "/features/": [

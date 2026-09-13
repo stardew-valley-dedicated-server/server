@@ -44,7 +44,7 @@ Then set `IMAGE_VERSION` in `.env` to pick a channel (defaults to `latest`), and
 
 By default there's nothing to edit. The install script already put a strong random `API_KEY` in `.env`, and VNC stays off. Open `.env` only to change optional settings:
 
-- **`VNC_PASSWORD`**: set it to expose the VNC web GUI (max 8 characters). Left empty, VNC stays disabled.
+- **`VNC_PASSWORD`**: set it to expose the VNC web UI (max 8 characters). Left empty, VNC stays disabled.
 - You don't need to put Steam credentials in `.env`; you enter them in the next step.
 
 ::: warning The API key controls your server
