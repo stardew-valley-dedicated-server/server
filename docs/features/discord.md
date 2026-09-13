@@ -17,7 +17,7 @@ The bot's Discord presence shows real-time server information:
 | Starting: loading the save | 🟡 Idle | `Loading the save.` |
 | Offline (container down or API unreachable) | 🔴 Do Not Disturb | `Currently unreachable.` |
 
-While online, the status line shows the player count and the invite code, which you can copy directly from the bot's status. The startup states come from the game container itself: it answers `/status` with a startup phase until the mod's API takes over, so a first-run download is never mistaken for an outage.
+While online, the status line shows the player count and, once the server has one, the invite code, which you can copy directly from the bot's status. The startup states come from the game container itself: it answers `/status` with a startup phase until the mod's API takes over, so a first-run download is never mistaken for an outage.
 
 ### Status Dashboard
 

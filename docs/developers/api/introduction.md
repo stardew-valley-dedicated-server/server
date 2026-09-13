@@ -37,7 +37,7 @@ Each endpoint page in this reference says whether it needs the key. Health, stat
 
 ## Invite code status
 
-`/status` carries the invite code beside `connectionStatusCode`, one stable value that says whether the code is usable and by whom. The server derives it from the raw connectivity signals (`steamRelayReady`, `galaxyLobbyState`, `steamSessionState`), which stay on the response for diagnostics; a display maps only the code to text.
+`/status` carries the invite code beside `connectionStatusCode`, one stable value that says whether the code is usable and by whom. The server derives it from whether `inviteCode` is present and the raw connectivity signals (`steamRelayReady`, `galaxyLobbyState`, `steamSessionState`), which stay on the response for diagnostics; a display maps only the code to text.
 
 | Value | Meaning |
 |-------|---------|

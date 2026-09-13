@@ -2809,12 +2809,18 @@ public partial class ApiService : ModService
         // The invite code mirrors the live Galaxy lobby (the mod's static properties, not the file).
         // It is shown whenever a lobby exists; SteamRelayReady reports whether Steam clients can use it
         // right now. The G-code is never exposed.
+        // One snapshot of the signals feeds both the raw fields and the derived code, so a response
+        // never carries a code that disagrees with its own signals.
         var inviteCode = InviteCodes.Joinable;
         var steamRelayReady = GalaxyAuthService.SteamLobbyPublished;
-        var galaxyLobbyState = GalaxyAuthService.GalaxyLobby.ToWire();
+        var galaxyLobby = GalaxyAuthService.GalaxyLobby;
+        var steamSession = SteamGameServerService.SteamSession;
+        var galaxyLobbyState = galaxyLobby.ToWire();
         var authReadiness = GalaxyAuthService.AuthTokenHealth.ToWire();
-        var steamSessionState = SteamGameServerService.SteamSession.ToWire();
-        var connectionStatusCode = InviteCodes.StatusCodeOf(inviteCode).ToWire();
+        var steamSessionState = steamSession.ToWire();
+        var connectionStatusCode = ConnectionStatus
+            .Compute(inviteCode != null, steamRelayReady, galaxyLobby, steamSession)
+            .ToWire();
 
         if (!snap.IsOnline)
         {
