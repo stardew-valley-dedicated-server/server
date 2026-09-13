@@ -1124,8 +1124,12 @@ internal sealed class ManagedServer : IAsyncDisposable
                 // below 5 min. A probe deadline is NOT shutdown: surface it as
                 // TimeoutException so it flows through the heal/poison-count path below,
                 // not the outer-ct `break`.
-                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                probeCts.CancelAfter(ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000));
+                using var probeCts = Cts.LinkedTimeout(
+                    ct,
+                    TimeSpan.FromMilliseconds(
+                        ParseEnvInt("SDVD_HEALTH_CHECK_PROBE_TIMEOUT_MS", 50_000)
+                    )
+                );
                 Clients.HealthResponse? health;
                 try
                 {

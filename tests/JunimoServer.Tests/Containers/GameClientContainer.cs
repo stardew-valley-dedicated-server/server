@@ -299,8 +299,7 @@ public class GameClientContainer : IAsyncDisposable
 
         var _startSw = Stopwatch.StartNew();
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(_options.StartupTimeout);
+        using var timeoutCts = Cts.LinkedTimeout(ct, _options.StartupTimeout);
 
         // Remote hosts only: tighter daemon-responsiveness deadline on docker create+start —
         // same rationale as ServerContainer.StartAsync. A wedged shared daemon-socket forward

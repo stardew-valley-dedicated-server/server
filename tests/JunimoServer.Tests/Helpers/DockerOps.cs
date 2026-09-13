@@ -263,9 +263,7 @@ internal static class DockerOps
             return null;
         }
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(t);
-        return cts;
+        return Cts.LinkedTimeout(ct, t);
     }
 
     private static IDictionary<string, IDictionary<string, bool>> LabelFilter(

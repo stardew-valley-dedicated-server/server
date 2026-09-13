@@ -502,9 +502,8 @@ public sealed class HostPool : IAsyncDisposable
             // in-progress journal, which the next run simply retries.
             int orphansReaped;
             bool orphanReapTimedOut;
-            using (var reapCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            using (var reapCts = Cts.LinkedTimeout(ct, TimeSpan.FromSeconds(20)))
             {
-                reapCts.CancelAfter(TimeSpan.FromSeconds(20));
                 (orphansReaped, orphanReapTimedOut) = await TunnelManager.ReapOrphanedMastersAsync(
                     sshPath,
                     reapCts.Token
@@ -520,9 +519,8 @@ public sealed class HostPool : IAsyncDisposable
             // next run.
             int staleSwept;
             bool staleSweepTimedOut;
-            using (var sweepCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            using (var sweepCts = Cts.LinkedTimeout(ct, TimeSpan.FromSeconds(10)))
             {
-                sweepCts.CancelAfter(TimeSpan.FromSeconds(10));
                 (staleSwept, staleSweepTimedOut) =
                     await TunnelManager.CleanupStaleControlSocketsAsync(
                         sshPath,
