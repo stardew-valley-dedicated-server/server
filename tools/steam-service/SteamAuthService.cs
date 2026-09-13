@@ -473,7 +473,7 @@ public class SteamAuthService
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var username = doc.RootElement.GetProperty("username").GetString();
             var token = doc.RootElement.GetProperty("refreshToken").GetString();
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(token))
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(token))
             {
                 return null;
             }
