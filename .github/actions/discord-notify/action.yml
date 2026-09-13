@@ -57,7 +57,7 @@ inputs:
   buttons:
     description: >
       Optional JSON array of {label, url} link buttons, shown in one row below the embeds (max 5).
-      Author-controlled values only.
+      Author-controlled values only. A button with an empty url is dropped with a warning.
     required: false
     default: "[]"
   dry-run:
@@ -101,6 +101,14 @@ runs:
         jq -e 'type == "array" and all(.[]; (.label | type == "string") and (.url | type == "string"))' \
           >/dev/null 2>&1 <<< "$BUTTONS" \
           || { echo "::error::discord-notify: buttons must be a JSON array of {label, url} objects"; exit 1; }
+
+        # Discord rejects a link button with an empty url, which would fail the whole post. Drop
+        # such buttons (a caller's URL source was empty) and keep the rest.
+        dropped=$(jq -r '[.[] | select(.url == "") | .label] | join(", ")' <<< "$BUTTONS")
+        if [ -n "$dropped" ]; then
+          echo "::warning::discord-notify: dropped buttons with an empty url: ${dropped}"
+          BUTTONS=$(jq -c '[.[] | select(.url != "")]' <<< "$BUTTONS")
+        fi
 
         # If a caller sets a name (release/preview) but no avatar, fall back to the project logo.
         # This is the one place that URL lives; it's served from the docs site. Callers with no name
