@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-    describeInviteAvailability,
+    CONNECTION_STATUS_TEXT,
+    type ConnectionStatusCode,
+    connectionStatusText,
     formatStardewDate,
     formatStardewTime,
     formatUptime,
@@ -19,75 +21,41 @@ describe("formatStardewDate", () => {
 
 describe("joinableInviteCode", () => {
     test("is the Steam code once published", () => {
-        expect(joinableInviteCode({ steamInviteCode: "SABC" })).toBe("SABC");
+        expect(joinableInviteCode({ inviteCode: "SABC" })).toBe("SABC");
     });
 
     test("is null before the Steam lobby is published, never the GOG code", () => {
-        expect(joinableInviteCode({ steamInviteCode: null })).toBeNull();
-        expect(joinableInviteCode({ steamInviteCode: "" })).toBeNull();
+        expect(joinableInviteCode({ inviteCode: null })).toBeNull();
+        expect(joinableInviteCode({ inviteCode: "" })).toBeNull();
     });
 });
 
-describe("describeInviteAvailability", () => {
-    test("no note when the code is fully joinable", () => {
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: "SABC",
-                steamRelayReady: true,
-                galaxyLobby: "connected",
-                steamSession: "connected",
-            }),
-        ).toBeNull();
+describe("connectionStatusText", () => {
+    test("a ready code shows alone", () => {
+        expect(connectionStatusText({ connectionStatusCode: "ready" })).toBeNull();
     });
 
-    test("code present but relay not ready → GOG-can-join note", () => {
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: "SABC",
-                steamRelayReady: false,
-                galaxyLobby: "connected",
-                steamSession: "connected",
-            }),
-        ).toBe("Steam relay connecting — GOG players can join now");
+    test("every other code maps to its display text", () => {
+        expect(connectionStatusText({ connectionStatusCode: "steamRelayPending" })).toBe(
+            "GOG ready · Steam connecting…",
+        );
+        expect(connectionStatusText({ connectionStatusCode: "reconnecting" })).toBe("reconnecting…");
+        expect(connectionStatusText({ connectionStatusCode: "starting" })).toBe("starting up…");
+        expect(connectionStatusText({ connectionStatusCode: "steamSessionDown" })).toBe("connecting to Steam…");
+        expect(connectionStatusText({ connectionStatusCode: "inviteUnavailable" })).toBe("not used on this server");
     });
 
-    test("no code → the connectivity reason", () => {
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: null,
-                steamRelayReady: false,
-                galaxyLobby: "recovering",
-                steamSession: "connected",
-            }),
-        ).toBe("Galaxy lobby reconnecting");
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: null,
-                steamRelayReady: false,
-                galaxyLobby: "down",
-                steamSession: "lost",
-            }),
-        ).toBe("Steam session reconnecting");
-        // Both down: the Steam session is the root cause (same order as the mod's chat reply).
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: null,
-                steamRelayReady: false,
-                galaxyLobby: "recovering",
-                steamSession: "lost",
-            }),
-        ).toBe("Steam session reconnecting");
+    test("in-progress states end in an ellipsis; the settled state does not", () => {
+        for (const [code, text] of Object.entries(CONNECTION_STATUS_TEXT)) {
+            if (text === null) {
+                continue;
+            }
+            expect(text.endsWith("…")).toBe(code !== "inviteUnavailable");
+        }
     });
 
-    test("LAN-only server explains there will never be a code", () => {
-        expect(
-            describeInviteAvailability({
-                steamInviteCode: null,
-                steamRelayReady: false,
-                galaxyLobby: null,
-                steamSession: "lost",
-            }),
-        ).toBe("invite codes are disabled in LAN-only mode");
+    test("a server predating the field yields no text", () => {
+        expect(connectionStatusText({ connectionStatusCode: undefined as unknown as ConnectionStatusCode })).toBeNull();
     });
 });
 

@@ -29,7 +29,7 @@ Connections:
 
 ## Connection Methods
 
-### Steam SDR (Steam Datagram Relay)
+### Steam relay (Steam Datagram Relay, SDR)
 
 Steam clients connect through Valve's relay network:
 
@@ -49,7 +49,7 @@ GOG clients connect using Galaxy's P2P networking:
 
 - Joins with the same invite code as Steam; a GOG client reads either prefix as the Galaxy lobby id
 - Works through most NATs without port forwarding
-- Lower success rate (~50%) than Steam SDR
+- Lower success rate (~50%) than the Steam relay
 
 ### Direct IP (Lidgren)
 
@@ -97,21 +97,21 @@ Steam lobbies require an authenticated Steam client. Since the GameServer API ru
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 24642 | UDP | Steam SDR game port |
-| 27015 | UDP | Steam SDR query port |
+| 24642 | UDP | Steam relay (SDR) game port |
+| 27015 | UDP | Steam relay (SDR) query port |
 | 5800 | TCP | VNC web UI |
 | 8080 | TCP | HTTP REST API |
 | 3001 | TCP | Steam auth internal API |
 
 ## NAT Traversal
 
-### Steam SDR
+### Steam relay (SDR)
 
 Traffic routes through Valve's global relay network, handling NAT automatically.
 
 ### GOG Galaxy
 
-Uses STUN/TURN-like mechanisms for P2P connections. Less reliable than Steam SDR.
+Uses STUN/TURN-like mechanisms for P2P connections. Less reliable than the Steam relay.
 
 ### Direct IP
 

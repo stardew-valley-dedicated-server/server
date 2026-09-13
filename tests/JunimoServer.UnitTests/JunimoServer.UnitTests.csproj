@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <!-- Disabled so the linked mod sources compile under the mod's own using rules (net6, no implicit usings). -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- The mod needs the game DLLs to build, so game-free mod sources are linked here by file. -->
+  <ItemGroup>
+    <Compile Include="../../mod/JunimoServer/Util/ConnectivitySignals.cs" Link="Mod/ConnectivitySignals.cs" />
+    <Compile Include="../../mod/JunimoServer/Util/ConnectionStatus.cs" Link="Mod/ConnectionStatus.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+  </ItemGroup>
+
+</Project>

@@ -192,22 +192,31 @@ public class ServerApiTests : TestBase
     {
         var ct = TestCt;
 
+        // Server readiness gates on the invite code; the relay stamp lands about a second later, and
+        // only then does the status read "ready".
+        var ready = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_ServerApi_ConnectionStatusReady,
+            async () => (await ServerApi.GetStatus(ct))?.ConnectionStatusCode == "ready",
+            TimeSpan.FromSeconds(30),
+            cancellationToken: ct
+        );
+        Assert.True(ready, "connectionStatusCode must reach 'ready' once the relay stamp lands");
+
         var status = await ServerApi.GetStatus(ct);
         Assert.NotNull(status);
         Assert.False(
-            string.IsNullOrEmpty(status!.SteamInviteCode),
-            "steamInviteCode must be exposed whenever the Galaxy lobby exists"
+            string.IsNullOrEmpty(status!.InviteCode),
+            "inviteCode must be exposed whenever the Galaxy lobby exists"
         );
         // Never a G-code: a Steam player who used one would join over Galaxy P2P and get a
         // farmhand their Steam identity never sees.
         Assert.True(
-            status.SteamInviteCode!.StartsWith("S", StringComparison.Ordinal),
-            $"invite code must be the S-code; got '{status.SteamInviteCode}'"
+            status.InviteCode!.StartsWith("S", StringComparison.Ordinal),
+            $"invite code must be the S-code; got '{status.InviteCode}'"
         );
-        Assert.Equal(status.SteamInviteCode, status.InviteCode); // no GOG fallback in the DTO
 
-        Assert.Equal("connected", status.GalaxyLobby);
-        Assert.Equal("connected", status.SteamSession);
+        Assert.Equal("connected", status.GalaxyLobbyState);
+        Assert.Equal("connected", status.SteamSessionState);
         Assert.True(
             status.SteamRelayReady,
             "steamRelayReady must be true once the relay stamp landed"
@@ -216,6 +225,7 @@ public class ServerApiTests : TestBase
             status.AuthReadiness is "ok" or "expiring",
             $"authReadiness must be ok or expiring on a Steam-authenticated server; got '{status.AuthReadiness ?? "null"}'"
         );
+        Assert.Equal("ready", status.ConnectionStatusCode);
 
         var health = await ServerApi.GetHealth(ct);
         Assert.NotNull(health);
@@ -223,15 +233,16 @@ public class ServerApiTests : TestBase
             health!.InviteCodePresent,
             "/health.inviteCodePresent must be true when a code exists"
         );
-        Assert.Equal("connected", health.GalaxyLobby);
-        Assert.Equal("connected", health.SteamSession);
+        Assert.Equal("connected", health.GalaxyLobbyState);
+        Assert.Equal("connected", health.SteamSessionState);
         Assert.True(health.SteamRelayReady);
         Assert.Equal(status.AuthReadiness, health.AuthReadiness);
     }
 
     /// <summary>
-    /// A LAN-only server (no STEAM_AUTH_URL) has no Galaxy: the Galaxy-side fields are null rather
-    /// than "down", there is no invite code, and /health still returns 200.
+    /// A server without Steam auth (no STEAM_AUTH_URL) has no Galaxy: the Galaxy-side fields are null
+    /// rather than "down", there is no invite code, the connection status says so, and /health still
+    /// returns 200.
     /// </summary>
     [Fact]
     [TestServer(Clients = 0)]
@@ -241,15 +252,16 @@ public class ServerApiTests : TestBase
 
         var status = await ServerApi.GetStatus(ct);
         Assert.NotNull(status);
-        Assert.Null(status!.SteamInviteCode);
-        Assert.Null(status.GalaxyLobby);
+        Assert.Null(status!.InviteCode);
+        Assert.Null(status.GalaxyLobbyState);
         Assert.Null(status.AuthReadiness);
         Assert.False(status.SteamRelayReady);
+        Assert.Equal("inviteUnavailable", status.ConnectionStatusCode);
 
         var health = await ServerApi.GetHealth(ct);
         Assert.NotNull(health);
         Assert.False(health!.InviteCodePresent);
-        Assert.Null(health.GalaxyLobby);
+        Assert.Null(health.GalaxyLobbyState);
         Assert.Null(health.AuthReadiness);
     }
 

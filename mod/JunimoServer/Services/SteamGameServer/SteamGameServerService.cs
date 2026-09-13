@@ -1,6 +1,7 @@
 using System;
 using HarmonyLib;
 using JunimoServer.Shared;
+using JunimoServer.Util;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -40,14 +41,11 @@ public class SteamGameServerService : ModService
     public static bool IsInitialized => _initialized;
 
     // Live Steam-session state (distinct from IsInitialized, which stays true across a session drop).
-    // Surfaced on /status and /health as steamSession. Written on the Steam callback thread.
-    private static volatile bool _steamSessionConnected;
+    // Surfaced on /status and /health as steamSessionState. Written on the Steam callback thread.
+    private static volatile SteamSessionState _steamSession = SteamSessionState.Lost;
 
-    /// <summary>Whether the Steam GameServer session is currently connected (up vs lost).</summary>
-    public static bool SteamSessionConnected => _steamSessionConnected;
-
-    /// <summary>Steam session state as reported on <c>/status</c> and <c>/health</c>: "connected" | "lost".</summary>
-    public static string SteamSessionState => _steamSessionConnected ? "connected" : "lost";
+    /// <summary>The live Steam GameServer session state (up vs lost).</summary>
+    public static SteamSessionState SteamSession => _steamSession;
 
     /// <summary>
     /// The Steam ID of this game server. Clients use this to connect via P2P.
@@ -195,7 +193,7 @@ public class SteamGameServerService : ModService
     private static void OnSteamServersConnected(SteamServersConnected_t callback)
     {
         _serverSteamId = Steamworks.SteamGameServer.GetSteamID();
-        _steamSessionConnected = true;
+        _steamSession = SteamSessionState.Connected;
         _monitor.Log($"Connected to Steam servers!", LogLevel.Info);
         _monitor.Log($"Server Steam ID: {_serverSteamId.m_SteamID}", LogLevel.Info);
 
@@ -255,7 +253,7 @@ public class SteamGameServerService : ModService
 
     private static void OnSteamServersDisconnected(SteamServersDisconnected_t callback)
     {
-        _steamSessionConnected = false;
+        _steamSession = SteamSessionState.Lost;
         _monitor.Log($"Disconnected from Steam servers: {callback.m_eResult}", LogLevel.Warn);
         _monitor.Log("SDR connections may be affected until reconnected", LogLevel.Warn);
 
@@ -293,7 +291,7 @@ public class SteamGameServerService : ModService
             Steamworks.SteamGameServer.LogOff();
             GameServer.Shutdown();
             _initialized = false;
-            _steamSessionConnected = false;
+            _steamSession = SteamSessionState.Lost;
             _monitor.Log("Steam GameServer shutdown complete", LogLevel.Info);
         }
         catch (Exception ex)

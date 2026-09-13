@@ -10,18 +10,18 @@ The bot's Discord presence shows real-time server information:
 
 | Server State | Bot Status | Status Text |
 |--------------|------------|-------------|
-| Online | 🟢 Online | `2/8 players, code SGF0LUHHTYF5`, alternating with `v1.5.0, code SGF0LUHHTYF5` |
+| Online | 🟢 Online | `2/8 players, code SGF0LUHHTYF5` |
 | Busy (saving, festival, wedding) | 🟢 Online | `Saving or running an event.` |
 | Starting: downloading game files (first run) | 🟡 Idle | `Downloading game files.` |
 | Starting: launching the game | 🟡 Idle | `Launching the game.` |
 | Starting: loading the save | 🟡 Idle | `Loading the save.` |
 | Offline (container down or API unreachable) | 🔴 Do Not Disturb | `Currently unreachable.` |
 
-While online, the status line has room for the invite code plus one more item, so it alternates between the player count and the image version on each refresh. You can copy the invite code directly from the bot's status. The startup states come from the game container itself: it answers `/status` with a startup phase until the mod's API takes over, so a first-run download is never mistaken for an outage.
+While online, the status line shows the player count and the invite code, which you can copy directly from the bot's status. The startup states come from the game container itself: it answers `/status` with a startup phase until the mod's API takes over, so a first-run download is never mistaken for an outage.
 
 ### Status Dashboard
 
-An auto-updating embed posted to a channel of your choice (`STATUS_DASHBOARD_CHANNEL`), showing the server state, player count, in-game date and time, image version, uptime, and the invite code — falling back to the last-known snapshot while the server is unreachable. The bot edits the same message in place on a configurable interval (`STATUS_DASHBOARD_REFRESH_RATE`).
+An auto-updating embed posted to a channel of your choice (`STATUS_DASHBOARD_CHANNEL`), showing the server state, player count, in-game date and time, image version, uptime, and the invite code with its [connection status](/admins/operations/public-status#invite-code-status) — falling back to the last-known snapshot while the server is unreachable. The bot edits the same message in place on a configurable interval (`STATUS_DASHBOARD_REFRESH_RATE`).
 
 ### Chat Relay
 

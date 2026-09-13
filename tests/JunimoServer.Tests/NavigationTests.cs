@@ -86,7 +86,7 @@ public class NavigationTests : TestBase
         // Galaxy invite code may arrive asynchronously; poll briefly
         var ct = TestCt;
         var hasCode = await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_Navigation_HasGalaxyInviteCode,
+            WaitName.Polling_Navigation_StatusHasInviteCode,
             async () =>
             {
                 var r = await ServerApi.GetStatus(ct);

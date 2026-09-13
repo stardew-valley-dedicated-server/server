@@ -13,8 +13,8 @@ namespace JunimoServer.Util;
 /// </summary>
 public static class ServerBanner
 {
-    private static bool _hasPrinted = false;
-    private static bool _printedWithCode = false;
+    private static bool _hasPrinted;
+    private static bool _printedWithCode;
     private static int _printGeneration;
     private static readonly object _lock = new object();
 
@@ -102,17 +102,17 @@ public static class ServerBanner
     {
         var lines = new List<string>();
 
-        // Steam GameServer (SDR) status
+        // Steam GameServer (relay) status
         if (SteamGameServerService.IsInitialized)
         {
-            // Masked: the SDR ID identifies the hosting Steam account and the banner
+            // Masked: the Steam ID identifies the hosting Steam account and the banner
             // is captured into the public report.
             var steamId = SteamGameServerService.ServerSteamId.m_SteamID;
-            lines.Add($"✓ Steam SDR: {ChatRedaction.MaskValue(steamId.ToString())}");
+            lines.Add($"✓ Steam relay: {ChatRedaction.MaskValue(steamId.ToString())}");
         }
         else
         {
-            lines.Add("⏳ Steam SDR: initializing...");
+            lines.Add("⏳ Steam relay: initializing...");
         }
 
         // Galaxy is always enabled (default game networking)

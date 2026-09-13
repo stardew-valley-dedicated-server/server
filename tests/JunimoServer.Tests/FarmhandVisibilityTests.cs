@@ -105,7 +105,7 @@ public class FarmhandVisibilityTests : TestBase
         // server has no code (the /status contract itself is covered by ServerApiTests).
         var status = await ServerApi.GetStatus(ct);
         Assert.False(
-            string.IsNullOrEmpty(status?.SteamInviteCode),
+            string.IsNullOrEmpty(status?.InviteCode),
             "no invite code on the long-booted Steam server"
         );
 

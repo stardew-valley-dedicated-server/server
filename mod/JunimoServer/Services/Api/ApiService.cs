@@ -53,22 +53,29 @@ public class ServerStatus
     /// exists — GOG clients join it immediately; Steam clients join once <see cref="SteamRelayReady"/>
     /// is true. Null when no lobby exists yet. The G-code is never exposed.
     /// </summary>
-    public string? SteamInviteCode { get; set; }
+    public string? InviteCode { get; set; }
 
     /// <summary>
-    /// Whether the Steam relay is ready — i.e. the Galaxy lobby carries the SteamLobbyId stamp a
-    /// vanilla Steam client needs to complete an S-code join. Does NOT gate whether the code is shown.
+    /// Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp).
+    /// Does NOT gate whether the code is shown.
     /// </summary>
     public bool SteamRelayReady { get; set; }
 
-    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode.</summary>
-    public string? GalaxyLobby { get; set; }
+    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null when Steam auth is not configured.</summary>
+    public string? GalaxyLobbyState { get; set; }
 
     /// <summary>Steam GameServer session state: "connected" | "lost".</summary>
-    public string SteamSession { get; set; } = "lost";
+    public string SteamSessionState { get; set; } = "lost";
 
-    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null when Steam auth is not configured.</summary>
     public string? AuthReadiness { get; set; }
+
+    /// <summary>
+    /// Whether <see cref="InviteCode"/> is usable and by whom, derived from the signals above:
+    /// "ready" | "steamRelayPending" | "reconnecting" | "starting" | "steamSessionDown" |
+    /// "inviteUnavailable". Displays map this one field to text; the raw signals stay for diagnostics.
+    /// </summary>
+    public string ConnectionStatusCode { get; set; } = "starting";
 
     /// <summary>Server mod version.</summary>
     public string ServerVersion { get; set; } = "";
@@ -389,18 +396,18 @@ public class HealthResponse
     // Galaxy/Steam blip.
 
     /// <summary>Steam GameServer session state: "connected" | "lost".</summary>
-    public string SteamSession { get; set; } = "lost";
+    public string SteamSessionState { get; set; } = "lost";
 
-    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode.</summary>
-    public string? GalaxyLobby { get; set; }
+    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null when Steam auth is not configured.</summary>
+    public string? GalaxyLobbyState { get; set; }
 
-    /// <summary>Whether the Steam relay stamp is present (Steam clients can join right now).</summary>
+    /// <summary>Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp).</summary>
     public bool SteamRelayReady { get; set; }
 
     /// <summary>Whether an invite code is currently exposed (a Galaxy lobby exists).</summary>
     public bool InviteCodePresent { get; set; }
 
-    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" (no poll has reached the sidecar yet) | "ok" | "expiring" | "unavailable". Null when Steam auth is not configured.</summary>
     public string? AuthReadiness { get; set; }
 }
 
@@ -2802,11 +2809,12 @@ public partial class ApiService : ModService
         // The invite code mirrors the live Galaxy lobby (the mod's static properties, not the file).
         // It is shown whenever a lobby exists; SteamRelayReady reports whether Steam clients can use it
         // right now. The G-code is never exposed.
-        var steamInviteCode = InviteCodes.Steam;
+        var inviteCode = InviteCodes.Joinable;
         var steamRelayReady = GalaxyAuthService.SteamLobbyPublished;
-        var galaxyLobby = GalaxyAuthService.GalaxyLobbyState;
-        var authReadiness = GalaxyAuthService.AuthReadiness;
-        var steamSession = SteamGameServerService.SteamSessionState;
+        var galaxyLobbyState = GalaxyAuthService.GalaxyLobby.ToWire();
+        var authReadiness = GalaxyAuthService.AuthTokenHealth.ToWire();
+        var steamSessionState = SteamGameServerService.SteamSession.ToWire();
+        var connectionStatusCode = InviteCodes.StatusCodeOf(inviteCode).ToWire();
 
         if (!snap.IsOnline)
         {
@@ -2824,11 +2832,12 @@ public partial class ApiService : ModService
                 StartedAtUtc = ServerCommand.StartTimeUtc?.ToString("o"),
                 Tps = tps,
                 Version = snap.Version,
-                SteamInviteCode = steamInviteCode,
+                InviteCode = inviteCode,
                 SteamRelayReady = steamRelayReady,
-                GalaxyLobby = galaxyLobby,
-                SteamSession = steamSession,
+                GalaxyLobbyState = galaxyLobbyState,
+                SteamSessionState = steamSessionState,
                 AuthReadiness = authReadiness,
+                ConnectionStatusCode = connectionStatusCode,
             };
         }
 
@@ -2836,11 +2845,12 @@ public partial class ApiService : ModService
         {
             PlayerCount = snap.PlayerCount,
             MaxPlayers = snap.MaxPlayers,
-            SteamInviteCode = steamInviteCode,
+            InviteCode = inviteCode,
             SteamRelayReady = steamRelayReady,
-            GalaxyLobby = galaxyLobby,
-            SteamSession = steamSession,
+            GalaxyLobbyState = galaxyLobbyState,
+            SteamSessionState = steamSessionState,
             AuthReadiness = authReadiness,
+            ConnectionStatusCode = connectionStatusCode,
             ServerVersion = version,
             GameVersion = snap.GameVersion,
             IsOnline = true,
@@ -3479,11 +3489,11 @@ public partial class ApiService : ModService
             TickCount = totalTicks,
             IsFrozen = isFrozen,
             // Body-only joinability summary; Status above stays tick-liveness only (200 for alive).
-            SteamSession = SteamGameServerService.SteamSessionState,
-            GalaxyLobby = GalaxyAuthService.GalaxyLobbyState,
+            SteamSessionState = SteamGameServerService.SteamSession.ToWire(),
+            GalaxyLobbyState = GalaxyAuthService.GalaxyLobby.ToWire(),
             SteamRelayReady = GalaxyAuthService.SteamLobbyPublished,
             InviteCodePresent = InviteCodes.Joinable != null,
-            AuthReadiness = GalaxyAuthService.AuthReadiness,
+            AuthReadiness = GalaxyAuthService.AuthTokenHealth.ToWire(),
         };
     }
 

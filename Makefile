@@ -195,6 +195,7 @@ test:
 # Run unit tests (no Docker, no Steam)
 test-unit:
 	@dotnet test tests/SteamService.Tests/SteamService.Tests.csproj
+	@dotnet test tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj
 
 # Run tests with verbose output (detailed setup steps, diagnostics inline)
 test-verbose:

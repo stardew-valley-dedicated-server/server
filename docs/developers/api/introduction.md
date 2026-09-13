@@ -35,6 +35,21 @@ Authorization: Bearer <your-api-key>
 
 Each endpoint page in this reference says whether it needs the key. Health, status and the docs pages work without one. To show `/status` on a website, see [Public Server Status](/admins/operations/public-status).
 
+## Invite code status
+
+`/status` carries the invite code beside `connectionStatusCode`, one stable value that says whether the code is usable and by whom. The server derives it from the raw connectivity signals (`steamRelayReady`, `galaxyLobbyState`, `steamSessionState`), which stay on the response for diagnostics; a display maps only the code to text.
+
+| Value | Meaning |
+|-------|---------|
+| `ready` | The code is usable by everyone |
+| `steamRelayPending` | The code is shown and GOG clients can join; the Steam relay is not ready yet |
+| `reconnecting` | The multiplayer session is recovering |
+| `starting` | The session is starting up; the lobby is still forming |
+| `steamSessionDown` | The Steam session is not up, so there is no code yet |
+| `inviteUnavailable` | Invite codes are not configured on this server (`STEAM_AUTH_URL` unset) |
+
+The value is present whenever the mod answers `/status`; the mod's `invitecode` and `info` replies, the Discord bot, and the status widget all show the same state.
+
 ### Example
 
 ```sh

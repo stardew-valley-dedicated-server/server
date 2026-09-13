@@ -269,7 +269,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj', 'tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('.config/dotnet-tools.json', 'tests/JunimoServer.Tests/*.csproj', 'tests/JunimoServer.TestRunner/*.csproj', 'tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj', 'tests/JunimoServer.UnitTests/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-${{ steps.dotnet.outputs.dotnet-version }}-
 
       - name: Restore .NET tools
@@ -289,6 +289,7 @@ jobs:
             dotnet restore tests/JunimoServer.Tests/JunimoServer.Tests.csproj
             dotnet restore tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj
             dotnet restore tests/SteamService.Tests/SteamService.Tests.csproj
+            dotnet restore tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj
 
       # Analyzer style rules ride compilation, so they only gate where CI compiles
       # C#. The mod projects gate via the Docker image build (Validate Build); the
@@ -299,6 +300,7 @@ jobs:
           dotnet format style tests/JunimoServer.Tests/JunimoServer.Tests.csproj --severity error --verify-no-changes --no-restore
           dotnet format style tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj --severity error --verify-no-changes --no-restore
           dotnet format style tests/SteamService.Tests/SteamService.Tests.csproj --severity error --verify-no-changes --no-restore
+          dotnet format style tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj --severity error --verify-no-changes --no-restore
 
   unit-tests-steam-service:
     name: Unit Tests Steam Service
@@ -326,7 +328,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-unit-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj') }}
+          key: ${{ runner.os }}-nuget-unit-${{ steps.dotnet.outputs.dotnet-version }}-${{ hashFiles('tools/steam-service/*.csproj', 'tests/SteamService.Tests/*.csproj', 'tests/JunimoServer.UnitTests/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-unit-${{ steps.dotnet.outputs.dotnet-version }}-
 
       # Restore explicitly with retry, then `dotnet test --no-restore`: test's own
@@ -334,10 +336,14 @@ jobs:
       - name: Restore
         uses: ./.github/actions/retry
         with:
-          run: dotnet restore tests/SteamService.Tests/SteamService.Tests.csproj
+          run: |
+            dotnet restore tests/SteamService.Tests/SteamService.Tests.csproj
+            dotnet restore tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj
 
       - name: Run unit tests
-        run: dotnet test tests/SteamService.Tests/SteamService.Tests.csproj --no-restore
+        run: |
+          dotnet test tests/SteamService.Tests/SteamService.Tests.csproj --no-restore
+          dotnet test tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj --no-restore
 
   validate-js:
     name: Validate JS/TS

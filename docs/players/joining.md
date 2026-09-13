@@ -44,8 +44,8 @@ Don't drop items while in the lobby. They will be lost.
 
 | Method | Platform | Notes |
 |--------|----------|-------|
-| Steam SDR | Steam | Most reliable (~99% success) |
+| Steam relay | Steam | Most reliable (~99% success) |
 | GOG Galaxy | GOG | Works through most networks (~50% success) |
 | Direct IP | Any | Disabled by default and [not recommended](/admins/operations/networking#direct-ip) |
 
-Most servers use Steam SDR or GOG Galaxy. No special setup needed on your end. Admins can find ports and setup details under [Networking](/admins/operations/networking#connection-methods).
+Most servers use the Steam relay or GOG Galaxy. No special setup needed on your end. Admins can find ports and setup details under [Networking](/admins/operations/networking#connection-methods).

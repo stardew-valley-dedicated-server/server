@@ -13,6 +13,24 @@ export interface StatusSignals {
     phase?: string;
 }
 
+/** Galaxy lobby state; null when Steam auth isn't configured. */
+export type GalaxyLobbyState = "connected" | "recovering" | "down";
+/** Steam GameServer session state. */
+export type SteamSessionState = "connected" | "lost";
+/** Sidecar auth/token health; "unknown" until the first poll reaches the sidecar. */
+export type AuthReadiness = "unknown" | "ok" | "expiring" | "unavailable";
+/**
+ * Whether the invite code is usable and by whom. Owner: `ConnectionStatusCode` in
+ * mod/JunimoServer/Util/ConnectivitySignals.cs; the mod derives it from the raw signals below.
+ */
+export type ConnectionStatusCode =
+    | "ready"
+    | "steamRelayPending"
+    | "reconnecting"
+    | "starting"
+    | "steamSessionDown"
+    | "inviteUnavailable";
+
 /**
  * The mod's /status response. Owner: `ServerStatus` in mod/JunimoServer/Services/Api/ApiService.cs
  * (camelCased by the JSON serializer); keep the two in sync.
@@ -21,15 +39,15 @@ export interface ServerStatus extends StatusSignals {
     playerCount: number;
     maxPlayers: number;
     /** The one code to show players: the universal S-code. Null until a Galaxy lobby exists. */
-    steamInviteCode: string | null;
-    /** Whether Steam clients can join the code right now (the Galaxy lobby carries the relay stamp). */
+    inviteCode: string | null;
+    /** Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp). */
     steamRelayReady: boolean;
-    /** Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode. */
-    galaxyLobby: string | null;
-    /** Steam GameServer session state: "connected" | "lost". */
-    steamSession: string;
-    /** Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null in LAN-only mode. */
-    authReadiness: string | null;
+    /** Null when Steam auth isn't configured. */
+    galaxyLobbyState: GalaxyLobbyState | null;
+    steamSessionState: SteamSessionState;
+    /** Null when Steam auth isn't configured. */
+    authReadiness: AuthReadiness | null;
+    connectionStatusCode: ConnectionStatusCode;
     serverVersion: string;
     gameVersion: string;
     dayTransitionComplete: boolean;
@@ -70,38 +88,33 @@ const NO_GAME_DATA_HINT = "Game data appears once the save is loaded.";
 /**
  * The one invite code to show players: the universal S-code, exposed whenever a Galaxy lobby
  * exists. GOG players can join it immediately; Steam players join once `steamRelayReady` is true
- * (surfaced separately — see `describeInviteAvailability`). The G-code is never exposed, since a
+ * (surfaced separately — see `connectionStatusText`). The G-code is never exposed, since a
  * Steam player who used it would join over Galaxy and get a farmhand their Steam identity never sees.
  */
-export function joinableInviteCode(status: Pick<ServerStatus, "steamInviteCode">): string | null {
-    return status.steamInviteCode || null;
+export function joinableInviteCode(status: Pick<ServerStatus, "inviteCode">): string | null {
+    return status.inviteCode || null;
 }
 
 /**
- * A short note to show alongside the code (or in its place). When a code exists but the Steam relay
- * is not yet ready, Steam players must wait; when there is no code, the connectivity state explains why.
+ * Display text per connection status code. `ready` shows the code alone; the ellipsis marks
+ * in-progress states, and the settled `inviteUnavailable` has none. Every code must map (type-checked).
  */
-export function describeInviteAvailability(
-    status: Pick<ServerStatus, "steamInviteCode" | "steamRelayReady" | "galaxyLobby" | "steamSession">,
-): string | null {
-    if (joinableInviteCode(status)) {
-        // steamRelayReady is false both at normal startup (the stamp lands ~1s after the code) and
-        // during a relay recovery, so "connecting" fits both; GOG players can already join either way.
-        return status.steamRelayReady ? null : "Steam relay connecting — GOG players can join now";
-    }
-    if (status.galaxyLobby === null) {
-        // LAN-only server (no Steam/Galaxy configured): there will never be a code.
-        return "invite codes are disabled in LAN-only mode";
-    }
-    // Steam first: the Steam session is upstream of the Galaxy lobby, so when both are down it is
-    // the root cause. Same order as the mod's InviteCodes.UnavailableReason.
-    if (status.steamSession === "lost") {
-        return "Steam session reconnecting";
-    }
-    if (status.galaxyLobby === "recovering") {
-        return "Galaxy lobby reconnecting";
-    }
-    return "connecting…";
+export const CONNECTION_STATUS_TEXT: Record<ConnectionStatusCode, string | null> = {
+    ready: null,
+    steamRelayPending: "GOG ready · Steam connecting…",
+    reconnecting: "reconnecting…",
+    starting: "starting up…",
+    steamSessionDown: "connecting to Steam…",
+    inviteUnavailable: "not used on this server",
+};
+
+/**
+ * The text to show with the invite code, or in its place when there is none. Null when the code is
+ * ready (shown alone). The display rule is the same on every surface: `code (text)` while a code is
+ * present, else the text standalone. A server predating the field yields null.
+ */
+export function connectionStatusText(status: Pick<ServerStatus, "connectionStatusCode">): string | null {
+    return CONNECTION_STATUS_TEXT[status.connectionStatusCode] ?? null;
 }
 
 /** The in-game calendar as "Spring 14, Year 1". */

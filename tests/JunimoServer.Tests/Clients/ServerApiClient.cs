@@ -18,31 +18,36 @@ public class ServerStatus
     [JsonPropertyName("maxPlayers")]
     public int MaxPlayers { get; set; }
 
-    [JsonPropertyName("steamInviteCode")]
-    public string? SteamInviteCode { get; set; }
-
     /// <summary>
     /// The invite code to hand to players: the universal S-code. Never the G-code — a readiness gate
     /// keyed on this must wait for the S-code, not pass on a GOG code (which breaks Steam clients).
+    /// Null until a Galaxy lobby exists.
     /// </summary>
-    [JsonIgnore]
-    public string InviteCode => SteamInviteCode ?? string.Empty;
+    [JsonPropertyName("inviteCode")]
+    public string? InviteCode { get; set; }
 
-    /// <summary>Whether the Steam relay stamp is present (Steam clients can join right now).</summary>
+    /// <summary>Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp).</summary>
     [JsonPropertyName("steamRelayReady")]
     public bool SteamRelayReady { get; set; }
 
-    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode.</summary>
-    [JsonPropertyName("galaxyLobby")]
-    public string? GalaxyLobby { get; set; }
+    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null when Steam auth is not configured.</summary>
+    [JsonPropertyName("galaxyLobbyState")]
+    public string? GalaxyLobbyState { get; set; }
 
     /// <summary>Steam GameServer session state: "connected" | "lost".</summary>
-    [JsonPropertyName("steamSession")]
-    public string? SteamSession { get; set; }
+    [JsonPropertyName("steamSessionState")]
+    public string? SteamSessionState { get; set; }
 
-    /// <summary>Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    /// <summary>Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null when Steam auth is not configured.</summary>
     [JsonPropertyName("authReadiness")]
     public string? AuthReadiness { get; set; }
+
+    /// <summary>
+    /// Whether the invite code is usable and by whom: "ready" | "steamRelayPending" | "reconnecting" |
+    /// "starting" | "steamSessionDown" | "inviteUnavailable".
+    /// </summary>
+    [JsonPropertyName("connectionStatusCode")]
+    public string? ConnectionStatusCode { get; set; }
 
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; set; } = string.Empty;
@@ -372,11 +377,11 @@ public class HealthResponse
     public bool? GameAvailable { get; set; }
 
     // Body-only joinability summary (does not affect Status / the HTTP status code).
-    [JsonPropertyName("steamSession")]
-    public string? SteamSession { get; set; }
+    [JsonPropertyName("steamSessionState")]
+    public string? SteamSessionState { get; set; }
 
-    [JsonPropertyName("galaxyLobby")]
-    public string? GalaxyLobby { get; set; }
+    [JsonPropertyName("galaxyLobbyState")]
+    public string? GalaxyLobbyState { get; set; }
 
     [JsonPropertyName("steamRelayReady")]
     public bool SteamRelayReady { get; set; }
@@ -2855,7 +2860,7 @@ public class ServerApiClient : IDisposable
     /// <param name="pollInterval">Time between status checks</param>
     /// <param name="cancellationToken">Cancellation token for early abort (e.g., on server error)</param>
     /// <param name="onProgress">Optional callback for progress reporting (attempt count, detail message)</param>
-    /// <param name="requireInviteCode">If true, also waits for a non-empty invite code (Steam/Galaxy). LAN-only servers should pass false.</param>
+    /// <param name="requireInviteCode">If true, also waits for a non-empty invite code (Steam/Galaxy). Servers without Steam auth should pass false.</param>
     /// <returns>The server status once online, or null if timeout/cancelled</returns>
     public Task<ServerStatus?> WaitForServerOnline(
         TimeSpan timeout,

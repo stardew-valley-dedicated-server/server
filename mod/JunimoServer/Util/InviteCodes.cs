@@ -1,4 +1,5 @@
 using JunimoServer.Services.Auth;
+using JunimoServer.Services.SteamGameServer;
 using StardewValley.SDKs.GogGalaxy;
 
 namespace JunimoServer.Util;
@@ -16,7 +17,7 @@ namespace JunimoServer.Util;
 public static class InviteCodes
 {
     /// <summary>The live-lobby S-code, or null before the Galaxy lobby exists.</summary>
-    public static string Raw => GalaxyAuthService.GalaxyInviteCode;
+    public static string Raw => GalaxyAuthService.InviteCode;
 
     private static string Base
     {
@@ -28,42 +29,33 @@ public static class InviteCodes
     }
 
     /// <summary>
-    /// The S-code, shown whenever a Galaxy lobby exists — independent of the Steam-relay stamp.
-    /// GOG players join it immediately; Steam players retry until <see cref="GalaxyAuthService.SteamLobbyPublished"/>
-    /// (surfaced separately as <c>steamRelayReady</c>). A code that occasionally can't connect for a
-    /// few seconds is more consistent for players than a code that vanishes on a Steam hiccup.
+    /// The one code to hand out to players: the universal S-code, shown whenever a Galaxy lobby exists
+    /// (independent of the Steam-relay stamp). GOG players join it immediately; Steam players retry
+    /// until <see cref="GalaxyAuthService.SteamLobbyPublished"/> (surfaced separately as
+    /// <c>steamRelayReady</c>). Null before the lobby exists; the G-code is never exposed. A code that
+    /// occasionally can't connect for a few seconds is more consistent for players than one that
+    /// vanishes on a Steam hiccup.
     /// </summary>
-    public static string Steam => Base == null ? null : GalaxyNetHelper.SteamInvitePrefix + Base;
-
-    /// <summary>The one code to hand out to players: the universal S-code. The G-code is never exposed.</summary>
-    public static string Joinable => Steam;
+    public static string Joinable => Base == null ? null : GalaxyNetHelper.SteamInvitePrefix + Base;
 
     /// <summary>
-    /// A short human note explaining why no code is available, for command replies and the banner.
-    /// Null when a code IS available. Derived from the same connectivity signals /status reports.
+    /// Whether <paramref name="joinable"/> (a snapshot of <see cref="Joinable"/>) is usable and by
+    /// whom, from the live connectivity signals <c>/status</c> reports. Takes the snapshot rather than
+    /// re-reading <see cref="Joinable"/> so a caller's code string and code never disagree across a
+    /// withdraw. Reads only the volatile statics the <c>/status</c> builder reads.
     /// </summary>
-    public static string UnavailableReason
+    public static ConnectionStatusCode StatusCodeOf(string joinable) =>
+        ConnectionStatus.Compute(
+            joinable != null,
+            GalaxyAuthService.SteamLobbyPublished,
+            GalaxyAuthService.GalaxyLobby,
+            SteamGameServerService.SteamSession
+        );
+
+    /// <summary>The code with its connection status, per the display rule every surface shares.</summary>
+    public static string Describe()
     {
-        get
-        {
-            if (Joinable != null)
-            {
-                return null;
-            }
-            var galaxy = GalaxyAuthService.GalaxyLobbyState;
-            if (galaxy == null)
-            {
-                return "invite codes are disabled in LAN-only mode";
-            }
-            if (!Services.SteamGameServer.SteamGameServerService.SteamSessionConnected)
-            {
-                return "Steam session reconnecting";
-            }
-            if (galaxy == "recovering")
-            {
-                return "Galaxy lobby reconnecting";
-            }
-            return "Galaxy lobby connecting";
-        }
+        var joinable = Joinable;
+        return ConnectionStatus.Render(StatusCodeOf(joinable), joinable);
     }
 }

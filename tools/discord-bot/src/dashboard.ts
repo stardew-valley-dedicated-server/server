@@ -1,12 +1,12 @@
 /**
- * Pure helpers for the dashboard message: building the embed, footer stamping, owner-id
- * parsing, and classifying channel messages during the adoption scan.
+ * Pure helpers for the dashboard message and the bot's presence line: building the embed, footer
+ * stamping, owner-id parsing, and classifying channel messages during the adoption scan.
  */
 
 import { type APIEmbedField, EmbedBuilder } from "discord.js";
 import type { DiscordServerState } from "./discordState";
 import {
-    describeInviteAvailability,
+    connectionStatusText,
     formatStardewDate,
     formatStardewTime,
     formatUptime,
@@ -32,6 +32,13 @@ export function formatStateLine(state: DiscordServerState): string {
     return state.kind === "online" ? state.label : `${state.label}: ${state.detail}`;
 }
 
+/** Presence line for an online server: the player count, plus the code when there is one. */
+export function formatPresence(status: ServerStatus): string {
+    const players = `${status.playerCount}/${status.maxPlayers} players`;
+    const invite = joinableInviteCode(status);
+    return invite ? `${players}, code ${invite}` : players;
+}
+
 /** Version strings as code chips; a version the mod has not reported yet shows a dash. */
 function versionChip(version: string): string {
     return version ? `\`${version}\`` : "—";
@@ -52,12 +59,12 @@ export function buildStatusFields(status: ServerStatus, includeInvite = true): A
     ];
     if (includeInvite) {
         const inviteCode = joinableInviteCode(status);
-        const note = describeInviteAvailability(status);
+        const text = connectionStatusText(status);
         const value = inviteCode
-            ? note
-                ? `\`${inviteCode}\` _(${note})_`
+            ? text
+                ? `\`${inviteCode}\` _(${text})_`
                 : `\`${inviteCode}\``
-            : `_not yet available${note ? ` (${note})` : ""}_`;
+            : `_${text ?? "not yet available"}_`;
         fields.push({ name: "Invite code", value, inline: false });
     }
     return fields;
