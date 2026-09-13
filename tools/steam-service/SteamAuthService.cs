@@ -38,7 +38,8 @@ public class SteamAuthService
     private static readonly TimeSpan CallbackPollInterval = TimeSpan.FromMilliseconds(10);
     private static readonly TimeSpan TicketCacheMaxAge = TimeSpan.FromMinutes(10);
 
-    private readonly string _sessionDir;
+    private readonly string _baseSessionDir;
+    private string _sessionDir;
     private readonly string _gameDir;
     private readonly string _logPrefix;
 
@@ -84,8 +85,8 @@ public class SteamAuthService
     /// <summary>Account index (0-based). Used for ?account=N routing.</summary>
     public int AccountIndex { get; }
 
-    /// <summary>Configured username for this account.</summary>
-    public string Username { get; }
+    /// <summary>Steam account name. Empty until an interactive login reveals it (see BindIdentity).</summary>
+    public string Username { get; private set; } = "";
 
     public bool IsLoggedIn { get; private set; }
     public string? SteamId => _steamClient.SteamID?.ConvertToUInt64().ToString();
@@ -141,14 +142,18 @@ public class SteamAuthService
     )
     {
         AccountIndex = accountIndex;
-        Username = username;
-        _sessionDir = Path.Combine(sessionDir, username);
+        _baseSessionDir = sessionDir;
+        _sessionDir = sessionDir; // rebased onto {baseSessionDir}/{username} once the account name is known
         _gameDir = gameDir;
         _logPrefix = $"[SteamAuth:A{accountIndex}]";
         _skipPatterns = BuildSkipPatterns(keepLanguages ?? []);
 
-        Directory.CreateDirectory(_sessionDir);
-        MigrateOldSession(sessionDir);
+        // Interactive setup/login construct without a name; the account is bound once the login
+        // reveals it (see BindIdentity).
+        if (!string.IsNullOrEmpty(username))
+        {
+            BindIdentity(username);
+        }
 
         _steamClient = new SteamClient();
         _callbackManager = new CallbackManager(_steamClient);
@@ -431,8 +436,27 @@ public class SteamAuthService
     /// </summary>
     public (string username, string refreshToken)? GetSavedSession() => LoadSession();
 
+    /// <summary>
+    /// Points this service at a Steam account: sets <see cref="Username"/> and the session folder
+    /// {baseSessionDir}/{username}.
+    /// </summary>
+    private void BindIdentity(string username)
+    {
+        Username = username;
+        _sessionDir = Path.Combine(_baseSessionDir, username);
+        Directory.CreateDirectory(_sessionDir);
+        MigrateOldSession(_baseSessionDir);
+    }
+
     private void SaveSession(string username, string refreshToken)
     {
+        // Interactive logins start unbound; bind to the account Steam returned so the file lands
+        // in {baseSessionDir}/{username}.
+        if (Username != username)
+        {
+            BindIdentity(username);
+        }
+
         Directory.CreateDirectory(_sessionDir);
         var path = SessionFilePath;
         var tempPath = path + ".tmp";
@@ -493,6 +517,140 @@ public class SteamAuthService
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Lists the usable sessions under {baseSessionDir}/{username}/session.json, newest-first by
+    /// file write time. Malformed and token-less files are skipped; an absent directory yields an
+    /// empty list.
+    /// </summary>
+    public static List<(string username, string path, DateTime writtenUtc)> FindSessions(
+        string baseSessionDir
+    )
+    {
+        var sessions = new List<(string username, string path, DateTime writtenUtc)>();
+        if (!Directory.Exists(baseSessionDir))
+        {
+            return sessions;
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(baseSessionDir))
+        {
+            var path = Path.Combine(dir, "session.json");
+            var session = TryLoadSession(path);
+            if (session != null)
+            {
+                sessions.Add((session.Value.username, path, File.GetLastWriteTimeUtc(path)));
+            }
+        }
+
+        return sessions.OrderByDescending(s => s.writtenUtc).ToList();
+    }
+
+    /// <summary>
+    /// Resolves one line of picker input against a newest-first session list. Enter picks the
+    /// newest (same as headless newest-wins), "n" picks a fresh login (null), a 1-based number
+    /// picks that session; with a single session anything but "n" accepts it. Returns false when
+    /// the input fits none of these so the caller can re-prompt.
+    /// </summary>
+    public static bool TryResolveSessionChoice(
+        IReadOnlyList<(string username, string path, DateTime writtenUtc)> sessions,
+        string? input,
+        out string? username
+    )
+    {
+        username = null;
+        if (sessions.Count == 0)
+        {
+            return true;
+        }
+
+        var answer = input?.Trim().ToLowerInvariant() ?? "";
+        if (answer is "n" or "no")
+        {
+            return true;
+        }
+
+        if (sessions.Count == 1)
+        {
+            username = sessions[0].username;
+            return true;
+        }
+
+        if (answer == "")
+        {
+            username = sessions[0].username;
+            return true;
+        }
+
+        if (int.TryParse(answer, out var number) && number >= 1 && number <= sessions.Count)
+        {
+            username = sessions[number - 1].username;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Interactive picker over the stored sessions: returns the account to reuse, or null for a
+    /// fresh login (also when there is nothing to pick from).
+    /// </summary>
+    private static string? ChooseStoredSession(
+        IReadOnlyList<(string username, string path, DateTime writtenUtc)> sessions
+    )
+    {
+        if (sessions.Count == 0)
+        {
+            return null;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        if (sessions.Count == 1)
+        {
+            Console.Write($"Use saved login for {sessions[0].username}? [Y/n]: ");
+        }
+        else
+        {
+            Console.WriteLine("Saved logins:");
+            for (var i = 0; i < sessions.Count; i++)
+            {
+                var (username, _, writtenUtc) = sessions[i];
+                var recent = i == 0 ? ", most recent" : "";
+                Console.WriteLine(
+                    $"  [{i + 1}] {username} (last used {FormatAge(nowUtc - writtenUtc)}{recent})"
+                );
+            }
+            Console.Write("Enter = most recent, number = that account, n = new login: ");
+        }
+
+        while (true)
+        {
+            // EOF on stdin reads as null; treat it like Enter so a closed pipe can't spin here.
+            var input = Console.ReadLine() ?? "";
+            if (TryResolveSessionChoice(sessions, input, out var chosen))
+            {
+                return chosen;
+            }
+            Console.Write($"Enter a number 1-{sessions.Count}, n for a new login, or Enter: ");
+        }
+    }
+
+    private static string FormatAge(TimeSpan age)
+    {
+        if (age < TimeSpan.FromMinutes(1))
+        {
+            return "just now";
+        }
+        if (age < TimeSpan.FromHours(1))
+        {
+            return $"{(int)age.TotalMinutes} min ago";
+        }
+        if (age < TimeSpan.FromDays(1))
+        {
+            return $"{(int)age.TotalHours} h ago";
+        }
+        return $"{(int)age.TotalDays} d ago";
     }
 
     /// <summary>
@@ -628,7 +786,8 @@ public class SteamAuthService
             else
             {
                 throw new InvalidOperationException(
-                    $"Account {AccountIndex}: no auth method (no token, saved session, or password)"
+                    $"Account {AccountIndex} ({Username}): no saved session and no password or token. "
+                        + "Run 'setup' to log in, or set STEAM_PASSWORD."
                 );
             }
         }
@@ -682,25 +841,32 @@ public class SteamAuthService
             Console.WriteLine("*****************************************************************");
             Console.WriteLine();
 
-            // Check for existing session
-            var existingSession = LoadSession();
-            if (existingSession != null)
+            // Env pinned the username but gave no usable session or credentials: prompt for the
+            // password only. No QR here, since QR logs in whichever account scans it.
+            if (!string.IsNullOrEmpty(Username))
             {
-                Console.WriteLine($"Found existing session for: {existingSession.Value.username}");
-                Console.Write("Use existing session? [Y/n]: ");
-                var useExisting = Console.ReadLine()?.Trim().ToLower();
-                if (useExisting != "n" && useExisting != "no")
+                Console.WriteLine($"Steam account: {Username} (from STEAM_USERNAME)");
+                await LoginWithCredentialsInsideLockAsync(Username);
+                return;
+            }
+
+            // Unbound: nothing pins the account, so offer the stored sessions before a fresh login.
+            var chosen = ChooseStoredSession(FindSessions(_baseSessionDir));
+            if (chosen != null)
+            {
+                // Bind before loading so the saved-session read targets the right folder.
+                BindIdentity(chosen);
+                try
                 {
-                    try
-                    {
-                        await LoginWithSavedSessionInsideLockAsync();
-                        Logger.Log($"{_logPrefix} Logged in with saved session");
-                        return;
-                    }
-                    catch
-                    {
-                        Logger.Log($"{_logPrefix} Saved session invalid, need fresh login");
-                    }
+                    await LoginWithSavedSessionInsideLockAsync();
+                    Logger.Log($"{_logPrefix} Logged in with saved session for {chosen}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log(
+                        $"{_logPrefix} Saved session for {chosen} is invalid ({ex.Message}), need fresh login"
+                    );
                 }
             }
 
@@ -728,28 +894,24 @@ public class SteamAuthService
     }
 
     /// <summary>
-    /// Login with username/password. If usernameParam/passwordParam are null, prompts
-    /// the user on stdin (used by interactive CLI). Must be called with _loginSemaphore held.
+    /// Login with username/password. Whichever of usernameParam/passwordParam is null is
+    /// prompted for on stdin (used by interactive CLI). Must be called with _loginSemaphore held.
     /// </summary>
     private async Task LoginWithCredentialsInsideLockAsync(
         string? usernameParam = null,
         string? passwordParam = null
     )
     {
-        string username;
-        string password;
-
-        // Use provided params or prompt
-        if (!string.IsNullOrEmpty(usernameParam) && !string.IsNullOrEmpty(passwordParam))
-        {
-            username = usernameParam;
-            password = passwordParam;
-        }
-        else
+        var username = usernameParam;
+        if (string.IsNullOrEmpty(username))
         {
             Console.Write("Steam Username: ");
             username = Console.ReadLine()?.Trim() ?? "";
+        }
 
+        var password = passwordParam;
+        if (string.IsNullOrEmpty(password))
+        {
             Console.Write("Steam Password: ");
             password = ReadPassword();
             Console.WriteLine();

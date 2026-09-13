@@ -44,6 +44,7 @@ const uint SteamworksSdkAppId = 1007; // Steamworks SDK Redistributable (steamcl
 
 // Parse command
 var command = args.Length > 0 ? args[0].ToLower() : "serve";
+var isInteractiveCommand = command is "setup" or "login";
 
 string? GetEnvTrimmed(string name)
 {
@@ -130,49 +131,28 @@ Dictionary<int, (string user, string? pass, string? token)> DiscoverAccounts()
         return result;
     }
 
-    // No env account: the guided installer's flow. Interactive `setup`/`login` then save their
-    // session under a placeholder directory named after the command, because the username is
-    // only known after the prompt. Resolve that session as account 0 and mirror it into the
-    // per-username directory the account service reads, so `serve`, `download`, `renew` and
-    // `ticket` work without STEAM_USERNAME.
-    //
-    // Both placeholders can exist (a `setup` followed later by a `login`, or vice versa), so pick
-    // the newest by write time rather than the first found — otherwise a stale `setup` could shadow
-    // a fresh `login`. Sessions are read through the shared parser, which rejects any that lack a
-    // refresh token (those cannot be logged in).
-    (string placeholder, string source, DateTime writtenUtc, string user)? newest = null;
-    foreach (var placeholder in new[] { "setup", "login" })
+    // No env account (guided installer): the newest saved session becomes account 0 so the headless
+    // commands work without STEAM_USERNAME; newest wins so a re-run or renewal never revives a
+    // stale token. Interactive commands stay account-less so they reach the picker in
+    // LoginInteractiveAsync instead.
+    if (isInteractiveCommand)
     {
-        var source = Path.Combine(sessionDir, placeholder, "session.json");
-        var session = SteamAuthService.TryLoadSession(source);
-        if (session == null)
-        {
-            continue;
-        }
-
-        var writtenUtc = File.GetLastWriteTimeUtc(source);
-        if (newest == null || writtenUtc > newest.Value.writtenUtc)
-        {
-            newest = (placeholder, source, writtenUtc, session.Value.username);
-        }
+        return result;
     }
 
-    if (newest is { } chosen)
+    var sessions = SteamAuthService.FindSessions(sessionDir);
+    if (sessions.Count > 0)
     {
-        // A re-run of `setup`/`login` rewrites the placeholder (fresh token); a renewal rewrites the
-        // per-username copy. Whichever is newer wins, so neither path can revive a stale token.
-        var target = Path.Combine(sessionDir, chosen.user, "session.json");
-        if (!File.Exists(target) || chosen.writtenUtc > File.GetLastWriteTimeUtc(target))
+        var chosen = sessions[0].username;
+        Logger.Log($"[SteamService] Using saved session for {chosen} as account 0");
+        if (sessions.Count > 1)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(chosen.source, target, overwrite: true);
+            var others = string.Join(", ", sessions.Skip(1).Select(s => s.username));
+            Logger.Log(
+                $"[SteamService] Other saved sessions: {others}. Set STEAM_USERNAME to use one of them."
+            );
         }
-
-        Logger.Log(
-            $"[SteamService] Using saved session from `{chosen.placeholder}` for {chosen.user} as account 0"
-        );
-        result[0] = (chosen.user, null, null);
-        return result;
+        result[0] = (chosen, null, null);
     }
 
     return result;
@@ -214,13 +194,10 @@ async Task LoginAccountAsync(
     {
         await svc.EnsureLoggedInAsync(loginConfig);
     }
-    catch (InvalidOperationException)
+    catch (InvalidOperationException ex)
     {
-        // No auth method configured — match prior log message for operators.
-        Logger.Log(
-            $"[SteamService] A{svc.AccountIndex}: No authentication method for {config.user}"
-        );
-        Logger.Log($"[SteamService] Provide credentials via STEAM_ACCOUNTS JSON or run 'setup'");
+        // No auth method; the exception text tells the operator what to set.
+        Logger.Log($"[SteamService] {ex.Message}");
     }
 }
 
@@ -288,7 +265,7 @@ switch (command)
         {
             // No accounts configured; run interactive setup for account 0
             Logger.Log("[SteamService] No accounts configured, running interactive setup...");
-            var svc = new SteamAuthService(0, "setup", sessionDir, gameDir);
+            var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
             if (svc.IsLoggedIn)
             {
@@ -327,7 +304,7 @@ switch (command)
         if (accounts.Count == 0)
         {
             Logger.Log("[SteamService] No accounts configured, running interactive login...");
-            var svc = new SteamAuthService(0, "login", sessionDir, gameDir);
+            var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
             svc.Disconnect();
         }

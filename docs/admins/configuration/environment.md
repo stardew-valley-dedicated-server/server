@@ -8,8 +8,8 @@ These must be set for the server to function:
 
 | Variable | Description |
 |----------|-------------|
-| `STEAM_USERNAME` | Steam account username |
-| `STEAM_PASSWORD` | Steam account password |
+| `STEAM_USERNAME` | Steam account username. Set alone (no password), it selects that account's saved login from `setup` |
+| `STEAM_PASSWORD` | Steam account password. Required for the first login; optional once `setup` has saved a login for `STEAM_USERNAME` |
 
 ## Runtime Variables
 
