@@ -143,8 +143,8 @@ jobs:
           # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_RELEASES || vars.DISCORD_BOT_USERNAME || 'Release Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_RELEASES || vars.DISCORD_BOT_AVATAR_URL }}
-          # Logo green (#77FF6E) for stable releases; the preview channel uses amber. No title — the
-          # version headline is inline in the description so it can link to the image tag.
+          # Logo green (#77FF6E) for stable releases; the preview channel uses amber. No title is set:
+          # the version headline goes in the description so it can link to the image tag.
           color: "7864174"
           description: |
             # Release [${{ needs.release-please.outputs.version }}](https://hub.docker.com/r/sdvd/server/tags?name=${{ needs.release-please.outputs.version }}) is available!

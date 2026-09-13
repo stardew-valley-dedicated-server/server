@@ -38,9 +38,9 @@ const KNOWN_TYPES = new Set([...GROUPS.map(([t]) => t), ...HIDDEN_TYPES]);
 
 // We measure length in code points (what Discord counts), not JS string length. The workflow
 // prepends only a short `# Build|Release [<version>](<hub>) is available!` line before this becomes
-// the first embed's description, so the budget is Discord's 4096 description limit minus a small
-// reserve for that line. The full diff is always a button away, so an over-budget range trims
-// trailing entries at a line boundary and notes how many it left off.
+// the first embed's description, so the budget is Discord's 4096-code-point description limit minus
+// a 196-code-point reserve (4096 - 3900) for that line. The full diff is always a button away, so an
+// over-budget range trims trailing entries at a line boundary and notes how many it left off.
 const BUDGET = 3900;
 
 const CONVENTIONAL_RE = /^([a-z]+)(?:\(([^()]*)\))?(!)?: (.*)$/i;

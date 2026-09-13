@@ -2,8 +2,8 @@ name: Build Changelog
 description: >
   Builds Discord-ready changelog markdown for a build: every first-parent commit since the
   previous build tag, as one "Changes" list ordered by release-please's type priority and
-  budgeted for an embed description. Performs no checkout — the caller's checkout must have
-  full history and tags (fetch-depth: 0, fetch-tags: true).
+  budgeted for an embed description. Performs no checkout, so the caller must check out full
+  history and tags first (fetch-depth: 0, fetch-tags: true).
 
 inputs:
   head:
@@ -19,7 +19,7 @@ inputs:
 
 outputs:
   markdown:
-    description: Changelog markdown (at most 3900 code points)
+    description: Changelog markdown (max 3900 code points)
     value: ${{ steps.changelog.outputs.markdown }}
   count:
     description: >

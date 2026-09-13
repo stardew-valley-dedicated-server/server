@@ -1,23 +1,21 @@
 name: Discord Notify
 description: >
   Posts a message to a Discord webhook: a primary embed, an optional second embed, an optional
-  plain content line above them, and an optional row of link buttons. It checks Discord's size
-  limits first and fails the step with a clear message rather than posting something cut off. If
-  the webhook input is empty it just logs a note and exits 0, so notifications quietly stop when
-  the secret isn't set. If the post itself fails the step fails (curl --fail-with-body); callers on
-  the success path set continue-on-error, so a Discord outage never turns a passing build red.
+  plain content line above them, and an optional row of link buttons. Checks Discord's size limits
+  first and fails with a clear error rather than posting truncated output. An empty webhook logs a
+  note and exits 0, so notifications stop cleanly when the secret is unset.
 
 inputs:
   webhook:
-    description: Discord webhook URL; empty means log "no webhook configured" and skip
+    description: Discord webhook URL; if empty, the action logs a note and skips posting
     required: true
   content:
-    description: Optional plain message line shown above the embeds (at most 2000 characters)
+    description: Optional plain message line shown above the embeds (max 2000 characters)
     required: false
     default: ""
   title:
-    description: Optional primary embed title (at most 256 characters); omit it and put the
-      heading in the description instead. Either a title or a description must be set.
+    description: Primary embed title (max 256 characters). Optional if a description is set; the
+      action fails when both title and description are empty.
     required: false
     default: ""
   url:
@@ -25,44 +23,41 @@ inputs:
     required: false
     default: ""
   username:
-    description: >
-      The name shown as the message author. Leave empty to keep whatever name the webhook is set
-      to in Discord — so callers that don't set a name (internal CI) are left alone.
+    description: Message author name. Empty keeps the webhook's configured name.
     required: false
     default: ""
   avatar-url:
     description: >
-      The avatar shown next to the name. If empty, we use the project logo, but only when a name is
-      also set — so the release/preview bot gets a picture while other callers keep their own avatar.
+      Author avatar. Empty falls back to the project logo, but only when a username is set;
+      otherwise the webhook's configured avatar is kept.
     required: false
     default: ""
   color:
     description: Embed color as a decimal number
     required: true
   description:
-    description: Optional primary-embed description, markdown (at most 4096 characters)
+    description: Optional primary-embed description, markdown (max 4096 characters)
     required: false
     default: ""
   fields:
     description: >
-      Optional JSON array of {name, value, inline?} objects. Callers build it with
-      `jq -n --arg` so user-supplied text is never string-interpolated into JSON.
+      Optional JSON array of {name, value, inline?} objects. Build it with `jq -n --arg` so user
+      text is never interpolated into JSON.
     required: false
     default: "[]"
   embed2-title:
-    description: Optional second-embed title; the second embed is added only if this or its
-      description is set (at most 256 characters)
+    description: Optional second-embed title (max 256 characters). The second embed appears only if
+      this or its description is set.
     required: false
     default: ""
   embed2-description:
-    description: Optional second-embed description, markdown (at most 4096 characters)
+    description: Optional second-embed description, markdown (max 4096 characters)
     required: false
     default: ""
   buttons:
     description: >
-      Optional JSON array of {label, url} link buttons rendered in one row below the embeds
-      (max 5). Author-controlled values only. When present, `?with_components=true` is added to the
-      webhook URL so Discord renders them.
+      Optional JSON array of {label, url} link buttons, shown in one row below the embeds (max 5).
+      Author-controlled values only.
     required: false
     default: "[]"
   dry-run:

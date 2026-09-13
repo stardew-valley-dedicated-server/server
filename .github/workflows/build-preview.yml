@@ -200,8 +200,8 @@ jobs:
           # If no avatar variable is set, the action falls back to the project logo.
           username: ${{ vars.DISCORD_BOT_USERNAME_PREVIEW || vars.DISCORD_BOT_USERNAME || 'Preview Bot' }}
           avatar-url: ${{ vars.DISCORD_BOT_AVATAR_URL_PREVIEW || vars.DISCORD_BOT_AVATAR_URL }}
-          # Amber (docs #dda122) for preview builds; the release channel uses the logo green. No
-          # title — the version headline is inline in the description so it can link to the image tag.
+          # Amber (docs #dda122) for preview builds; the release channel uses the logo green. No title
+          # is set: the version headline goes in the description so it can link to the image tag.
           color: "14524706"
           description: |
             # Build [${{ needs.calculate-version.outputs.preview_version }}](https://hub.docker.com/r/sdvd/server/tags?name=${{ needs.calculate-version.outputs.preview_version }}) is available!
