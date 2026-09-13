@@ -122,7 +122,7 @@ Check server logs for these messages:
 
 **GameServer init failed:**
 
-```
+```text
 [Steam] GameServer.Init() failed
 ```
 
@@ -130,7 +130,7 @@ Steamworks SDK may be missing or `steam_appid.txt` incorrect.
 
 **Can't reach Steam:**
 
-```
+```text
 [Steam] Failed to connect to Steam servers: ...
 ```
 
@@ -138,7 +138,7 @@ Check outbound network access and firewall rules for UDP.
 
 **Steam relay not ready:**
 
-```
+```text
 [Steam] SDR relay status: k_ESteamNetworkingAvailability_Unknown
 ```
 
