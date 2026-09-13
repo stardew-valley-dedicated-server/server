@@ -125,6 +125,12 @@ should_restart() {
     esac
 }
 
+# True when the compose file is a JunimoServer one — it carries the SDVD_COMPOSE_REV sentinel this
+# installer manages. An update overwrites docker-compose.yml and runs `docker compose up -d
+# --remove-orphans`, which would tear down an unrelated project's containers, so a foreign compose
+# is refused, not adopted.
+is_junimo_compose() { grep -q 'SDVD_COMPOSE_REV' "$1" 2>/dev/null; }
+
 command -v docker >/dev/null 2>&1 || die "Docker is not installed or not on PATH."
 docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin is required (docker compose v2)."
 command -v curl >/dev/null 2>&1 || die "curl is required."
@@ -142,6 +148,7 @@ fi
 cd "$target"
 
 if [ -f docker-compose.yml ]; then
+    is_junimo_compose docker-compose.yml || die "This folder has a docker-compose.yml that isn't a JunimoServer server. Run the installer to set up a new server in a ./junimoserver folder, or run it in your existing JunimoServer folder."
     # ── Update ────────────────────────────────────────────────────────────────────────────────
     echo "Updating server in $(pwd)"
     echo ""

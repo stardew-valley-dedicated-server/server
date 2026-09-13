@@ -120,6 +120,14 @@ function Confirm-Restart {
     return -not ($reply -eq 'n' -or $reply -eq 'no')
 }
 
+# True when the compose file is a JunimoServer one — it carries the SDVD_COMPOSE_REV sentinel this
+# installer manages. An update overwrites docker-compose.yml and runs `docker compose up -d
+# --remove-orphans`, which would tear down an unrelated project's containers, so a foreign compose
+# is refused, not adopted.
+function Test-JunimoCompose($file) {
+    return [bool](Select-String -Path $file -Pattern 'SDVD_COMPOSE_REV' -SimpleMatch -Quiet)
+}
+
 # Turn a Die (throw) into a clean one-line error instead of a PowerShell stack trace, without exit
 # (which would close an `irm | iex` session).
 try {
@@ -148,6 +156,9 @@ Push-Location $target
 try {
 
 if (Test-Path docker-compose.yml) {
+    if (-not (Test-JunimoCompose 'docker-compose.yml')) {
+        Die "This folder has a docker-compose.yml that isn't a JunimoServer server. Run the installer to set up a new server in a .\junimoserver folder, or run it in your existing JunimoServer folder."
+    }
     # -- Update -----------------------------------------------------------------------------------
     Write-Host "Updating server in $((Get-Location).Path)"
     Write-Host ''
