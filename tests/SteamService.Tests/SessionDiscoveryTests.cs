@@ -63,15 +63,6 @@ public class FindSessionsTests : IDisposable
         Assert.Equal(["valid"], sessions.Select(s => s.username));
     }
 
-    [Fact]
-    public void SkipsFolderWhoseNameIsNotTheAccountInside()
-    {
-        WriteSession("alice", DateTime.UtcNow);
-        WriteRaw("setup", JsonSerializer.Serialize(new { username = "alice", refreshToken = "t" }));
-
-        Assert.Equal(["alice"], SteamAuthService.FindSessions(_baseDir).Select(s => s.username));
-    }
-
     private void WriteSession(string username, DateTime writtenUtc)
     {
         var path = WriteRaw(

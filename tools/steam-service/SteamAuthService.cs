@@ -521,9 +521,8 @@ public class SteamAuthService
 
     /// <summary>
     /// Lists the usable sessions under {baseSessionDir}/{username}/session.json, newest-first by
-    /// file write time. Malformed and token-less files are skipped, as is a folder whose name is
-    /// not the account inside it (only {username} folders can be bound); an absent directory
-    /// yields an empty list.
+    /// file write time. Malformed and token-less files are skipped; an absent directory yields an
+    /// empty list.
     /// </summary>
     public static List<(string username, string path, DateTime writtenUtc)> FindSessions(
         string baseSessionDir
@@ -539,7 +538,7 @@ public class SteamAuthService
         {
             var path = Path.Combine(dir, "session.json");
             var session = TryLoadSession(path);
-            if (session != null && session.Value.username == Path.GetFileName(dir))
+            if (session != null)
             {
                 sessions.Add((session.Value.username, path, File.GetLastWriteTimeUtc(path)));
             }
