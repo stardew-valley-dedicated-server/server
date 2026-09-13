@@ -117,9 +117,6 @@ public class PlayerInfo
 }
 
 /// <summary>
-/// Response from the /players endpoint.
-/// </summary>
-/// <summary>
 /// A snapshot-derived response carrying the server's snapshot version, the
 /// <c>since</c> cursor a <c>/wait/*</c> long-poll advances on each non-match.
 /// </summary>
@@ -128,6 +125,9 @@ public interface IVersionedSnapshot
     long Version { get; }
 }
 
+/// <summary>
+/// Response from the /players endpoint.
+/// </summary>
 public class PlayersResponse : IVersionedSnapshot
 {
     [JsonPropertyName("players")]
@@ -1604,8 +1604,11 @@ public class ServerApiClient : IDisposable
     )
         where T : class
     {
-        var serverTimeoutMs = (long)(
-            timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
+        // The server treats timeout=0 as "use the 10s cap", so a sub-millisecond
+        // remaining budget must not truncate to 0 and block for the full cap.
+        var serverTimeoutMs = Math.Max(
+            1,
+            (long)(timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds)
         );
         query.Add($"timeout={serverTimeoutMs}");
         var url = path + "?" + string.Join("&", query);
@@ -1622,14 +1625,15 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Transport faults a poll iteration retries instead of surfacing: connection
-    /// errors and the per-request timeout. Anything else (deserialization, a
-    /// non-success status) propagates so a real bug fails the wait promptly.
+    /// errors, non-success statuses (<c>EnsureSuccessStatusCode</c> throws
+    /// <see cref="HttpRequestException"/>) and the per-request timeout. Anything
+    /// else, such as a deserialization failure, propagates so the wait reports it.
     /// </summary>
     private static bool IsTransportFault(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or OperationCanceledException;
 
     /// <summary>
-    /// Snapshot poll over a read-only endpoint. Each <paramref name="probe"/> call
+    /// Snapshot poll against a fast endpoint. Each <paramref name="probe"/> call
     /// receives a token bounded by <see cref="TestTimings.PollingRequestTimeout"/>
     /// (the client's own timeout is 5 min, so an unbounded request could outlive the
     /// poll and hang); a transport fault on one iteration counts as "not yet".
