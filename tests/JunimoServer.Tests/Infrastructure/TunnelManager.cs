@@ -769,8 +769,7 @@ public sealed class TunnelManager : IAsyncDisposable
         try
         {
             using var client = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            connectCts.CancelAfter(connectTimeout);
+            using var connectCts = Cts.LinkedTimeout(ct, connectTimeout);
             try
             {
                 await client.ConnectAsync(
@@ -809,8 +808,7 @@ public sealed class TunnelManager : IAsyncDisposable
             var request = Encoding.ASCII.GetBytes(
                 "GET /_ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
             );
-            using var ioCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            ioCts.CancelAfter(ioTimeout);
+            using var ioCts = Cts.LinkedTimeout(ct, ioTimeout);
             long? writeMs = null;
             try
             {
@@ -1866,8 +1864,7 @@ public sealed class TunnelManager : IAsyncDisposable
     /// not this probe's).</summary>
     private static async Task<bool> IsListenerAcceptingAsync(int port, CancellationToken ct)
     {
-        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        attemptCts.CancelAfter(TimeSpan.FromMilliseconds(200));
+        using var attemptCts = Cts.LinkedTimeout(ct, TimeSpan.FromMilliseconds(200));
         try
         {
             using var client = new TcpClient();
@@ -2539,8 +2536,7 @@ public sealed class TunnelManager : IAsyncDisposable
         var stderrTask = ReadStderrAsync();
         var stdoutTask = ReadStdoutAsync();
 
-        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        waitCts.CancelAfter(timeout);
+        using var waitCts = Cts.LinkedTimeout(ct, timeout);
         try
         {
             await process.WaitForExitAsync(waitCts.Token);

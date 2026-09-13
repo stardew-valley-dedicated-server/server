@@ -1648,8 +1648,7 @@ public class ServerApiClient : IDisposable
             {
                 try
                 {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(TestTimings.PollingRequestTimeout);
+                    using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
                     return await probe(reqCts.Token);
                 }
                 catch (Exception ex) when (IsTransportFault(ex) && !ct.IsCancellationRequested)
@@ -1691,8 +1690,10 @@ public class ServerApiClient : IDisposable
                     remaining < DefaultWaitServerTimeout ? remaining : DefaultWaitServerTimeout;
                 try
                 {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(serverTimeout + TestTimings.PollingRequestTimeout);
+                    using var reqCts = Cts.LinkedTimeout(
+                        ct,
+                        serverTimeout + TestTimings.PollingRequestTimeout
+                    );
                     var response = await fetch(since, serverTimeout, reqCts.Token);
                     if (response == null)
                     {

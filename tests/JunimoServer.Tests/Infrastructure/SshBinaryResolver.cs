@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.Tests.Infrastructure;
 
@@ -114,8 +115,7 @@ public static class SshBinaryResolver
             var stderrTask = process.StandardError.ReadToEndAsync();
             var stdoutTask = process.StandardOutput.ReadToEndAsync();
 
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            using var deadline = Cts.LinkedTimeout(ct, TimeSpan.FromSeconds(5));
             try
             {
                 await process.WaitForExitAsync(deadline.Token);
