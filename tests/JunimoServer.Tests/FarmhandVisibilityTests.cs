@@ -101,14 +101,12 @@ public class FarmhandVisibilityTests : TestBase
     {
         var ct = TestCt;
 
-        // The S-code is gated on the Galaxy lobby carrying the SteamLobbyId stamp (not on
-        // GameServer init). By now the server is long booted, so the code must be exposed —
-        // this catches the gate ever wedging shut (the harness would silently fall back to
-        // the GOG code and every other assertion would still pass).
+        // The join below needs the invite code. Fail here, not deep in the join, if the long-booted
+        // server has no code (the /status contract itself is covered by ServerApiTests).
         var status = await ServerApi.GetStatus(ct);
         Assert.False(
             string.IsNullOrEmpty(status?.SteamInviteCode),
-            "SteamInviteCode should be exposed once the Galaxy lobby carries the SteamLobbyId stamp"
+            "no invite code on the long-booted Steam server"
         );
 
         // No /newgame: this runs on the shared steam server (see class doc); all assertions

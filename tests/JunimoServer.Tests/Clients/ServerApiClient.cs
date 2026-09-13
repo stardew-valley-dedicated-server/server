@@ -21,14 +21,28 @@ public class ServerStatus
     [JsonPropertyName("steamInviteCode")]
     public string? SteamInviteCode { get; set; }
 
-    [JsonPropertyName("gogInviteCode")]
-    public string? GogInviteCode { get; set; }
-
     /// <summary>
-    /// Gets the preferred invite code (Steam if available, otherwise GOG).
+    /// The invite code to hand to players: the universal S-code. Never the G-code — a readiness gate
+    /// keyed on this must wait for the S-code, not pass on a GOG code (which breaks Steam clients).
     /// </summary>
     [JsonIgnore]
-    public string InviteCode => SteamInviteCode ?? GogInviteCode ?? string.Empty;
+    public string InviteCode => SteamInviteCode ?? string.Empty;
+
+    /// <summary>Whether the Steam relay stamp is present (Steam clients can join right now).</summary>
+    [JsonPropertyName("steamRelayReady")]
+    public bool SteamRelayReady { get; set; }
+
+    /// <summary>Galaxy lobby state: "connected" | "recovering" | "down". Null in LAN-only mode.</summary>
+    [JsonPropertyName("galaxyLobby")]
+    public string? GalaxyLobby { get; set; }
+
+    /// <summary>Steam GameServer session state: "connected" | "lost".</summary>
+    [JsonPropertyName("steamSession")]
+    public string? SteamSession { get; set; }
+
+    /// <summary>Sidecar auth/token health: "unknown" | "ok" | "expiring" | "unavailable". Null in LAN-only mode.</summary>
+    [JsonPropertyName("authReadiness")]
+    public string? AuthReadiness { get; set; }
 
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; set; } = string.Empty;
@@ -356,6 +370,22 @@ public class HealthResponse
 
     [JsonPropertyName("gameAvailable")]
     public bool? GameAvailable { get; set; }
+
+    // Body-only joinability summary (does not affect Status / the HTTP status code).
+    [JsonPropertyName("steamSession")]
+    public string? SteamSession { get; set; }
+
+    [JsonPropertyName("galaxyLobby")]
+    public string? GalaxyLobby { get; set; }
+
+    [JsonPropertyName("steamRelayReady")]
+    public bool SteamRelayReady { get; set; }
+
+    [JsonPropertyName("inviteCodePresent")]
+    public bool InviteCodePresent { get; set; }
+
+    [JsonPropertyName("authReadiness")]
+    public string? AuthReadiness { get; set; }
 }
 
 /// <summary>

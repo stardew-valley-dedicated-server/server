@@ -14,28 +14,50 @@ namespace JunimoServer.Util;
 public static class ServerBanner
 {
     private static bool _hasPrinted = false;
+    private static bool _printedWithCode = false;
+    private static int _printGeneration;
     private static readonly object _lock = new object();
 
     /// <summary>
     /// Prints the server startup banner with IP addresses and invite code (if available).
-    /// This method is idempotent - it will only print once per session.
+    /// Prints once, plus exactly one refresh the first time an invite code becomes available, so a
+    /// banner printed by the ~5s startup fallback (before the code exists) is not the last word.
+    /// Once printed with a code, it is idempotent. Prints are ordered: a print that awaits the
+    /// external IP lookup longer than a later one is dropped, so the last banner logged is the newest.
     /// </summary>
     public static void Print(IMonitor monitor, IModHelper helper)
     {
+        string inviteCode;
+        int generation;
         lock (_lock)
         {
-            if (_hasPrinted)
+            // Snapshot under the lock and print that snapshot: the async print awaits an external IP
+            // lookup, and re-reading the code after it could make both the no-code banner and its
+            // refresh print with the code.
+            inviteCode = InviteCodes.Joinable;
+            var codeAvailable = inviteCode != null;
+
+            // Skip only when there is nothing new to show: already printed the final (with-code)
+            // banner, or already printed and still no code to add.
+            if (_hasPrinted && (_printedWithCode || !codeAvailable))
             {
                 return;
             }
 
             _hasPrinted = true;
+            _printedWithCode = codeAvailable;
+            generation = ++_printGeneration;
         }
 
-        _ = PrintAsync(monitor, helper);
+        _ = PrintAsync(monitor, helper, inviteCode, generation);
     }
 
-    private static async Task PrintAsync(IMonitor monitor, IModHelper helper)
+    private static async Task PrintAsync(
+        IMonitor monitor,
+        IModHelper helper,
+        string inviteCode,
+        int generation
+    )
     {
         var modInfo = helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
@@ -62,11 +84,17 @@ public static class ServerBanner
 
         // The code lets anyone join, so it's masked in the banner (which is captured into
         // the public report). The real code is served verbatim by the API and the CLI.
-        var inviteCode = InviteCodes.Joinable;
         bannerLines.Add(
             $"Invite Code: {(inviteCode != null ? ChatRedaction.MaskValue(inviteCode) : "not yet available")}"
         );
 
+        lock (_lock)
+        {
+            if (generation != _printGeneration)
+            {
+                return; // a newer print (with the code) started while this one awaited
+            }
+        }
         monitor.LogBanner(bannerLines.ToArray());
     }
 
@@ -101,6 +129,8 @@ public static class ServerBanner
         lock (_lock)
         {
             _hasPrinted = false;
+            _printedWithCode = false;
+            _printGeneration++;
         }
     }
 }
