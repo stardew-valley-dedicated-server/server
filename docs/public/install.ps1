@@ -275,7 +275,6 @@ Update later by re-running this in the same folder:
 
 "@
     } else {
-        Write-Host 'Sign in to your Steam account when prompted (Steam Guard may ask for a code).'
         docker compose run --rm -it steam-auth setup
         if ($LASTEXITCODE -ne 0) { Die 'Steam sign-in did not complete.' }
         Write-Host ''

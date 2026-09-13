@@ -266,7 +266,6 @@ EOF
             ;;
         *)
             echo ""
-            echo "Sign in to your Steam account when prompted (Steam Guard may ask for a code)."
             docker compose run --rm -it steam-auth setup < /dev/tty
             echo ""
             echo "Starting the server..."
