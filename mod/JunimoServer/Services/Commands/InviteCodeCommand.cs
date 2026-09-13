@@ -31,15 +31,10 @@ public class InviteCodeCommand
                     return;
                 }
 
-                var inviteCode = InviteCodes.Joinable;
-
-                if (inviteCode == null)
-                {
-                    helper.SendPrivateMessage(msg.SourceFarmer, "Invite code not yet available.");
-                    return;
-                }
-
-                helper.SendPrivateMessage(msg.SourceFarmer, $"Invite code: {inviteCode}");
+                helper.SendPrivateMessage(
+                    msg.SourceFarmer,
+                    $"Invite code: {InviteCodes.Describe()}"
+                );
             }
         );
 
@@ -55,18 +50,18 @@ public class InviteCodeCommand
     {
         if (Game1.server == null)
         {
-            _monitor.Log("Server is not running.", LogLevel.Error);
+            _monitor.Log("Server is not running.", LogLevel.Warn);
             return;
         }
 
         var inviteCode = InviteCodes.Joinable;
-
-        if (inviteCode == null)
-        {
-            _monitor.Log("Invite code not yet available.", LogLevel.Warn);
-            return;
-        }
-
-        _monitor.Log($"Invite code: {inviteCode}", LogLevel.Info);
+        var status = InviteCodes.StatusCodeOf(inviteCode);
+        // A missing code is worth a warning only while one is expected; a server without Steam auth
+        // never has one.
+        var level =
+            inviteCode == null && status != ConnectionStatusCode.InviteUnavailable
+                ? LogLevel.Warn
+                : LogLevel.Info;
+        _monitor.Log($"Invite code: {ConnectionStatus.Render(status, inviteCode)}", level);
     }
 }

@@ -13,6 +13,24 @@ export interface StatusSignals {
     phase?: string;
 }
 
+/** Galaxy lobby state; null when Steam auth isn't configured. */
+export type GalaxyLobbyState = "connected" | "recovering" | "down";
+/** Steam GameServer session state. */
+export type SteamSessionState = "connected" | "lost";
+/** Sidecar auth/token health; "unknown" until the first poll reaches the sidecar. */
+export type AuthReadiness = "unknown" | "ok" | "expiring" | "unavailable";
+/**
+ * Whether the invite code is usable and by whom. Owner: `ConnectionStatusCode` in
+ * mod/JunimoServer/Util/ConnectivitySignals.cs; the mod derives it from the raw signals below.
+ */
+export type ConnectionStatusCode =
+    | "ready"
+    | "steamRelayPending"
+    | "reconnecting"
+    | "starting"
+    | "steamSessionDown"
+    | "inviteUnavailable";
+
 /**
  * The mod's /status response. Owner: `ServerStatus` in mod/JunimoServer/Services/Api/ApiService.cs
  * (camelCased by the JSON serializer); keep the two in sync.
@@ -20,8 +38,16 @@ export interface StatusSignals {
 export interface ServerStatus extends StatusSignals {
     playerCount: number;
     maxPlayers: number;
-    steamInviteCode: string | null;
-    gogInviteCode: string | null;
+    /** The one code to show players: the universal S-code. Null until a Galaxy lobby exists. */
+    inviteCode: string | null;
+    /** Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp). */
+    steamRelayReady: boolean;
+    /** Null when Steam auth isn't configured. */
+    galaxyLobbyState: GalaxyLobbyState | null;
+    steamSessionState: SteamSessionState;
+    /** Null when Steam auth isn't configured. */
+    authReadiness: AuthReadiness | null;
+    connectionStatusCode: ConnectionStatusCode;
     serverVersion: string;
     gameVersion: string;
     dayTransitionComplete: boolean;
@@ -60,14 +86,35 @@ export interface ServerState {
 const NO_GAME_DATA_HINT = "Game data appears once the save is loaded.";
 
 /**
- * The one invite code to show players: the Steam code, once the Steam lobby is published.
- * Both codes open the same lobby and a GOG client accepts either, but a Steam player who
- * joins with the GOG code gets a Galaxy identity and a farmhand their Steam identity never
- * sees. So nothing is shown until the Steam code is joinable, which is a few seconds after
- * the lobby exists; the GOG code stays on `/status` for tooling.
+ * The one invite code to show players: the universal S-code, exposed whenever a Galaxy lobby
+ * exists. GOG players can join it immediately; Steam players join once `steamRelayReady` is true
+ * (surfaced separately — see `connectionStatusText`). The G-code is never exposed, since a
+ * Steam player who used it would join over Galaxy and get a farmhand their Steam identity never sees.
  */
-export function joinableInviteCode(status: Pick<ServerStatus, "steamInviteCode">): string | null {
-    return status.steamInviteCode || null;
+export function joinableInviteCode(status: Pick<ServerStatus, "inviteCode">): string | null {
+    return status.inviteCode || null;
+}
+
+/**
+ * Display text per connection status code. `ready` shows the code alone; the ellipsis marks
+ * in-progress states, and the settled `inviteUnavailable` has none. Every code must map (type-checked).
+ */
+export const CONNECTION_STATUS_TEXT: Record<ConnectionStatusCode, string | null> = {
+    ready: null,
+    steamRelayPending: "GOG ready · Steam connecting…",
+    reconnecting: "reconnecting…",
+    starting: "starting up…",
+    steamSessionDown: "connecting to Steam…",
+    inviteUnavailable: "not used on this server",
+};
+
+/**
+ * The text to show with the invite code, or in its place when there is none. Null when the code is
+ * ready (shown alone). The display rule is the same on every surface: `code (text)` while a code is
+ * present, else the text standalone. A server predating the field yields null.
+ */
+export function connectionStatusText(status: Pick<ServerStatus, "connectionStatusCode">): string | null {
+    return CONNECTION_STATUS_TEXT[status.connectionStatusCode] ?? null;
 }
 
 /** The in-game calendar as "Spring 14, Year 1". */

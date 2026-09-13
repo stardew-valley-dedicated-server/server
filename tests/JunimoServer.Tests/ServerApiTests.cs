@@ -178,6 +178,95 @@ public class ServerApiTests : TestBase
 
     #endregion
 
+    #region GET /status and /health - connectivity contract
+
+    /// <summary>
+    /// A long-booted, Steam-authenticated server exposes the universal S-code and reports every
+    /// connectivity signal as healthy, on both /status and /health. /health must also still return
+    /// 200 (GetHealth throws on any non-2xx): its HTTP status is tied to game-thread liveness only,
+    /// never to Galaxy/relay state, so the Docker healthcheck does not restart a recovering server.
+    /// </summary>
+    [Fact]
+    [TestServer(WithSteam = true, Clients = 0)]
+    public async Task StatusAndHealth_OnSteamServer_ReportJoinableContract()
+    {
+        var ct = TestCt;
+
+        // Server readiness gates on the invite code; the relay stamp lands about a second later, and
+        // only then does the status read "ready".
+        var ready = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_ServerApi_ConnectionStatusReady,
+            async () => (await ServerApi.GetStatus(ct))?.ConnectionStatusCode == "ready",
+            TimeSpan.FromSeconds(30),
+            cancellationToken: ct
+        );
+        Assert.True(ready, "connectionStatusCode must reach 'ready' once the relay stamp lands");
+
+        var status = await ServerApi.GetStatus(ct);
+        Assert.NotNull(status);
+        Assert.False(
+            string.IsNullOrEmpty(status!.InviteCode),
+            "inviteCode must be exposed whenever the Galaxy lobby exists"
+        );
+        // Never a G-code: a Steam player who used one would join over Galaxy P2P and get a
+        // farmhand their Steam identity never sees.
+        Assert.True(
+            status.InviteCode!.StartsWith("S", StringComparison.Ordinal),
+            $"invite code must be the S-code; got '{status.InviteCode}'"
+        );
+
+        Assert.Equal("connected", status.GalaxyLobbyState);
+        Assert.Equal("connected", status.SteamSessionState);
+        Assert.True(
+            status.SteamRelayReady,
+            "steamRelayReady must be true once the relay stamp landed"
+        );
+        Assert.True(
+            status.AuthReadiness is "ok" or "expiring",
+            $"authReadiness must be ok or expiring on a Steam-authenticated server; got '{status.AuthReadiness ?? "null"}'"
+        );
+        Assert.Equal("ready", status.ConnectionStatusCode);
+
+        var health = await ServerApi.GetHealth(ct);
+        Assert.NotNull(health);
+        Assert.True(
+            health!.InviteCodePresent,
+            "/health.inviteCodePresent must be true when a code exists"
+        );
+        Assert.Equal("connected", health.GalaxyLobbyState);
+        Assert.Equal("connected", health.SteamSessionState);
+        Assert.True(health.SteamRelayReady);
+        Assert.Equal(status.AuthReadiness, health.AuthReadiness);
+    }
+
+    /// <summary>
+    /// A server without Steam auth (no STEAM_AUTH_URL) has no Galaxy: the Galaxy-side fields are null
+    /// rather than "down", there is no invite code, the connection status says so, and /health still
+    /// returns 200.
+    /// </summary>
+    [Fact]
+    [TestServer(Clients = 0)]
+    public async Task StatusAndHealth_OnLanServer_ReportNoGalaxy()
+    {
+        var ct = TestCt;
+
+        var status = await ServerApi.GetStatus(ct);
+        Assert.NotNull(status);
+        Assert.Null(status!.InviteCode);
+        Assert.Null(status.GalaxyLobbyState);
+        Assert.Null(status.AuthReadiness);
+        Assert.False(status.SteamRelayReady);
+        Assert.Equal("inviteUnavailable", status.ConnectionStatusCode);
+
+        var health = await ServerApi.GetHealth(ct);
+        Assert.NotNull(health);
+        Assert.False(health!.InviteCodePresent);
+        Assert.Null(health.GalaxyLobbyState);
+        Assert.Null(health.AuthReadiness);
+    }
+
+    #endregion
+
     #region GET /swagger - OpenAPI spec
 
     /// <summary>

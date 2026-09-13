@@ -190,7 +190,7 @@ The server refuses to start without `API_KEY` while `API_ENABLED=true`, and with
 
 | Port | Protocol | Purpose | Expose Externally? |
 |------|----------|---------|-------------------|
-| 24642 | UDP | Game (Steam SDR) | No (relay handles NAT) |
+| 24642 | UDP | Game (Steam relay) | No (relay handles NAT) |
 | 27015 | UDP | Steam query | No (relay handles NAT) |
 | 5800 | TCP | VNC web UI | Only for remote access |
 | 8080 | TCP | REST API | Only for external tools |

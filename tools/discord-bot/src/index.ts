@@ -26,13 +26,13 @@ import {
     classifyDashboardEmbed,
     type DashboardMessageKind,
     formatFooter,
+    formatPresence,
     formatStateLine,
     parseDashboardState,
     parseOwnerId,
 } from "./dashboard";
 import { resolveServerState, type ServerStatus } from "./discordState";
 import { createLogger, log } from "./log";
-import { joinableInviteCode } from "./serverState";
 
 // Configuration from environment
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -231,33 +231,13 @@ function reportStatusFetch(failure: string | null): void {
     statusFetchFailure = failure;
 }
 
-let lastPresenceSummary: string | null = null;
-let presenceShowsVersion = false;
+let lastPresence: string | null = null;
 
-/**
- * Updates the bot's presence/status based on server state. The line has no room for both the
- * player count and the server version, so it alternates between them each refresh.
- */
+/** Updates the bot's presence/status based on server state: players and code while online, else the state's reason. */
 async function updatePresence(): Promise<void> {
     const status = await fetchServerStatus();
     const state = resolveServerState(status);
-
-    let activityName: string;
-    // Logged instead of activityName, so the alternation itself is not logged as a change.
-    let presenceSummary: string;
-
-    if (state.kind === "online" && status) {
-        const players = `${status.playerCount}/${status.maxPlayers} players`;
-        const version = `v${status.serverVersion}`;
-        const invite = joinableInviteCode(status);
-        presenceShowsVersion = !presenceShowsVersion;
-        const lead = presenceShowsVersion ? version : players;
-        activityName = invite ? `${lead}, code ${invite}` : lead;
-        presenceSummary = invite ? `${players}, ${version}, code ${invite}` : `${players}, ${version}`;
-    } else {
-        activityName = state.detail;
-        presenceSummary = activityName;
-    }
+    const activityName = state.kind === "online" && status ? formatPresence(status) : state.detail;
 
     client.user?.setPresence({
         activities: [
@@ -270,9 +250,9 @@ async function updatePresence(): Promise<void> {
         status: state.presence,
     });
 
-    if (presenceSummary !== lastPresenceSummary) {
-        log.info(`Status updated: ${presenceSummary}`);
-        lastPresenceSummary = presenceSummary;
+    if (activityName !== lastPresence) {
+        log.info(`Status updated: ${activityName}`);
+        lastPresence = activityName;
     }
 }
 

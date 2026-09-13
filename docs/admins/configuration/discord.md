@@ -2,7 +2,7 @@
 
 Setup instructions for the Discord bot. See [Discord Integration](/features/discord) for the feature overview.
 
-The bot runs alongside your server, so its identity is your farm's: its nickname shows your farm name, and its presence shows your player count, version, and invite code. That requires a Discord app of your own — free, one-time, about 5 minutes.
+The bot runs alongside your server, so its identity is your farm's: its nickname shows your farm name, and its presence shows your player count and, once the server has one, the invite code. That requires a Discord app of your own — free, one-time, about 5 minutes.
 
 ## 1. Create the Bot
 
@@ -42,7 +42,7 @@ DISCORD_BOT_TOKEN=your_bot_token_here
 API_KEY=your_api_key_here
 ```
 
-Restart with `docker compose up -d`. The bot comes online and its presence shows the player count, version, and invite code — no further setup needed. The features below are optional.
+Restart with `docker compose up -d`. The bot comes online and its presence shows the player count and, once the server has one, the invite code — no further setup needed. The features below are optional.
 
 ## Chat Relay
 

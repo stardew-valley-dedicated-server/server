@@ -4,9 +4,9 @@ Steam and GOG players can connect to the same server.
 
 ## How It Works
 
-One invite code serves both platforms. It starts with "S" (e.g., `S1234567890ABC`): a Steam client joins it through the Steam Datagram Relay, a GOG client reads the same code as its Galaxy lobby and joins through Galaxy P2P.
+One invite code serves both platforms. It starts with "S" (e.g., `S1234567890ABC`): a Steam client joins it through the Steam relay, a GOG client reads the same code as its Galaxy lobby and joins through Galaxy P2P.
 
-The code becomes available a few seconds after the server starts, once the Steam lobby is published. Until then the status page, the Discord bot, and the in-game `!invitecode` command show that it is not yet available.
+The code appears a few seconds after the server starts, as soon as the Galaxy lobby exists; GOG players can join it right away, and Steam players a moment later, once the Steam relay is ready. The status page, the Discord bot, and the in-game `!invitecode` command show the code with its [connection status](/admins/operations/public-status#invite-code-status), for example `GOG ready · Steam connecting…` in that window.
 
 ## Connection Reliability
 

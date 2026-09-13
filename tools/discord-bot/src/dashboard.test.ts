@@ -5,6 +5,7 @@ import {
     DASHBOARD_TITLE,
     type EmbedLike,
     formatFooter,
+    formatPresence,
     formatRefreshRate,
     isDashboardEmbed,
     parseDashboardState,
@@ -30,8 +31,12 @@ const ONLINE_STATUS: ServerStatus = {
     isReady: true,
     playerCount: 1,
     maxPlayers: 10,
-    steamInviteCode: "SGF0LUHHTYF5",
-    gogInviteCode: "GGF0LUHHTYF5",
+    inviteCode: "SGF0LUHHTYF5",
+    steamRelayReady: true,
+    galaxyLobbyState: "connected",
+    steamSessionState: "connected",
+    authReadiness: "ok",
+    connectionStatusCode: "ready",
     serverVersion: "1.5.0-preview.134",
     gameVersion: "1.6.15",
     dayTransitionComplete: true,
@@ -89,8 +94,22 @@ describe("buildDashboardEmbed", () => {
         expect(fields({ ...ONLINE_STATUS, isPaused: true }).Players).toBe("`1 / 10` _(paused)_");
     });
 
-    test("the invite code is pending until the Steam lobby is published", () => {
-        expect(fields({ ...ONLINE_STATUS, steamInviteCode: null })["Invite code"]).toBe("_not yet available_");
+    test("no code yet shows the connection status text in its place", () => {
+        expect(fields({ ...ONLINE_STATUS, inviteCode: null, connectionStatusCode: "starting" })["Invite code"]).toBe(
+            "_starting up…_",
+        );
+        expect(
+            fields({ ...ONLINE_STATUS, inviteCode: null, connectionStatusCode: "reconnecting" })["Invite code"],
+        ).toBe("_reconnecting…_");
+        expect(
+            fields({ ...ONLINE_STATUS, inviteCode: null, connectionStatusCode: "inviteUnavailable" })["Invite code"],
+        ).toBe("_not used on this server_");
+    });
+
+    test("a code that is not ready shows the code plus the status text", () => {
+        expect(fields({ ...ONLINE_STATUS, connectionStatusCode: "steamRelayPending" })["Invite code"]).toBe(
+            "`SGF0LUHHTYF5` _(GOG ready · Steam connecting…)_",
+        );
     });
 
     test("a version the mod has not reported yet shows a dash", () => {
@@ -133,6 +152,21 @@ describe("buildDashboardEmbed", () => {
             "In-game date": "`Spring 14, Year 1 · 6:50 AM`",
             "Build Version": "`1.5.0-preview.134`",
         });
+    });
+});
+
+describe("formatPresence", () => {
+    test("players and the code, with no version and no status text", () => {
+        expect(formatPresence(ONLINE_STATUS)).toBe("1/10 players, code SGF0LUHHTYF5");
+        expect(formatPresence({ ...ONLINE_STATUS, connectionStatusCode: "steamRelayPending" })).toBe(
+            "1/10 players, code SGF0LUHHTYF5",
+        );
+    });
+
+    test("players alone while there is no code", () => {
+        expect(formatPresence({ ...ONLINE_STATUS, inviteCode: null, connectionStatusCode: "starting" })).toBe(
+            "1/10 players",
+        );
     });
 });
 

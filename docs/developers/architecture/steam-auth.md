@@ -132,7 +132,35 @@ Refresh tokens are saved to `/data/steam-session/{username}/session.json` and re
 2. Galaxy creates a lobby and requests an encrypted app ticket
 3. Game server's `AuthService` fetches ticket from steam-auth via HTTP
 4. Steam-auth uses SteamKit2 to get an encrypted app ticket from Steam
-5. Ticket is returned and used to generate the Galaxy invite code (G-prefixed); the S-prefixed code players receive is the same lobby id, handed out once the Steam lobby is published
+5. The Galaxy SDK produces the invite code — which vanilla already makes **S-prefixed**
+   (`"S" + Base36(lobby id)`). The server mirrors this live-lobby code and exposes it the moment a
+   Galaxy lobby exists. A GOG client decodes it and joins over Galaxy P2P immediately; a vanilla
+   Steam client joins over the Steam relay once the Galaxy lobby carries the `SteamLobbyId` stamp,
+   reported separately as `steamRelayReady`. The G-code is never exposed — a Steam player who used it
+   would join over Galaxy and be given a farmhand their Steam identity never sees again.
+
+### Connectivity signals on `/status` and `/health`
+
+The invite code is a **mirror of the live Galaxy lobby**, not a cache: it is derived from
+`Game1.server?.getInviteCode()` by one writer at lobby-lifecycle transitions and is never erased by an
+unrelated Steam-session flap. Both endpoints report the code alongside four connectivity signals so a
+monitor can explain a missing or non-working code without reading logs; `/status` also derives the
+one code a display maps to text:
+
+| Field | Meaning |
+|-------|---------|
+| `inviteCode` | The universal S-code, or null when no Galaxy lobby exists |
+| `steamRelayReady` | Whether Steam clients can join using the code yet (the Galaxy lobby carries the relay stamp) |
+| `galaxyLobbyState` | `connected` \| `recovering` \| `down` (null when Steam auth is not configured) |
+| `steamSessionState` | `connected` \| `lost` — the Steam GameServer session |
+| `authReadiness` | `unknown` \| `ok` \| `expiring` \| `unavailable` — sidecar token health; `unknown` until the first poll reaches the sidecar (null when Steam auth is not configured) |
+| `connectionStatusCode` | `/status` only: `ready` \| `steamRelayPending` \| `reconnecting` \| `starting` \| `steamSessionDown` \| `inviteUnavailable` — whether the code is usable and by whom, derived from the signals above by `ConnectionStatus.Compute` (values in the [API reference](/developers/api/introduction#invite-code-status)) |
+
+`/health` carries the same summary in its body but keeps its HTTP status and `status` field tied to
+game-thread liveness only, so an alive-but-recovering server stays `200` (the Docker healthcheck and
+deploy gate must not restart it on a transient Galaxy/Steam blip). Galaxy recovers on its own
+supervisor timer independent of a Steam reconnect; a permanently dead/expired token surfaces as
+`authReadiness: unavailable` instead of being retried forever.
 
 ### Lobbies are forced Public
 
@@ -145,7 +173,7 @@ players, so the default would block invite-code joins for everyone. The mod ther
 | Transport | Site |
 |-----------|------|
 | Steam lobby | `GalaxyAuthService.SetSteamLobbyPrivacy` (hardcodes `"public"`) |
-| Galaxy (GoG) lobby | `ServerOptimizerOverrides.CreateLobby_Prefix` (forces `ServerPrivacy.Public`) |
+| Galaxy (GOG) lobby | `ServerOptimizerOverrides.CreateLobby_Prefix` (forces `ServerPrivacy.Public`) |
 
 This is why a JunimoServer lobby is always Public and can appear in the Steam/GOG lobby
 list. The two sites must stay in sync; changing one alone splits the transports' privacy.
@@ -157,8 +185,8 @@ The sidecar fully replaces the Steam client for **authentication** — but Steam
 
 An `encryptedAppTicket` is a static, signed identity proof designed to be shown to third
 parties. GOG's backend accepts it as a login (`GalaxyInstance.User().SignInSteam(ticket)`), so
-every Galaxy-side feature runs headless with sidecar tickets. Steam's own relay network (SDR)
-is different: relays only carry traffic for endpoints holding live session certificates, and
+every Galaxy-side feature runs headless with sidecar tickets. The Steam relay (Steam Datagram
+Relay, SDR) is different: relays only carry traffic for endpoints holding live session certificates, and
 Valve opens such sessions through exactly two doors:
 
 | Door | API family | Headless? | Identity granted |

@@ -177,7 +177,7 @@ public enum WaitName
 
     // NavigationTests.cs (3)
     Polling_Navigation_HasInviteCode,
-    Polling_Navigation_HasGalaxyInviteCode,
+    Polling_Navigation_StatusHasInviteCode,
     Polling_Navigation_HealthyOk,
 
     // NoPasswordTests.cs (2)
@@ -196,9 +196,10 @@ public enum WaitName
     Polling_Rendering_OverlayVisible,
     Polling_Rendering_OverlayWentDarkAgain,
 
-    // ServerApiTests.cs (2)
+    // ServerApiTests.cs (3)
     Polling_ServerApi_NoPlayersConnected,
     Polling_ServerApi_ChatMessageDelivered,
+    Polling_ServerApi_ConnectionStatusReady,
 
     // SteamAppIdTests.cs (1)
     Polling_SteamAppId_SdrStatusLine,

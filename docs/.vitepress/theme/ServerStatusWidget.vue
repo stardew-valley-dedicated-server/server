@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
+    connectionStatusText,
     formatStardewDate,
     formatStardewTime,
     formatUptime,
@@ -61,8 +62,10 @@ function writeCache(poll: CachedPoll | null) {
     }
 }
 
-/** The code players paste in-game; null until the lobby is published. */
+/** The code players paste in-game; null until a Galaxy lobby exists. */
 const inviteCode = computed(() => (status.value ? joinableInviteCode(status.value) : null));
+/** The connection status text: shown beside the code, or in its place while there is none; null when the code is ready. */
+const inviteNote = computed(() => (status.value ? connectionStatusText(status.value) : null));
 
 const stateColors: Record<ServerStateKind, string> = {
     online: "var(--vp-c-success-1)",
@@ -300,7 +303,8 @@ onUnmounted(() => {
                         </span>
                         <div class="invite-code-row">
                             <code v-if="inviteCode" class="invite-code">{{ inviteCode }}</code>
-                            <span v-else class="invite-code pending">not yet available</span>
+                            <span v-else class="invite-code pending">{{ inviteNote ?? "not yet available" }}</span>
+                            <span v-if="inviteCode && inviteNote" class="invite-note">{{ inviteNote }}</span>
                             <span v-if="inviteCode" class="copy-icon" aria-hidden="true">
                                 <svg v-if="copied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M20 6 9 17l-5-5" />
@@ -800,6 +804,12 @@ onUnmounted(() => {
     font-family: inherit;
     font-style: italic;
     letter-spacing: normal;
+}
+
+.invite-note {
+    color: var(--vp-c-text-3);
+    font-size: 12px;
+    font-style: italic;
 }
 
 .copy-icon {

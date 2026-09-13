@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { formatStardewDate, formatStardewTime, formatUptime, joinableInviteCode } from "./serverState";
+import {
+    CONNECTION_STATUS_TEXT,
+    type ConnectionStatusCode,
+    connectionStatusText,
+    formatStardewDate,
+    formatStardewTime,
+    formatUptime,
+    joinableInviteCode,
+} from "./serverState";
 
 describe("formatStardewDate", () => {
     test("capitalized season, day, and year", () => {
@@ -13,12 +21,41 @@ describe("formatStardewDate", () => {
 
 describe("joinableInviteCode", () => {
     test("is the Steam code once published", () => {
-        expect(joinableInviteCode({ steamInviteCode: "SABC" })).toBe("SABC");
+        expect(joinableInviteCode({ inviteCode: "SABC" })).toBe("SABC");
     });
 
     test("is null before the Steam lobby is published, never the GOG code", () => {
-        expect(joinableInviteCode({ steamInviteCode: null })).toBeNull();
-        expect(joinableInviteCode({ steamInviteCode: "" })).toBeNull();
+        expect(joinableInviteCode({ inviteCode: null })).toBeNull();
+        expect(joinableInviteCode({ inviteCode: "" })).toBeNull();
+    });
+});
+
+describe("connectionStatusText", () => {
+    test("a ready code shows alone", () => {
+        expect(connectionStatusText({ connectionStatusCode: "ready" })).toBeNull();
+    });
+
+    test("every other code maps to its display text", () => {
+        expect(connectionStatusText({ connectionStatusCode: "steamRelayPending" })).toBe(
+            "GOG ready · Steam connecting…",
+        );
+        expect(connectionStatusText({ connectionStatusCode: "reconnecting" })).toBe("reconnecting…");
+        expect(connectionStatusText({ connectionStatusCode: "starting" })).toBe("starting up…");
+        expect(connectionStatusText({ connectionStatusCode: "steamSessionDown" })).toBe("connecting to Steam…");
+        expect(connectionStatusText({ connectionStatusCode: "inviteUnavailable" })).toBe("not used on this server");
+    });
+
+    test("in-progress states end in an ellipsis; the settled state does not", () => {
+        for (const [code, text] of Object.entries(CONNECTION_STATUS_TEXT)) {
+            if (text === null) {
+                continue;
+            }
+            expect(text.endsWith("…")).toBe(code !== "inviteUnavailable");
+        }
+    });
+
+    test("a server predating the field yields no text", () => {
+        expect(connectionStatusText({ connectionStatusCode: undefined as unknown as ConnectionStatusCode })).toBeNull();
     });
 });
 

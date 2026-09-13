@@ -154,7 +154,7 @@ Check for these log messages:
 |---------|---------|-----|
 | `GameServer.Init() failed` | Steamworks SDK issue | Restart, check game files |
 | `Failed to connect to Steam servers` | Network issue | Check firewall, outbound UDP |
-| `SDR relay status: Unknown` | SDR initializing | Wait a few seconds, retry |
+| `SDR relay status: Unknown` | Steam relay initializing | Wait a few seconds, retry |
 
 ### GOG clients specifically failing
 

@@ -29,4 +29,4 @@ Prescriptive cabin invariants are in [.claude/rules/cabin-system.md](https://git
 
 ## Server invite code
 
-- LAN-only servers (`AllowIpConnections=true`, no Steam account configured) never write an invite code. `InviteCodeFile.Read()` returns null in that configuration.
+- Servers without Steam auth configured (`AllowIpConnections=true`, no Steam account) never write an invite code. `InviteCodeFile.Read()` returns null in that configuration.

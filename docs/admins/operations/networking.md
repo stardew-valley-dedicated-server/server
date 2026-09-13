@@ -6,13 +6,13 @@ JunimoServer supports both Steam and GOG clients connecting to the same server. 
 
 | Method | For | Port Forwarding | Reliability |
 |--------|-----|-----------------|-------------|
-| Steam SDR | Steam clients | Not required | ~99% success |
+| Steam relay | Steam clients | Not required | ~99% success |
 | GOG Galaxy | GOG clients | Not required | ~50% success |
 | Direct IP | Any client | Required (UDP 24642) | Depends on network |
 
-### Steam SDR (Recommended)
+### Steam relay (Recommended)
 
-Steam clients connect through Valve's Steam Datagram Relay network. All traffic routes through Valve's servers, which handles NAT traversal automatically.
+Steam clients connect through Valve's relay network (Steam Datagram Relay). All traffic routes through Valve's servers, which handles NAT traversal automatically.
 
 **How it works:**
 
@@ -23,7 +23,7 @@ Steam clients connect through Valve's Steam Datagram Relay network. All traffic 
 
 ### GOG Galaxy
 
-GOG clients connect using Galaxy P2P networking with the same invite code Steam players use. Works through most NATs without port forwarding, but has lower success rates than Steam SDR.
+GOG clients connect using Galaxy P2P networking with the same invite code Steam players use. Works through most NATs without port forwarding, but has lower success rates than the Steam relay.
 
 ### Direct IP
 
@@ -40,13 +40,13 @@ joinable over direct IP — even for the account's own player. See
 
 | Port | Protocol | Purpose | Forward Required? |
 |------|----------|---------|-------------------|
-| 24642 | UDP | Steam SDR game port | No (relay handles NAT) |
-| 27015 | UDP | Steam SDR query port | No (relay handles NAT) |
+| 24642 | UDP | Steam relay game port | No (relay handles NAT) |
+| 27015 | UDP | Steam relay query port | No (relay handles NAT) |
 | 5800 | TCP | VNC web UI | Only for remote access |
 | 8080 | TCP | HTTP API | Only for external tools |
 | 80, 443 | TCP | HTTPS proxy (optional) | Only with a proxy in front (bundled or your own) |
 
-Steam SDR uses these ports internally but traffic goes through Valve's relay. No port forwarding required for most setups.
+The Steam relay uses these ports internally but traffic goes through Valve's relay. No port forwarding required for most setups.
 
 With the [HTTPS proxy](/admins/operations/reverse-proxy), the API and VNC web UI are served on 443 and their plain-HTTP ports stay on loopback.
 
@@ -122,7 +122,7 @@ Check server logs for these messages:
 
 **GameServer init failed:**
 
-```
+```text
 [Steam] GameServer.Init() failed
 ```
 
@@ -130,19 +130,19 @@ Steamworks SDK may be missing or `steam_appid.txt` incorrect.
 
 **Can't reach Steam:**
 
-```
+```text
 [Steam] Failed to connect to Steam servers: ...
 ```
 
 Check outbound network access and firewall rules for UDP.
 
-**SDR not ready:**
+**Steam relay not ready:**
 
-```
+```text
 [Steam] SDR relay status: k_ESteamNetworkingAvailability_Unknown
 ```
 
-SDR takes a few seconds to initialize. Wait and retry.
+The relay takes a few seconds to initialize. Wait and retry.
 
 ### GOG Clients Can't Connect
 
