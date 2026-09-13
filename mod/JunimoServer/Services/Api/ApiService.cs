@@ -2110,6 +2110,12 @@ public partial class ApiService : ModService
         // (the mod runs outside tests too).
         var requestId = request.Headers["X-Request-Id"];
 
+        // Extract the test-id header sent by the harness. Unlike X-Request-Id
+        // (minted only at Basic/Full tracing), this is attached on every request
+        // regardless of tracing level, so every server event during the request
+        // is attributable to its originating test. Null in production.
+        var testId = request.Headers["X-Test-Id"];
+
         // Echo the same id on the response so the client-side
         // TracingHandler can confirm the round-trip and the mod's view
         // of the id matches the caller's. Header writes must happen
@@ -2154,7 +2160,7 @@ public partial class ApiService : ModService
             Monitor.Log($"[API] Failed to emit X-Snapshot-Age-Ms: {ex.Message}", LogLevel.Debug);
         }
 
-        using var _correlationScope = Diagnostics.ModRequestContext.Bind(requestId);
+        using var _correlationScope = Diagnostics.ModRequestContext.Bind(requestId, testId);
 
         // Per-request stopwatch fed into the http_served event in the
         // finally block. Captured here so early-return paths (WebSocket
@@ -3987,6 +3993,11 @@ public partial class ApiService : ModService
             return lastTickMs <= HealthFrozenThresholdMs;
         }
 
+        // Captured while the request scope is still active (AsyncLocal flows
+        // across the awaits above this point), so it can be rebound alongside
+        // requestId after each await continuation below.
+        var testId = Diagnostics.ModRequestContext.TestId;
+
         var deadline = DateTime.UtcNow + timeout;
         while (true)
         {
@@ -4018,10 +4029,10 @@ public partial class ApiService : ModService
                 return;
             }
 
-            // Re-bind requestId for any downstream emits — the continuation
-            // may have resumed on a fresh thread-pool worker that didn't
-            // flow our AsyncLocal cleanly. See .claude/rules/asynclocal-pitfalls.md.
-            using var _ = Diagnostics.ModRequestContext.Bind(requestId);
+            // Re-bind requestId + testId for any downstream emits — the
+            // continuation may have resumed on a fresh thread-pool worker that
+            // didn't flow our AsyncLocal cleanly. See .claude/rules/asynclocal-pitfalls.md.
+            using var _ = Diagnostics.ModRequestContext.Bind(requestId, testId);
         }
     }
 
@@ -4071,6 +4082,10 @@ public partial class ApiService : ModService
         string? requestId
     )
     {
+        // Captured while the request scope is still active (AsyncLocal flows to
+        // here), so it can be rebound alongside requestId after each await below.
+        var testId = Diagnostics.ModRequestContext.TestId;
+
         var deadline = DateTime.UtcNow + timeout;
         while (true)
         {
@@ -4104,8 +4119,8 @@ public partial class ApiService : ModService
 
             // Continuation may have resumed on a fresh thread-pool worker;
             // re-bind so any structured event we emit below carries the
-            // caller's requestId.
-            using var _ = Diagnostics.ModRequestContext.Bind(requestId);
+            // caller's requestId + testId.
+            using var _ = Diagnostics.ModRequestContext.Bind(requestId, testId);
         }
     }
 

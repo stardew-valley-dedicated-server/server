@@ -49,6 +49,7 @@ public static class ClientEventLog
             {
                 ts = DateTime.UtcNow,
                 requestId = ClientRequestContext.RequestId,
+                testId = ClientRequestContext.TestId,
                 service = "test-client",
                 tickMs,
                 @event = eventType,

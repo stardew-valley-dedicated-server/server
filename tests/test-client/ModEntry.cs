@@ -1301,11 +1301,12 @@ public class ModEntry : Mod
         // LOCK CMPXCHG which cannot be optimized away.
         var state = 0;
 
-        // Capture the ambient correlation id on the HTTP handler thread so
-        // ClientEventLog emissions from the game-loop thread still carry it.
+        // Capture the ambient correlation ids on the HTTP handler thread so
+        // ClientEventLog emissions from the game-loop thread still carry them.
         // The game loop pumps its queue on its own thread; AsyncLocal does
-        // not flow across that boundary, so we re-bind it inside the action.
+        // not flow across that boundary, so we re-bind inside the action.
         var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
+        var capturedTestId = Diagnostics.ClientRequestContext.TestId;
 
         QueueGameAction(() =>
         {
@@ -1314,7 +1315,10 @@ public class ModEntry : Mod
                 return; // Caller timed out (state was 1); skip to avoid corrupting game state
             }
 
-            using var _correlationScope = Diagnostics.ClientRequestContext.Bind(capturedRequestId);
+            using var _correlationScope = Diagnostics.ClientRequestContext.Bind(
+                capturedRequestId,
+                capturedTestId
+            );
             try
             {
                 result = action();
@@ -1434,10 +1438,11 @@ public class ModEntry : Mod
         var startTime = DateTime.UtcNow;
         var deadline = startTime.AddMilliseconds(timeoutMs);
 
-        // Capture ambient correlation id on the HTTP handler thread; re-bind
+        // Capture ambient correlation ids on the HTTP handler thread; re-bind
         // inside the game-thread continuation so any event emitted from the
-        // condition/failureDetector callbacks carries it.
+        // condition/failureDetector callbacks carries them.
         var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
+        var capturedTestId = Diagnostics.ClientRequestContext.TestId;
 
         while (DateTime.UtcNow < deadline)
         {
@@ -1449,7 +1454,8 @@ public class ModEntry : Mod
             QueueGameAction(() =>
             {
                 using var _correlationScope = Diagnostics.ClientRequestContext.Bind(
-                    capturedRequestId
+                    capturedRequestId,
+                    capturedTestId
                 );
                 try
                 {

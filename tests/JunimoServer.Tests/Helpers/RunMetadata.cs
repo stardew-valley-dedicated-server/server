@@ -223,6 +223,11 @@ public static class RunMetadata
                 result[key] = val;
             }
         }
+
+        // The resolved tracing level, not the raw env var: SDVD_TEST_TRACING is
+        // often unset (the level then comes from TestTracing's code default), so
+        // recording the resolved value is what makes the active level visible.
+        result["testTracingLevel"] = TestTracing.Level.ToString();
         return result;
     }
 

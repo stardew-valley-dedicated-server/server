@@ -15,21 +15,56 @@ namespace JunimoServer.Tests.Clients;
 ///   <item><b>Basic</b> — adds <c>X-Request-Id</c> for mutating verbs
 ///   (POST/PUT/PATCH/DELETE) so a debug session can correlate writes with the
 ///   mod-side timeline; reads stay header-free.</item>
-///   <item><b>Full</b> — today's behavior. Body buffer + <c>ByteArrayContent</c>
-///   rebuild, <c>respSummary</c> for diagnostic endpoints, request-id on every
-///   verb.</item>
+///   <item><b>Full</b> — request-id on every verb, plus response-body capture:
+///   the body is buffered, rewrapped so downstream deserialization still works,
+///   truncated to <see cref="RespBodyMaxChars"/>, and emitted as <c>respBody</c>
+///   so artifacts record exactly what a read returned.</item>
 /// </list>
+///
+/// <para>
+/// <c>X-Test-Id</c> (the originating test's display name) is attached to every
+/// request at <b>every</b> level — independent of tracing — so the server's
+/// <c>http_served</c> (and every other server event during the request) is
+/// attributable to its test via <c>ModRequestContext.TestId</c>, even for reads
+/// that carry no <c>X-Request-Id</c>.
+/// </para>
 ///
 /// <para>
 /// <c>clientKind</c> distinguishes calls to the server mod ("server")
 /// from calls to the test-client mod ("test-client").
 /// </para>
+///
+/// <para>
+/// Captured <c>respBody</c> is redacted by the runner's in-place
+/// <c>ReportRedactor</c> scrub over <c>infrastructure.jsonl</c>
+/// (<c>ScrubRunFilesInPlace</c>, run on every run), the same as every other
+/// diagnostic in that stream.
+/// </para>
 /// </summary>
 internal sealed class TracingHandler : DelegatingHandler
 {
     private const string RequestIdHeader = "X-Request-Id";
+    private const string TestIdHeader = "X-Test-Id";
     private const string SnapshotAgeHeader = "X-Snapshot-Age-Ms";
     private const string PredicateChangedAtHeader = "X-Predicate-Changed-At-Ms-Ago";
+
+    /// <summary>
+    /// Truncation cap for the captured <c>respBody</c>. Bounds the growth of
+    /// <c>infrastructure.jsonl</c> at <c>Full</c> (one body per HTTP call,
+    /// including every poll) against its soft size limit
+    /// (<see cref="InfrastructureEventLog.SoftSizeLimitBytes"/>) while keeping
+    /// a full snapshot response readable in the artifact.
+    /// </summary>
+    private const int RespBodyMaxChars = 2000;
+
+    /// <summary>
+    /// Replaces every character outside printable ASCII with <c>?</c>. Identity
+    /// for every current test name, so <c>testId</c> still joins exactly to
+    /// <c>test.displayName</c>; only a non-ASCII or control character in a
+    /// Theory argument diverges.
+    /// </summary>
+    private static string ToHeaderSafe(string value) =>
+        new(value.Select(c => c >= ' ' && c <= '~' ? c : '?').ToArray());
 
     private readonly string _clientKind;
     private readonly TestTracingLevel _level;
@@ -75,6 +110,22 @@ internal sealed class TracingHandler : DelegatingHandler
             }
         }
 
+        // Attach the test-id regardless of tracing level (unlike X-Request-Id):
+        // the server binds it as an AsyncLocal for the request duration so every
+        // server event — including reads that carry no request-id — is attributable
+        // to its originating test. Sourced per-async-flow from the ambient test
+        // identity, so it must be set here, not on HttpClient.DefaultRequestHeaders.
+        // Header values must be printable ASCII: HttpClient throws on a non-ASCII
+        // byte and HttpListener answers 400 to a CR/LF, either of which would fail
+        // every call a test makes. A Theory display name embeds its arguments, so
+        // sanitize rather than trust the name.
+        var testId = TestIdentityContext.Current?.DisplayName;
+        if (!string.IsNullOrEmpty(testId))
+        {
+            request.Headers.Remove(TestIdHeader);
+            request.Headers.TryAddWithoutValidation(TestIdHeader, ToHeaderSafe(testId));
+        }
+
         long? reqBytes = null;
         if (request.Content != null && isMutation)
         {
@@ -93,6 +144,7 @@ internal sealed class TracingHandler : DelegatingHandler
             sw.Stop();
 
             long? respBytes = null;
+            string? respBody = null;
             long? snapshotAgeMs = null;
             long? predicateChangedMsAgo = null;
 
@@ -121,14 +173,41 @@ internal sealed class TracingHandler : DelegatingHandler
             // the most-recent observation rather than a stale earlier value.
             HttpResponseDiagnostics.LastPredicateChangedMsAgo = predicateChangedMsAgo;
 
-            // respBytes is Full-only — at None / Basic we drop the field. At
-            // Full, respBytes is read from the Content-Length response header.
-            if (
-                _level == TestTracingLevel.Full
-                && response.Content?.Headers?.ContentLength is long bodyLen
-            )
+            // respBytes/respBody are Full-only — at None / Basic we drop both.
+            // At Full, buffer the response body so we can record what the read
+            // returned, then rewrap it in a fresh ByteArrayContent (copying the
+            // original content headers) so downstream ServerApiClient
+            // deserialization still reads the same bytes. respBytes comes from the
+            // actual buffered length (accurate even when Content-Length is absent).
+            // Never let a body-capture failure break the request.
+            if (_level == TestTracingLevel.Full && response.Content != null)
             {
-                respBytes = bodyLen;
+                try
+                {
+                    var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                    respBytes = bytes.LongLength;
+
+                    var rewrapped = new ByteArrayContent(bytes);
+                    foreach (var header in response.Content.Headers)
+                    {
+                        rewrapped.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+                    response.Content = rewrapped;
+
+                    // Truncated body text. Redaction of any sensitive value is applied
+                    // by the runner's in-place ReportRedactor scrub over
+                    // infrastructure.jsonl (ScrubRunFilesInPlace, on every run), the
+                    // same as every other diagnostic that lands in that stream.
+                    var text = System.Text.Encoding.UTF8.GetString(bytes);
+                    respBody =
+                        text.Length > RespBodyMaxChars
+                            ? text.Substring(0, RespBodyMaxChars) + "…[truncated]"
+                            : text;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    respBody = $"[capture failed: {ex.GetType().Name}]";
+                }
             }
 
             InfrastructureEventLog.Emit(
@@ -142,6 +221,7 @@ internal sealed class TracingHandler : DelegatingHandler
                     durationMs = sw.ElapsedMilliseconds,
                     reqBytes,
                     respBytes,
+                    respBody,
                     snapshotAgeMs,
                     predicateChangedMsAgo,
                 }

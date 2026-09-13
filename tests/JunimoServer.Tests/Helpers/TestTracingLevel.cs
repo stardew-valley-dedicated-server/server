@@ -5,24 +5,33 @@ namespace JunimoServer.Tests.Helpers;
 /// <c>SDVD_TEST_TRACING</c> environment variable.
 ///
 /// <para>
-/// Default: <see cref="None"/>. Cheap snapshot endpoints (<c>/players</c>,
-/// <c>/health</c>, <c>/status</c>) skip body buffering and JSON re-parsing.
-/// Used by <c>test</c> / <c>test-ci</c> targets where throughput dominates
-/// over diagnostic richness.
+/// Default (when <c>SDVD_TEST_TRACING</c> is unset): <see cref="Full"/> — an
+/// ad-hoc run is fully reconstructable from artifacts without a re-run.
+/// Per-test attribution (the <c>X-Test-Id</c> header) is emitted at every
+/// level, so throughput-sensitive contexts opt down explicitly without losing
+/// it: CI pins <c>none</c> (see <c>.github/workflows/e2e-tests.yml</c>), keeping
+/// the parallel-suite throughput of the old default while every server event
+/// stays test-attributable.
 /// </para>
 ///
 /// <para>
-/// <see cref="Basic"/> opts back into <c>X-Request-Id</c> for mutating verbs
+/// <see cref="None"/> is the cheapest path: no <c>X-Request-Id</c>, no body
+/// buffering. Cheap snapshot endpoints (<c>/players</c>, <c>/health</c>,
+/// <c>/status</c>) skip body buffering and JSON re-parsing.
+/// </para>
+///
+/// <para>
+/// <see cref="Basic"/> opts into <c>X-Request-Id</c> for mutating verbs
 /// (POST/PUT/PATCH/DELETE) so a debug session can correlate a write request
 /// with the mod-side event timeline without paying the body-buffer cost on
 /// every read poll.
 /// </para>
 ///
 /// <para>
-/// <see cref="Full"/> is today's behavior — body buffering, <c>respSummary</c>,
-/// X-Request-Id on every verb, <c>wait_started</c> emits. Used by
-/// <c>test-llm</c> for AI-debug context capture and by flake-repro sessions
-/// where every cross-process correlation matters.
+/// <see cref="Full"/> adds X-Request-Id on every verb, (capped, scrubbed)
+/// response-body capture, and <c>wait_started</c> emits. Used by <c>test-llm</c>
+/// for AI-debug context capture and by flake-repro sessions where every
+/// cross-process correlation matters.
 /// </para>
 ///
 /// <para>
@@ -34,13 +43,13 @@ namespace JunimoServer.Tests.Helpers;
 /// </summary>
 public enum TestTracingLevel
 {
-    /// <summary>Cheapest. No body buffer, no respSummary, no request-id, no wait_started.</summary>
+    /// <summary>Cheapest. No body buffer, no request-id, no wait_started.</summary>
     None = 0,
 
     /// <summary>Adds <c>X-Request-Id</c> for mutating verbs (POST/PUT/PATCH/DELETE) only.</summary>
     Basic = 1,
 
-    /// <summary>All of today's tracing: body buffer, respSummary, request-id on every verb, wait_started.</summary>
+    /// <summary>Richest: <c>respBody</c> capture, request-id on every verb, wait_started. The unset default.</summary>
     Full = 2,
 }
 
@@ -64,10 +73,19 @@ public static class TestTracing
             .ToLowerInvariant();
         return raw switch
         {
-            null or "" or "none" => TestTracingLevel.None,
+            "none" => TestTracingLevel.None,
             "basic" => TestTracingLevel.Basic,
             "full" => TestTracingLevel.Full,
-            _ => TestTracingLevel.None, // unknown values fall back to the cheapest path
+            // Unset → Full: every server event gets a requestId and (capped,
+            // scrubbed) response bodies are captured, so a failing ad-hoc run is
+            // fully reconstructable from artifacts without a re-run. Per-test
+            // attribution (X-Test-Id) is level-independent, so throughput-sensitive
+            // contexts opt down explicitly (CI pins "none").
+            null or "" => TestTracingLevel.Full,
+            // A typo must not silently select the expensive tier.
+            _ => throw new InvalidOperationException(
+                $"SDVD_TEST_TRACING='{raw}' is not recognized; use none, basic, or full (unset = full)."
+            ),
         };
     }
 }
