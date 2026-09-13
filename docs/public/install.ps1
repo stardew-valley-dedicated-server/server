@@ -120,11 +120,11 @@ function Confirm-Restart {
     return -not ($reply -eq 'n' -or $reply -eq 'no')
 }
 
-# True when the compose file is a JunimoServer one — it carries the canonical SDVD_COMPOSE_REV
-# environment entry this installer manages (the form validate-pr.yml checks; a bare mention in a
-# comment or value doesn't count). An update overwrites docker-compose.yml and runs `docker compose
-# up -d --remove-orphans`, which would tear down an unrelated project's containers, so a foreign
-# compose is refused, not adopted.
+# True when the file is a JunimoServer compose. It counts as one only if it has the canonical
+# `- SDVD_COMPOSE_REV=<n>` line that validate-pr.yml checks for, so a stray mention of the name in
+# a comment or value does not match. This guard matters because an update overwrites
+# docker-compose.yml and runs `docker compose up -d --remove-orphans`, which would tear down the
+# containers of an unrelated project if we adopted its compose by mistake.
 function Test-JunimoCompose($file) {
     return [bool](Select-String -Path $file -Pattern '^\s*- SDVD_COMPOSE_REV=\d+\s*$' -Quiet)
 }
@@ -158,7 +158,7 @@ try {
 
 if (Test-Path docker-compose.yml) {
     if (-not (Test-JunimoCompose 'docker-compose.yml')) {
-        Die "This folder's docker-compose.yml isn't a JunimoServer one — you're probably in the wrong directory. To set up a new server, run the installer in a folder with no docker-compose.yml and it sets up .\junimoserver. If this is an older JunimoServer server, re-download $master/docker-compose.yml and rerun."
+        Die "This folder's docker-compose.yml isn't a JunimoServer one, so you're probably in the wrong directory. To set up a new server, run the installer from a folder that has no docker-compose.yml and it will create .\junimoserver. If this is an older JunimoServer server, re-download it from $master/docker-compose.yml and run the installer again."
     }
     # -- Update -----------------------------------------------------------------------------------
     Write-Host "Updating server in $((Get-Location).Path)"
