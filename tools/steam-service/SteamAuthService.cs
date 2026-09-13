@@ -521,8 +521,9 @@ public class SteamAuthService
 
     /// <summary>
     /// Lists the usable sessions under {baseSessionDir}/{username}/session.json, newest-first by
-    /// file write time. Malformed and token-less files are skipped; an absent directory yields an
-    /// empty list.
+    /// file write time. Malformed and token-less files are skipped, as is a folder whose name is
+    /// not the account inside it (only {username} folders can be bound); an absent directory
+    /// yields an empty list.
     /// </summary>
     public static List<(string username, string path, DateTime writtenUtc)> FindSessions(
         string baseSessionDir
@@ -538,7 +539,7 @@ public class SteamAuthService
         {
             var path = Path.Combine(dir, "session.json");
             var session = TryLoadSession(path);
-            if (session != null)
+            if (session != null && session.Value.username == Path.GetFileName(dir))
             {
                 sessions.Add((session.Value.username, path, File.GetLastWriteTimeUtc(path)));
             }
@@ -630,6 +631,7 @@ public class SteamAuthService
             var input = Console.ReadLine() ?? "";
             if (TryResolveSessionChoice(sessions, input, out var chosen))
             {
+                Console.WriteLine();
                 return chosen;
             }
             Console.Write($"Enter a number 1-{sessions.Count}, n for a new login, or Enter: ");
@@ -854,6 +856,7 @@ public class SteamAuthService
             var chosen = ChooseStoredSession(FindSessions(_baseSessionDir));
             if (chosen != null)
             {
+                Console.WriteLine($"Signing in to Steam as {chosen}...");
                 // Bind before loading so the saved-session read targets the right folder.
                 BindIdentity(chosen);
                 try
@@ -2218,7 +2221,7 @@ public class SteamAuthService
                 totalFiles
             );
 
-            Logger.LogTotal();
+            Logger.LogTotal($"{_logPrefix} Total time:");
         }
         catch (Exception ex)
         {

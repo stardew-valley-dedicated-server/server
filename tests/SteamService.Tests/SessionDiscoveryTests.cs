@@ -64,14 +64,12 @@ public class FindSessionsTests : IDisposable
     }
 
     [Fact]
-    public void UsernameComesFromFileContentNotFolderName()
+    public void SkipsFolderWhoseNameIsNotTheAccountInside()
     {
-        WriteRaw(
-            "folder",
-            JsonSerializer.Serialize(new { username = "inside", refreshToken = "t" })
-        );
+        WriteSession("alice", DateTime.UtcNow);
+        WriteRaw("setup", JsonSerializer.Serialize(new { username = "alice", refreshToken = "t" }));
 
-        Assert.Equal("inside", Assert.Single(SteamAuthService.FindSessions(_baseDir)).username);
+        Assert.Equal(["alice"], SteamAuthService.FindSessions(_baseDir).Select(s => s.username));
     }
 
     private void WriteSession(string username, DateTime writtenUtc)

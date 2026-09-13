@@ -264,6 +264,7 @@ switch (command)
         if (accounts.Count == 0)
         {
             // No accounts configured; run interactive setup for account 0
+            Console.WriteLine();
             Logger.Log("[SteamService] No accounts configured, running interactive setup...");
             var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
@@ -303,6 +304,7 @@ switch (command)
     case "login":
         if (accounts.Count == 0)
         {
+            Console.WriteLine();
             Logger.Log("[SteamService] No accounts configured, running interactive login...");
             var svc = new SteamAuthService(0, "", sessionDir, gameDir);
             await svc.LoginInteractiveAsync();
