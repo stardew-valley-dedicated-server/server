@@ -327,8 +327,7 @@ internal sealed class ClientPool : IAsyncDisposable
                 TestLog.Client(
                     $"No idle client, {outstandingClients} in use; waiting up to {patience.TotalSeconds:0}s for a return before creating"
                 );
-                using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                deadlineCts.CancelAfter(patience);
+                using var deadlineCts = Cts.LinkedTimeout(ct, patience);
                 try
                 {
                     await WaitTrace.RunAsync(
@@ -687,8 +686,7 @@ internal sealed class ClientPool : IAsyncDisposable
             // released (an account leak). Fail fast as infrastructure rather than block to
             // the run-stall watchdog. The readiness-probe phase swallows cancellation and
             // dequeues anyway, so this bound only converts the semaphore-starvation case.
-            using var allocCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            allocCts.CancelAfter(TestTimings.SteamAccountAllocationBound);
+            using var allocCts = Cts.LinkedTimeout(ct, TestTimings.SteamAccountAllocationBound);
             try
             {
                 steamAccountIndex = await _accountAllocator!.AllocateClientAsync(allocCts.Token);

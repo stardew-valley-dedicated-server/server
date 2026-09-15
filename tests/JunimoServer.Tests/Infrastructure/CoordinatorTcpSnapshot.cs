@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 
 namespace JunimoServer.Tests.Infrastructure;
@@ -72,8 +73,7 @@ internal static class CoordinatorTcpSnapshot
                 return DefaultSshPort;
             }
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(ToolTimeout);
+            using var timeoutCts = Cts.LinkedTimeout(ct, ToolTimeout);
             var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
             _ = process.StandardError.ReadToEndAsync(timeoutCts.Token);
             try
@@ -188,8 +188,7 @@ internal static class CoordinatorTcpSnapshot
                 );
             }
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(ToolTimeout);
+            using var timeoutCts = Cts.LinkedTimeout(ct, ToolTimeout);
             var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
             var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
             try
@@ -243,8 +242,7 @@ internal static class CoordinatorTcpSnapshot
         try
         {
             using var client = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            connectCts.CancelAfter(ConnectTimeout);
+            using var connectCts = Cts.LinkedTimeout(ct, ConnectTimeout);
             await client.ConnectAsync(host, port, connectCts.Token);
             return new ReachabilityProbe(host, port, "connected", Elapsed(started), null);
         }

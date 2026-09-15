@@ -37,148 +37,20 @@ public static class PollingHelper
         return WaitTrace.RunAsync<bool>(
             name,
             () =>
-                WaitUntilCoreAsync(
+                PollCoreAsync<bool>(
                     name,
-                    condition,
+                    async (_, _) =>
+                    {
+                        var matched = await condition();
+                        return new PollOutcome<bool>(matched, matched, 0);
+                    },
                     timeout,
+                    PollMode.Snapshot,
                     pollInterval,
                     cancellationToken,
                     onTimeoutAsync
                 ),
             cancellationToken
-        );
-    }
-
-    private static async Task<bool> WaitUntilCoreAsync(
-        WaitName name,
-        Func<Task<bool>> condition,
-        TimeSpan timeout,
-        TimeSpan? pollInterval,
-        CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync
-    )
-    {
-        var interval = pollInterval ?? TestTimings.FastPollInterval;
-        var sw = Stopwatch.StartNew();
-        Exception? lastException = null;
-        var iterations = 0;
-        var succeeded = false;
-        var label = name.ToString();
-
-        // Bracket the slot to the helper's lifetime so the wait_matched emit
-        // attributes only to HTTP calls made by this helper's condition.
-        using var _diagScope = HttpResponseDiagnostics.BeginScope();
-
-        try
-        {
-            while (sw.Elapsed < timeout)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                iterations++;
-
-                try
-                {
-                    if (await condition())
-                    {
-                        succeeded = true;
-                        EmitWaitMatched(label);
-                        return true;
-                    }
-
-                    lastException = null; // Condition ran successfully, just returned false
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    lastException = ex;
-                }
-
-                await Task.Delay(interval, cancellationToken);
-            }
-
-            // Surface the last exception if polling timed out due to repeated failures
-            if (lastException != null)
-            {
-                throw new TimeoutException(
-                    FormattableString.Invariant(
-                        $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
-                    ) + $"Last error: {lastException.Message}",
-                    lastException
-                );
-            }
-
-            return false;
-        }
-        finally
-        {
-            object? diagnostics = null;
-            string? onTimeoutError = null;
-            if (!succeeded && onTimeoutAsync != null)
-            {
-                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
-                    onTimeoutAsync
-                );
-            }
-
-            InfrastructureEventLog.Emit(
-                "poll_completed",
-                new
-                {
-                    label,
-                    succeeded,
-                    iterations,
-                    durationMs = sw.ElapsedMilliseconds,
-                    timeoutMs = (long)timeout.TotalMilliseconds,
-                    error = lastException?.Message,
-                    ctCancelled = cancellationToken.IsCancellationRequested,
-                    diagnostics,
-                    onTimeoutError,
-                }
-            );
-        }
-    }
-
-    /// <summary>
-    /// On a successful poll, emit <c>wait_matched</c> with envelope <c>ts</c>
-    /// and <c>runMs</c> attributed to the predicate-transition instant on the
-    /// server's clock (producer-time), not the harness observation instant.
-    /// The server reports this via the
-    /// <c>X-Predicate-Changed-At-Ms-Ago</c> response header on each
-    /// <c>/wait/*</c> match — sharper than the snapshot's capture time, which
-    /// is gated to the 1Hz snapshot publish cadence and can lag the actual
-    /// tick of the field change by up to 1s.
-    ///
-    /// <para>
-    /// Skipped when the matched response carried no
-    /// <c>X-Predicate-Changed-At-Ms-Ago</c> header — happens for endpoints
-    /// whose predicate has no associated field-change time (e.g. version-only
-    /// `/wait/players` with no playerId filter, or test-client-mod endpoints
-    /// that don't emit the header). The producer instant is unknown in those
-    /// cases and observer-time would conflate the two clock regimes on one
-    /// event name.
-    /// </para>
-    ///
-    /// <para>
-    /// Call immediately at success, before returning, so the producer event
-    /// lands on disk before any consequence the caller emits. Caller must
-    /// have an active <see cref="HttpResponseDiagnostics.BeginScope"/>.
-    /// </para>
-    /// </summary>
-    internal static void EmitWaitMatched(string label)
-    {
-        var msAgo = HttpResponseDiagnostics.LastPredicateChangedMsAgo;
-        if (msAgo is not long ago)
-        {
-            return;
-        }
-
-        var producerTime = new InfrastructureEventLog.EventTime(
-            DateTime.UtcNow - TimeSpan.FromMilliseconds(ago),
-            RunMetadata.GetRunMs() - ago
-        );
-        InfrastructureEventLog.Emit(
-            "wait_matched",
-            new { label, predicateChangedMsAgo = ago },
-            eventTime: producerTime
         );
     }
 
@@ -202,103 +74,21 @@ public static class PollingHelper
         return WaitTrace.RunAsync<T?>(
             name,
             () =>
-                WaitForResultCoreAsync<T>(
+                PollCoreAsync<T>(
                     name,
-                    producer,
+                    async (_, _) =>
+                    {
+                        var result = await producer();
+                        return new PollOutcome<T>(result != null, result, 0);
+                    },
                     timeout,
+                    PollMode.Snapshot,
                     pollInterval,
                     cancellationToken,
                     onTimeoutAsync
                 ),
             cancellationToken
         );
-    }
-
-    private static async Task<T?> WaitForResultCoreAsync<T>(
-        WaitName name,
-        Func<Task<T?>> producer,
-        TimeSpan timeout,
-        TimeSpan? pollInterval,
-        CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync
-    )
-        where T : class
-    {
-        var interval = pollInterval ?? TestTimings.FastPollInterval;
-        var sw = Stopwatch.StartNew();
-        Exception? lastException = null;
-        var iterations = 0;
-        var succeeded = false;
-        var label = name.ToString();
-
-        using var _diagScope = HttpResponseDiagnostics.BeginScope();
-
-        try
-        {
-            while (sw.Elapsed < timeout)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                iterations++;
-
-                try
-                {
-                    var result = await producer();
-                    if (result != null)
-                    {
-                        succeeded = true;
-                        EmitWaitMatched(label);
-                        return result;
-                    }
-
-                    lastException = null;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    lastException = ex;
-                }
-
-                await Task.Delay(interval, cancellationToken);
-            }
-
-            if (lastException != null)
-            {
-                throw new TimeoutException(
-                    FormattableString.Invariant(
-                        $"Polling [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
-                    ) + $"Last error: {lastException.Message}",
-                    lastException
-                );
-            }
-
-            return default;
-        }
-        finally
-        {
-            object? diagnostics = null;
-            string? onTimeoutError = null;
-            if (!succeeded && onTimeoutAsync != null)
-            {
-                (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
-                    onTimeoutAsync
-                );
-            }
-
-            InfrastructureEventLog.Emit(
-                "poll_completed",
-                new
-                {
-                    label,
-                    succeeded,
-                    iterations,
-                    durationMs = sw.ElapsedMilliseconds,
-                    timeoutMs = (long)timeout.TotalMilliseconds,
-                    error = lastException?.Message,
-                    ctCancelled = cancellationToken.IsCancellationRequested,
-                    diagnostics,
-                    onTimeoutError,
-                }
-            );
-        }
     }
 
     /// <summary>
@@ -360,19 +150,67 @@ public static class PollingHelper
     {
         return WaitTrace.RunAsync<bool>(
             name,
-            () => LongPollCoreAsync(name, condition, timeout, cancellationToken, onTimeoutAsync),
+            () =>
+                PollCoreAsync<bool>(
+                    name,
+                    async (since, remaining) =>
+                    {
+                        var result = await condition(since, remaining);
+                        return new PollOutcome<bool>(
+                            result.Matched,
+                            result.Matched,
+                            result.Version
+                        );
+                    },
+                    timeout,
+                    PollMode.LongPoll,
+                    pollInterval: null,
+                    cancellationToken,
+                    onTimeoutAsync
+                ),
             cancellationToken
         );
     }
 
-    private static async Task<bool> LongPollCoreAsync(
+    /// <summary>
+    /// <see cref="Snapshot"/> throttles each iteration with a client-side
+    /// <c>Task.Delay</c> and emits <c>poll_completed</c>; <see cref="LongPoll"/>
+    /// relies on the server blocking the request, keeps a <c>since</c> cursor,
+    /// and emits <c>long_poll_completed</c> with <c>snapshotVersionAtMatch</c>.
+    /// </summary>
+    private enum PollMode
+    {
+        Snapshot,
+        LongPoll,
+    }
+
+    /// <summary>
+    /// One iteration's outcome. <see cref="Value"/> is what the outer wait
+    /// returns on a match; <see cref="Version"/> is the snapshot cursor the
+    /// next iteration receives as <c>since</c> (always 0 in snapshot mode).
+    /// </summary>
+    private readonly record struct PollOutcome<T>(bool Matched, T? Value, long Version);
+
+    /// <summary>
+    /// The one poll loop behind the three public primitives. Returns
+    /// <see cref="PollOutcome{T}.Value"/> on the first match and
+    /// <c>default</c> on a clean timeout; a timeout whose last iteration
+    /// threw surfaces that exception wrapped in a <see cref="TimeoutException"/>.
+    /// <see cref="OperationCanceledException"/> is never caught, so
+    /// cancellation propagates to <see cref="WaitTrace"/>.
+    /// </summary>
+    private static async Task<T?> PollCoreAsync<T>(
         WaitName name,
-        Func<long, TimeSpan, Task<LongPollResult>> condition,
+        Func<long, TimeSpan, Task<PollOutcome<T>>> step,
         TimeSpan timeout,
+        PollMode mode,
+        TimeSpan? pollInterval,
         CancellationToken cancellationToken,
         Func<Task<object?>>? onTimeoutAsync
     )
     {
+        var longPoll = mode == PollMode.LongPoll;
+        var interval = pollInterval ?? TestTimings.FastPollInterval;
         var sw = Stopwatch.StartNew();
         Exception? lastException = null;
         var iterations = 0;
@@ -381,6 +219,8 @@ public static class PollingHelper
         long? snapshotVersionAtMatch = null;
         var label = name.ToString();
 
+        // Bracket the slot to the helper's lifetime so the wait_matched emit
+        // attributes only to HTTP calls made by this helper's condition.
         using var _diagScope = HttpResponseDiagnostics.BeginScope();
 
         try
@@ -398,42 +238,53 @@ public static class PollingHelper
 
                 try
                 {
-                    var result = await condition(since, remaining);
-                    if (result.Matched)
+                    var outcome = await step(since, remaining);
+                    if (outcome.Matched)
                     {
                         succeeded = true;
-                        snapshotVersionAtMatch = result.Version;
+                        if (longPoll)
+                        {
+                            snapshotVersionAtMatch = outcome.Version;
+                        }
+
                         EmitWaitMatched(label);
-                        return true;
+                        return outcome.Value;
                     }
 
-                    lastException = null;
+                    lastException = null; // Step ran successfully, just didn't match
                     // Advance the cursor on a non-match so the server doesn't
                     // return the same stale snapshot on the next round-trip.
                     // 408 responses with no observed version leave Version
                     // unchanged from `since`, so this guard is a no-op there.
-                    if (result.Version > since)
+                    if (outcome.Version > since)
                     {
-                        since = result.Version;
+                        since = outcome.Version;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     lastException = ex;
                 }
+
+                if (!longPoll)
+                {
+                    await Task.Delay(interval, cancellationToken);
+                }
             }
 
+            // Surface the last exception if polling timed out due to repeated failures
             if (lastException != null)
             {
+                var kind = longPoll ? "Long-poll" : "Polling";
                 throw new TimeoutException(
                     FormattableString.Invariant(
-                        $"Long-poll [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
+                        $"{kind} [{label}] timed out after {timeout.TotalSeconds:F1}s ({iterations} iterations). "
                     ) + $"Last error: {lastException.Message}",
                     lastException
                 );
             }
 
-            return false;
+            return default;
         }
         finally
         {
@@ -446,23 +297,93 @@ public static class PollingHelper
                 );
             }
 
-            InfrastructureEventLog.Emit(
-                "long_poll_completed",
-                new
-                {
-                    label,
-                    succeeded,
-                    iterations,
-                    durationMs = sw.ElapsedMilliseconds,
-                    timeoutMs = (long)timeout.TotalMilliseconds,
-                    snapshotVersionAtMatch,
-                    error = lastException?.Message,
-                    ctCancelled = cancellationToken.IsCancellationRequested,
-                    diagnostics,
-                    onTimeoutError,
-                }
-            );
+            var durationMs = sw.ElapsedMilliseconds;
+            var timeoutMs = (long)timeout.TotalMilliseconds;
+            var error = lastException?.Message;
+            var ctCancelled = cancellationToken.IsCancellationRequested;
+            if (longPoll)
+            {
+                InfrastructureEventLog.Emit(
+                    "long_poll_completed",
+                    new
+                    {
+                        label,
+                        succeeded,
+                        iterations,
+                        durationMs,
+                        timeoutMs,
+                        snapshotVersionAtMatch,
+                        error,
+                        ctCancelled,
+                        diagnostics,
+                        onTimeoutError,
+                    }
+                );
+            }
+            else
+            {
+                InfrastructureEventLog.Emit(
+                    "poll_completed",
+                    new
+                    {
+                        label,
+                        succeeded,
+                        iterations,
+                        durationMs,
+                        timeoutMs,
+                        error,
+                        ctCancelled,
+                        diagnostics,
+                        onTimeoutError,
+                    }
+                );
+            }
         }
+    }
+
+    /// <summary>
+    /// On a successful poll, emit <c>wait_matched</c> with envelope <c>ts</c>
+    /// and <c>runMs</c> attributed to the predicate-transition instant on the
+    /// server's clock (producer-time), not the harness observation instant.
+    /// The server reports this via the
+    /// <c>X-Predicate-Changed-At-Ms-Ago</c> response header on each
+    /// <c>/wait/*</c> match — sharper than the snapshot's capture time, which
+    /// is gated to the 1Hz snapshot publish cadence and can lag the actual
+    /// tick of the field change by up to 1s.
+    ///
+    /// <para>
+    /// Skipped when the matched response carried no
+    /// <c>X-Predicate-Changed-At-Ms-Ago</c> header — happens for endpoints
+    /// whose predicate has no associated field-change time (e.g. version-only
+    /// `/wait/players` with no playerId filter, or test-client-mod endpoints
+    /// that don't emit the header). The producer instant is unknown in those
+    /// cases and observer-time would conflate the two clock regimes on one
+    /// event name.
+    /// </para>
+    ///
+    /// <para>
+    /// Call immediately at success, before returning, so the producer event
+    /// lands on disk before any consequence the caller emits. Caller must
+    /// have an active <see cref="HttpResponseDiagnostics.BeginScope"/>.
+    /// </para>
+    /// </summary>
+    internal static void EmitWaitMatched(string label)
+    {
+        var msAgo = HttpResponseDiagnostics.LastPredicateChangedMsAgo;
+        if (msAgo is not long ago)
+        {
+            return;
+        }
+
+        var producerTime = new InfrastructureEventLog.EventTime(
+            DateTime.UtcNow - TimeSpan.FromMilliseconds(ago),
+            RunMetadata.GetRunMs() - ago
+        );
+        InfrastructureEventLog.Emit(
+            "wait_matched",
+            new { label, predicateChangedMsAgo = ago },
+            eventTime: producerTime
+        );
     }
 
     /// <summary>

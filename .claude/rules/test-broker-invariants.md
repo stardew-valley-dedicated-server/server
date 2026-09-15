@@ -41,7 +41,7 @@ Load-bearing invariants for the test resource broker, capacity gating, and sessi
 
 ## Polling Budgets
 
-- **Outer polling budget must be ≠ the inner per-request timeout, or retries are impossible.** `TestTimings.PollingRequestTimeout` (5s) is a *per-HTTP-request* guard inside helpers like `ServerApiClient.WaitForPlayerByIdAsync`. Passing it as the *outer* polling timeout means a single slow request eats the whole budget — zero retries. Define a separate outer budget (e.g. `SessionRevalidationBudget = 2s` mirrors `FarmerRemovalBudget = 2s`) sized for the happy path on a cached endpoint (`/players` responds in <50ms). Inner and outer timeouts live next to each other in `TestTimings.cs`; easy to mix up.
+- **Outer polling budget must be ≠ the inner per-request timeout, or retries are impossible.** `TestTimings.PollingRequestTimeout` (5s) is a *per-HTTP-request* guard inside helpers like `ServerApiClient.WaitForPlayersRemovedByIdAsync`. Passing it as the *outer* polling timeout means a single slow request eats the whole budget — zero retries. Define a separate outer budget (e.g. `SessionRevalidationBudget = 2s` mirrors `FarmerRemovalBudget = 2s`) sized for the happy path on a cached endpoint (`/players` responds in <50ms). Inner and outer timeouts live next to each other in `TestTimings.cs`; easy to mix up.
 
 ## Server Config Keys
 
