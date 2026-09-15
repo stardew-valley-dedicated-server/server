@@ -183,6 +183,7 @@
             "matchManagers": ["nuget"],
             "matchFileNames": [
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj",
+                "tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj",
                 "tests/SteamService.Tests/SteamService.Tests.csproj"
             ],
             "matchPackageNames": ["Microsoft.NET.Test.Sdk"],
@@ -190,11 +191,12 @@
             "allowedVersions": "<18.0.0"
         },
         {
-            "description": "CAP — xunit.v3 stack below 4.0 (coordinated MTP-v2 major, deferred alongside the Test.Sdk 18 cap above). xunit.v3 (Tests, SteamService.Tests) + xunit.v3.runner.utility (TestRunner) must move together — split majors fail restore (NU1107, mismatched xunit.v3.runner.common) — and 4.x drops AssemblyRunnerOptions.ParallelizeTestCollections, set in TestRunner/Program.cs. xunit.runner.visualstudio is deliberately NOT capped: it has no xunit.v3 package dependency, and 4.0.0 runs xunit.v3 3.2.2 projects under VSTest (verified: SteamService.Tests 7/7 green on the runner-4.0 Renovate PR). versioning:semver — nuget silently no-ops allowedVersions on interleaved prereleases.",
+            "description": "CAP — xunit.v3 stack below 4.0 (coordinated MTP-v2 major, deferred alongside the Test.Sdk 18 cap above). xunit.v3 (Tests, UnitTests, SteamService.Tests) + xunit.v3.runner.utility (TestRunner) must move together — split majors fail restore (NU1107, mismatched xunit.v3.runner.common) — and 4.x drops AssemblyRunnerOptions.ParallelizeTestCollections, set in TestRunner/Program.cs. xunit.runner.visualstudio is deliberately NOT capped: it has no xunit.v3 package dependency, and 4.0.0 runs xunit.v3 3.2.2 projects under VSTest (verified: SteamService.Tests 7/7 green on the runner-4.0 Renovate PR). versioning:semver — nuget silently no-ops allowedVersions on interleaved prereleases.",
             "matchManagers": ["nuget"],
             "matchFileNames": [
                 "tests/JunimoServer.Tests/JunimoServer.Tests.csproj",
                 "tests/JunimoServer.TestRunner/JunimoServer.TestRunner.csproj",
+                "tests/JunimoServer.UnitTests/JunimoServer.UnitTests.csproj",
                 "tests/SteamService.Tests/SteamService.Tests.csproj"
             ],
             "matchPackageNames": ["xunit.v3", "xunit.v3.runner.utility"],
