@@ -91,6 +91,7 @@ public static class Logger
             {
                 ts = DateTime.UtcNow,
                 requestId = SidecarRequestContext.Current,
+                testId = SidecarRequestContext.TestId,
                 service = "steam-auth",
                 @event = name,
                 data,
