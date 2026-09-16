@@ -42,9 +42,30 @@ public static class TestIdentityContext
             return new TestIdentity(
                 Class: testClass.TestClassSimpleName,
                 Method: testMethod.MethodName,
-                DisplayName: displayName
+                DisplayName: ToPrintableAscii(displayName)
             );
         }
+    }
+
+    /// <summary>
+    /// Canonical printable-ASCII form of a test display name — one normalizer shared by the emitted
+    /// <c>test.displayName</c> and the <c>X-Test-Id</c> header, so the two stay byte-identical and
+    /// the <c>testId ↔ test.displayName</c> join holds. The header must be printable ASCII anyway
+    /// (<c>HttpClient</c> throws on a non-ASCII byte, <c>HttpListener</c> 400s on a CR/LF), which a
+    /// Theory argument can violate. Idempotent; returns the original reference for the
+    /// all-printable-ASCII names every current test has.
+    /// </summary>
+    public static string ToPrintableAscii(string value)
+    {
+        foreach (var c in value)
+        {
+            if (c < ' ' || c > '~')
+            {
+                return new string(value.Select(ch => ch >= ' ' && ch <= '~' ? ch : '?').ToArray());
+            }
+        }
+
+        return value;
     }
 
     /// <summary>
