@@ -3439,7 +3439,9 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Retries DELETE /farmhands?name=X until Success == true.
+    /// Polls DELETE /farmhands?name=X until the farmhand is gone. A DELETE that reports
+    /// Success is the direct signal; a Success=false result is reconciled against the
+    /// /farmhands snapshot, and an absent name is also treated as done — see the probe.
     /// </summary>
     public async Task<FarmhandOperationResponse?> WaitForFarmhandDeletedByNameAsync(
         string name,
@@ -3453,7 +3455,34 @@ public class ServerApiClient : IDisposable
             async token =>
             {
                 result = await DeleteFarmhandByName(name, token);
-                return result?.Success == true;
+                if (result?.Success == true)
+                {
+                    return true;
+                }
+
+                // The server commits the deletion on a 15s game-thread budget that ignores
+                // the client's per-request token (ApiService.HandleDeleteFarmhandAsync). If the
+                // game thread is blocked 5-15s (day transition / save sync), the committing
+                // DELETE can surface here as a transport fault, and the next DELETE then reports
+                // "not found" (Success=false) though the deletion already landed. Reconcile the
+                // ambiguous outcome against the snapshot: an absent name means the delete is done.
+                var farmhands = await GetFarmhands(token);
+                var stillPresent =
+                    farmhands?.Farmhands.Any(f =>
+                        string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)
+                    )
+                    ?? true;
+                if (!stillPresent)
+                {
+                    result = new FarmhandOperationResponse
+                    {
+                        Success = true,
+                        Message = $"Farmhand '{name}' confirmed absent after ambiguous delete",
+                    };
+                    return true;
+                }
+
+                return false;
             },
             timeout ?? TestTimings.FarmerDeleteTimeout,
             ct,
