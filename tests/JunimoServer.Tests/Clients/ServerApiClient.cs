@@ -3074,12 +3074,8 @@ public class ServerApiClient : IDisposable
                             : $"IsOnline={status.IsOnline}, IsReady={status.IsReady}";
                     }
                 }
-                catch (Exception ex) when (IsTransportFault(ex))
+                catch (Exception ex)
                 {
-                    // Only transport faults are retryable here (connection refused / 5xx
-                    // during cold start, the per-request timeout, cancellation). Anything
-                    // else — a deserialization failure against a 200 body — is a real bug and
-                    // propagates rather than being masked as a null timeout after the deadline.
                     lastException = ex;
                     lastReason = $"{ex.GetType().Name}: {ex.Message}";
                 }
