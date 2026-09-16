@@ -1,3 +1,4 @@
+using JunimoServer.Tests.Clients;
 using JunimoServer.Tests.Helpers;
 using JunimoServer.Tests.Schema.Events;
 
@@ -155,8 +156,11 @@ internal sealed class DayChangeWaiter
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ServerApiClient.IsTransportFault(ex))
             {
+                // Retry transport faults through the volatile day-transition window; a
+                // non-transport exception (e.g. a deserialization failure) is a real bug
+                // and propagates rather than being masked as a warning until the deadline.
                 LogWarning($"Status poll error: {ex.Message}");
             }
         }

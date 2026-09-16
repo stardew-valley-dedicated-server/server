@@ -1624,12 +1624,15 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Transport faults a poll iteration retries instead of surfacing: connection
+    /// The canonical retryable-fault classifier for every wait/poll loop: connection
     /// errors, non-success statuses (<c>EnsureSuccessStatusCode</c> throws
     /// <see cref="HttpRequestException"/>) and the per-request timeout. Anything
-    /// else, such as a deserialization failure, propagates so the wait reports it.
+    /// else, such as a deserialization failure, is a genuine bug — a loop that filters
+    /// on this lets it propagate so the wait reports it instead of retrying to the
+    /// deadline. Shared with bespoke loops (e.g. <c>DayChangeWaiter</c>) so they classify
+    /// faults identically to the <c>PollSnapshotAsync</c>/<c>LongPollSnapshotAsync</c> adapters.
     /// </summary>
-    private static bool IsTransportFault(Exception ex) =>
+    internal static bool IsTransportFault(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or OperationCanceledException;
 
     /// <summary>
@@ -1662,7 +1665,11 @@ public class ServerApiClient : IDisposable
             },
             timeout,
             cancellationToken: ct,
-            onTimeoutAsync: onTimeoutAsync
+            onTimeoutAsync: onTimeoutAsync,
+            // The probe above converts every transport fault to a non-match, so any exception
+            // that still escapes (e.g. a deserialization failure) is a real bug — fail fast
+            // instead of retrying it to the deadline and reporting a masking TimeoutException.
+            retryOnError: false
         );
     }
 
@@ -1710,13 +1717,19 @@ public class ServerApiClient : IDisposable
                 }
                 catch (Exception ex) when (IsTransportFault(ex) && !ct.IsCancellationRequested)
                 {
-                    // Cursor is unchanged; the next iteration retries from `since`.
+                    // Cursor is unchanged; the next iteration retries from `since`. Long-poll
+                    // has no client-side delay, so a persistently unreachable server re-issues
+                    // promptly until the deadline — expected; the server block is the pacing.
                     return new PollingHelper.LongPollResult(false, since);
                 }
             },
             timeout,
             cancellationToken: ct,
-            onTimeoutAsync: onTimeoutAsync
+            onTimeoutAsync: onTimeoutAsync,
+            // The fetch above converts every transport fault to a non-match, so any exception
+            // that still escapes (e.g. a deserialization failure) is a real bug — fail fast
+            // instead of retrying it to the deadline and reporting a masking TimeoutException.
+            retryOnError: false
         );
     }
 
@@ -3054,8 +3067,12 @@ public class ServerApiClient : IDisposable
                             : $"IsOnline={status.IsOnline}, IsReady={status.IsReady}";
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (IsTransportFault(ex))
                 {
+                    // Only transport faults are retryable here (connection refused / 5xx
+                    // during cold start, the per-request timeout, cancellation). Anything
+                    // else — a deserialization failure against a 200 body — is a real bug and
+                    // propagates rather than being masked as a null timeout after the deadline.
                     lastException = ex;
                     lastReason = $"{ex.GetType().Name}: {ex.Message}";
                 }

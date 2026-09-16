@@ -25,13 +25,19 @@ public static class PollingHelper
     /// <c>poll_completed</c> event under <c>diagnostics</c>. Exceptions from the collector
     /// are swallowed and replaced with an <c>onTimeoutError</c> field. Short-circuited by a
     /// 2-second internal deadline so a broken collector cannot hang the test.</param>
+    /// <param name="retryOnError">See <see cref="PollCoreAsync{T}"/>. Leave <c>true</c> for a
+    /// <paramref name="condition"/> that makes its own network calls without pre-filtering
+    /// transport faults (it relies on the loop to retry through transient blips). Pass
+    /// <c>false</c> only when the condition already converts every retryable fault to a
+    /// non-match, so any escaping exception is a genuine bug that should surface at once.</param>
     public static Task<bool> WaitUntilAsync(
         WaitName name,
         Func<Task<bool>> condition,
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null
+        Func<Task<object?>>? onTimeoutAsync = null,
+        bool retryOnError = true
     )
     {
         return WaitTrace.RunAsync<bool>(
@@ -48,7 +54,8 @@ public static class PollingHelper
                     PollMode.Snapshot,
                     pollInterval,
                     cancellationToken,
-                    onTimeoutAsync
+                    onTimeoutAsync,
+                    retryOnError
                 ),
             cancellationToken
         );
@@ -61,13 +68,15 @@ public static class PollingHelper
     /// </summary>
     /// <param name="name">Wire-stable wait identifier for tracing.</param>
     /// <param name="onTimeoutAsync">See <see cref="WaitUntilAsync"/>.</param>
+    /// <param name="retryOnError">See <see cref="WaitUntilAsync"/>.</param>
     public static Task<T?> WaitForResultAsync<T>(
         WaitName name,
         Func<Task<T?>> producer,
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null
+        Func<Task<object?>>? onTimeoutAsync = null,
+        bool retryOnError = true
     )
         where T : class
     {
@@ -85,7 +94,8 @@ public static class PollingHelper
                     PollMode.Snapshot,
                     pollInterval,
                     cancellationToken,
-                    onTimeoutAsync
+                    onTimeoutAsync,
+                    retryOnError
                 ),
             cancellationToken
         );
@@ -140,12 +150,18 @@ public static class PollingHelper
     /// from a bespoke loop.
     /// </para>
     /// </summary>
+    /// <param name="retryOnError">See <see cref="WaitUntilAsync"/>. There is deliberately no
+    /// client-side delay between long-poll iterations, so when a <paramref name="condition"/>
+    /// converts transport faults to non-matches and passes <c>false</c> here, a persistently
+    /// failing endpoint re-issues promptly until the deadline — expected, because the server
+    /// block is the pacing mechanism and a live server never fails this way.</param>
     public static Task<bool> LongPollAsync(
         WaitName name,
         Func<long, TimeSpan, Task<LongPollResult>> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null
+        Func<Task<object?>>? onTimeoutAsync = null,
+        bool retryOnError = true
     )
     {
         return WaitTrace.RunAsync<bool>(
@@ -166,7 +182,8 @@ public static class PollingHelper
                     PollMode.LongPoll,
                     pollInterval: null,
                     cancellationToken,
-                    onTimeoutAsync
+                    onTimeoutAsync,
+                    retryOnError
                 ),
             cancellationToken
         );
@@ -194,10 +211,20 @@ public static class PollingHelper
     /// <summary>
     /// The one poll loop behind the three public primitives. Returns
     /// <see cref="PollOutcome{T}.Value"/> on the first match and
-    /// <c>default</c> on a clean timeout; a timeout whose last iteration
-    /// threw surfaces that exception wrapped in a <see cref="TimeoutException"/>.
+    /// <c>default</c> on a clean timeout.
     /// <see cref="OperationCanceledException"/> is never caught, so
     /// cancellation propagates to <see cref="WaitTrace"/>.
+    ///
+    /// <para>
+    /// <paramref name="retryOnError"/> controls how a throwing <paramref name="step"/> is
+    /// handled. When <c>true</c>, the exception is stored and the loop retries until the
+    /// timeout, then surfaces the last one wrapped in a <see cref="TimeoutException"/> — right
+    /// for a step that makes its own network calls without pre-filtering transport faults.
+    /// When <c>false</c>, the exception propagates immediately: use this when the step already
+    /// converts every retryable fault to a non-match, so an escaping exception (e.g. a
+    /// deserialization failure) is a genuine bug that must surface at once instead of burning
+    /// the whole wait budget and reporting a <see cref="TimeoutException"/> that hides it.
+    /// </para>
     /// </summary>
     private static async Task<T?> PollCoreAsync<T>(
         WaitName name,
@@ -206,7 +233,8 @@ public static class PollingHelper
         PollMode mode,
         TimeSpan? pollInterval,
         CancellationToken cancellationToken,
-        Func<Task<object?>>? onTimeoutAsync
+        Func<Task<object?>>? onTimeoutAsync,
+        bool retryOnError = true
     )
     {
         var longPoll = mode == PollMode.LongPoll;
@@ -261,7 +289,7 @@ public static class PollingHelper
                         since = outcome.Version;
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (retryOnError && ex is not OperationCanceledException)
                 {
                     lastException = ex;
                 }
