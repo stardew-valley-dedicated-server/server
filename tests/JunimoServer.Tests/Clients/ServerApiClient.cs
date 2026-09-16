@@ -1624,14 +1624,23 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// The retryable-fault classifier for the wait/poll loops: connection errors,
+    /// The retryable-fault classifier for the wait/poll loops: connection errors and
     /// non-success statuses (<c>EnsureSuccessStatusCode</c> throws
-    /// <see cref="HttpRequestException"/>) and the per-request timeout. Anything else,
-    /// such as a deserialization failure, is a genuine bug — a loop that filters on this
-    /// lets it propagate so the wait reports it instead of retrying to the deadline.
+    /// <see cref="HttpRequestException"/>), the per-request timeout
+    /// (<see cref="TaskCanceledException"/>), and a connection dropped mid-response —
+    /// a premature EOF surfaces as <c>HttpIOException</c>, which derives from
+    /// <see cref="IOException"/>, not <see cref="HttpRequestException"/>. Anything else,
+    /// notably a <c>JsonException</c> from a complete but malformed body, is a genuine
+    /// bug — a loop that filters on this lets it propagate so the wait reports it instead
+    /// of retrying to the deadline. (A truncated body is a premature EOF, so it retries;
+    /// only well-formed-transport-but-bad-content surfaces.)
     /// </summary>
     private static bool IsTransportFault(Exception ex) =>
-        ex is HttpRequestException or TaskCanceledException or OperationCanceledException;
+        ex
+            is HttpRequestException
+                or IOException
+                or TaskCanceledException
+                or OperationCanceledException;
 
     /// <summary>
     /// Snapshot poll against a fast endpoint. Each <paramref name="probe"/> call
