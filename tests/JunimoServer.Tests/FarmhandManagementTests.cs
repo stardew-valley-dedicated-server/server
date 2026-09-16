@@ -70,19 +70,40 @@ public class FarmhandManagementTests : TestBase
     }
 
     /// <summary>
-    /// Verifies that after deleting an offline farmhand, the slot becomes available
-    /// and a new player can join using that freed slot.
-    /// This tests the full create → delete → reuse cycle.
+    /// Verifies that deleting a farmhand frees its cabin for reuse. Runs on a dedicated
+    /// single-cabin server: <c>CabinStrategy=None</c> caps the pool at
+    /// <c>min(designated positions, MaxPlayers) = 1</c> and <c>EnsureAtLeastXCabins</c> can't grow
+    /// it, so once that cabin is customized the freed slot is the ONLY way a later farmer can join.
+    /// The default strategy always keeps a spare cabin, which would let a second join succeed
+    /// without reusing anything — the reuse is only provable against a capped pool. Exclusive so no
+    /// sibling test churns the capped pool.
     /// </summary>
     [Fact]
+    [TestServer(Exclusive = true, CabinStrategy = "None", MaxPlayers = 1)]
     public async Task DeleteFarmhand_SlotBecomesReusable()
     {
-        // Create first farmer, disconnect, and wait for persistence
+        // Fill the single-cabin pool: a customized farmhand leaves it with no available slot.
         var client1 = await Farmers.ConnectFastAsync(ct: TestCt);
-        await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
-        Log($"After first join: farmer '{client1.FarmerName}' exists");
+        CabinsResponse? cabins = null;
+        var poolFull = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_FarmhandManagement_SingleCabinFull,
+            async () =>
+            {
+                cabins = await ServerApi.GetCabins(TestCt);
+                return cabins is { TotalCount: 1, AvailableCount: 0 };
+            },
+            TestTimings.FarmerRemovalBudget,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            poolFull,
+            "Capped pool should be full (1 cabin, 0 available) after the first farmer customizes; "
+                + $"got total={cabins?.TotalCount}, available={cabins?.AvailableCount}"
+        );
 
-        // Delete farmer1 (poll until server processes disconnect)
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
+
+        // Delete the only farmhand. DELETE runs EnsureAtLeastXCabins, which rebuilds the freed cabin.
         Log($"Deleting farmhand '{client1.FarmerName}'...");
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             client1.FarmerName,
@@ -94,26 +115,19 @@ public class FarmhandManagementTests : TestBase
         );
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == client1.JoinResult.UniqueMultiplayerId);
 
-        // Prove reuse functionally rather than asserting a pool-global uncustomized-slot
-        // count: this class shares its server (SharedAssembly), and the server keeps only a
-        // single spare cabin (CabinManagerService.minEmptyCabins == 1). A concurrent test's
-        // fast-join precustomize can consume that spare between our delete and a snapshot read,
-        // flipping the count to 0 for a window we don't own — so a count assertion here is
-        // unprovable on a non-Exclusive server. Instead, connect a second client: a real join
-        // drives sendAvailableFarmhands -> EnsureAtLeastXCabins, which obtains a slot regardless
-        // of concurrent consumption, and WaitForFarmhandByNameAsync waits for it to appear
-        // customized. That is test-owned state and is the actual reuse proof.
+        // The pool was full and can't grow, so a second farmer can join ONLY by reusing the slot
+        // the delete freed — there is nowhere else for it to go.
         var client2 = await Farmers.ConnectNewAsync(ct: TestCt);
-
-        // Verify farmer2 exists (poll until name syncs)
         var farmer2Found = await ServerApi.WaitForFarmhandByNameAsync(
             client2.FarmerName,
             requireCustomized: true,
             ct: TestCt
         );
-
-        Assert.True(farmer2Found, $"Farmer '{client2.FarmerName}' should exist after reusing slot");
-        Log($"Slot reuse successful: farmer '{client2.FarmerName}' joined using freed slot");
+        Assert.True(
+            farmer2Found,
+            $"Farmer '{client2.FarmerName}' should join by reusing the one freed slot"
+        );
+        Log($"Slot reuse successful: farmer '{client2.FarmerName}' joined using the freed slot");
     }
 
     /// <summary>
