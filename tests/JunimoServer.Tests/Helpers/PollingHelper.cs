@@ -221,6 +221,9 @@ public static class PollingHelper
     /// converts every retryable fault to a non-match, so an escaping exception (e.g. a
     /// deserialization failure) is a genuine bug that must surface at once instead of burning
     /// the whole wait budget and reporting a <see cref="TimeoutException"/> that hides it.
+    /// Cancellation always wins over fail-fast: while <paramref name="cancellationToken"/> is
+    /// cancelled, an incidental exception is swallowed so the wait ends as a clean cancellation
+    /// rather than surfacing transport noise from a torn-down server.
     /// </para>
     /// </summary>
     private static async Task<T?> PollCoreAsync<T>(
@@ -286,8 +289,16 @@ public static class PollingHelper
                         since = outcome.Version;
                     }
                 }
-                catch (Exception ex) when (retryOnError && ex is not OperationCanceledException)
+                catch (Exception ex)
+                    when (ex is not OperationCanceledException
+                        && (retryOnError || cancellationToken.IsCancellationRequested)
+                    )
                 {
+                    // Store-and-continue either to retry (retryOnError) or, on the fail-fast
+                    // path, to let cancellation win: if the caller's token is already cancelled,
+                    // an incidental fault from the in-flight request (e.g. a reset while the
+                    // server is torn down) must not surface as a spurious failure — the next
+                    // loop's ThrowIfCancellationRequested turns it into a clean cancellation.
                     lastException = ex;
                 }
 
