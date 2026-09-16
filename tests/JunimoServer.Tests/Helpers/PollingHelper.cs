@@ -222,8 +222,8 @@ public static class PollingHelper
     /// deserialization failure) is a genuine bug that must surface at once instead of burning
     /// the whole wait budget and reporting a <see cref="TimeoutException"/> that hides it.
     /// Cancellation always wins over fail-fast: while <paramref name="cancellationToken"/> is
-    /// cancelled, an incidental exception is swallowed so the wait ends as a clean cancellation
-    /// rather than surfacing transport noise from a torn-down server.
+    /// cancelled, an incidental exception surfaces as a clean cancellation instead of transport
+    /// noise from a torn-down server — even when the deadline expired on the same iteration.
     /// </para>
     /// </summary>
     private static async Task<T?> PollCoreAsync<T>(
@@ -243,6 +243,7 @@ public static class PollingHelper
         Exception? lastException = null;
         var iterations = 0;
         var succeeded = false;
+        var deadlineExpired = false;
         long since = 0;
         long? snapshotVersionAtMatch = null;
         var label = name.ToString();
@@ -258,6 +259,7 @@ public static class PollingHelper
                 var remaining = timeout - sw.Elapsed;
                 if (remaining <= TimeSpan.Zero)
                 {
+                    deadlineExpired = true;
                     break;
                 }
 
@@ -294,11 +296,13 @@ public static class PollingHelper
                         && (retryOnError || cancellationToken.IsCancellationRequested)
                     )
                 {
-                    // Store-and-continue either to retry (retryOnError) or, on the fail-fast
-                    // path, to let cancellation win: if the caller's token is already cancelled,
-                    // an incidental fault from the in-flight request (e.g. a reset while the
-                    // server is torn down) must not surface as a spurious failure — the next
-                    // loop's ThrowIfCancellationRequested turns it into a clean cancellation.
+                    // Cancellation wins over the incidental fault: a reset from an in-flight
+                    // request while the server is torn down must surface as a clean cancellation,
+                    // not a stored exception the deadline break could later re-wrap as a masking
+                    // TimeoutException. Surface it here rather than relying on the next loop, which
+                    // may break on an expired budget before reaching ThrowIfCancellationRequested.
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // Otherwise store-and-continue to retry through the transient blip (retryOnError).
                     lastException = ex;
                 }
 
@@ -326,7 +330,11 @@ public static class PollingHelper
         {
             object? diagnostics = null;
             string? onTimeoutError = null;
-            if (!succeeded && onTimeoutAsync != null)
+            // Only a genuine deadline timeout warrants the diagnostic collector. A fail-fast
+            // exception (retryOnError: false) or a cancellation propagates through here with
+            // succeeded == false but deadlineExpired == false — running onTimeoutAsync there
+            // would delay the real error behind a 2s dump and emit timeout-shaped diagnostics.
+            if (!succeeded && deadlineExpired && onTimeoutAsync != null)
             {
                 (diagnostics, onTimeoutError) = await CollectTimeoutDiagnosticsAsync(
                     onTimeoutAsync
