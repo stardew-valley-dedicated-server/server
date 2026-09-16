@@ -68,15 +68,13 @@ public static class PollingHelper
     /// </summary>
     /// <param name="name">Wire-stable wait identifier for tracing.</param>
     /// <param name="onTimeoutAsync">See <see cref="WaitUntilAsync"/>.</param>
-    /// <param name="retryOnError">See <see cref="WaitUntilAsync"/>.</param>
     public static Task<T?> WaitForResultAsync<T>(
         WaitName name,
         Func<Task<T?>> producer,
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null,
-        bool retryOnError = true
+        Func<Task<object?>>? onTimeoutAsync = null
     )
         where T : class
     {
@@ -94,8 +92,7 @@ public static class PollingHelper
                     PollMode.Snapshot,
                     pollInterval,
                     cancellationToken,
-                    onTimeoutAsync,
-                    retryOnError
+                    onTimeoutAsync
                 ),
             cancellationToken
         );

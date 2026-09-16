@@ -1624,15 +1624,13 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// The canonical retryable-fault classifier for every wait/poll loop: connection
-    /// errors, non-success statuses (<c>EnsureSuccessStatusCode</c> throws
-    /// <see cref="HttpRequestException"/>) and the per-request timeout. Anything
-    /// else, such as a deserialization failure, is a genuine bug — a loop that filters
-    /// on this lets it propagate so the wait reports it instead of retrying to the
-    /// deadline. Shared with bespoke loops (e.g. <c>DayChangeWaiter</c>) so they classify
-    /// faults identically to the <c>PollSnapshotAsync</c>/<c>LongPollSnapshotAsync</c> adapters.
+    /// The retryable-fault classifier for the wait/poll loops: connection errors,
+    /// non-success statuses (<c>EnsureSuccessStatusCode</c> throws
+    /// <see cref="HttpRequestException"/>) and the per-request timeout. Anything else,
+    /// such as a deserialization failure, is a genuine bug — a loop that filters on this
+    /// lets it propagate so the wait reports it instead of retrying to the deadline.
     /// </summary>
-    internal static bool IsTransportFault(Exception ex) =>
+    private static bool IsTransportFault(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or OperationCanceledException;
 
     /// <summary>
