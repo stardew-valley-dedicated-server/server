@@ -1,3 +1,4 @@
+using System.Text;
 using Xunit;
 
 namespace JunimoServer.Tests.Helpers;
@@ -42,30 +43,44 @@ public static class TestIdentityContext
             return new TestIdentity(
                 Class: testClass.TestClassSimpleName,
                 Method: testMethod.MethodName,
-                DisplayName: ToPrintableAscii(displayName)
+                DisplayName: ToHeaderSafeId(displayName)
             );
         }
     }
 
     /// <summary>
-    /// Canonical printable-ASCII form of a test display name — one normalizer shared by the emitted
-    /// <c>test.displayName</c> and the <c>X-Test-Id</c> header, so the two stay byte-identical and
-    /// the <c>testId ↔ test.displayName</c> join holds. The header must be printable ASCII anyway
-    /// (<c>HttpClient</c> throws on a non-ASCII byte, <c>HttpListener</c> 400s on a CR/LF), which a
-    /// Theory argument can violate. Idempotent; returns the original reference for the
-    /// all-printable-ASCII names every current test has.
+    /// Canonical form of a test display name. One shared normalizer produces both the emitted
+    /// <c>test.displayName</c> and the <c>X-Test-Id</c> header, so the two are identical and the
+    /// <c>testId</c> to <c>test.displayName</c> join is reliable. The value must be printable ASCII
+    /// because the header requires it (<c>HttpClient</c> cannot carry non-ASCII cleanly, and
+    /// <c>HttpListener</c> returns 400 on a CR or LF), which a Theory argument can violate. Each
+    /// non-ASCII character maps to its own hex code, so names that differ only in non-ASCII
+    /// characters produce different output and two tests never merge into one attribution. Applied
+    /// once at the single source above; callers use <see cref="TestIdentity.DisplayName"/> as-is.
     /// </summary>
-    public static string ToPrintableAscii(string value)
+    public static string ToHeaderSafeId(string value)
     {
+        // Skip plain ASCII names, which every test currently has.
+        if (!value.AsSpan().ContainsAnyExceptInRange(' ', '~'))
+        {
+            return value;
+        }
+
+        // Otherwise replace every non-ASCII character with its hex code so the result stays ASCII.
+        var sb = new StringBuilder();
         foreach (var c in value)
         {
             if (c < ' ' || c > '~')
             {
-                return new string(value.Select(ch => ch >= ' ' && ch <= '~' ? ch : '?').ToArray());
+                sb.Append("\\u").Append(((int)c).ToString("X4"));
+            }
+            else
+            {
+                sb.Append(c);
             }
         }
 
-        return value;
+        return sb.ToString();
     }
 
     /// <summary>

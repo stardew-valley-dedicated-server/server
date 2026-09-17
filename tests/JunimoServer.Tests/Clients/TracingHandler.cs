@@ -106,16 +106,13 @@ internal sealed class TracingHandler : DelegatingHandler
         // server event — including reads that carry no request-id — is attributable
         // to its originating test. Sourced per-async-flow from the ambient test
         // identity, so it must be set here, not on HttpClient.DefaultRequestHeaders.
-        // Normalize to printable ASCII (the header contract; see ToPrintableAscii) — the same
-        // normalizer that produced test.displayName, so the server's testId matches it exactly.
+        // DisplayName is already the header-safe canonical form (see ToHeaderSafeId), so
+        // the server's testId matches the emitted test.displayName exactly.
         var testId = TestIdentityContext.Current?.DisplayName;
         if (!string.IsNullOrEmpty(testId))
         {
             request.Headers.Remove(TestIdHeader);
-            request.Headers.TryAddWithoutValidation(
-                TestIdHeader,
-                TestIdentityContext.ToPrintableAscii(testId)
-            );
+            request.Headers.TryAddWithoutValidation(TestIdHeader, testId);
         }
 
         long? reqBytes = null;
