@@ -502,7 +502,9 @@ async Task RunHttpServerAsync(
     // and echoes the request id on the response. Events emitted inside the
     // pipeline (Logger.LogEvent) carry both so the test harness can stitch
     // sidecar events to the triggering mod request and to the originating
-    // test. Missing/blank headers leave the ids null.
+    // test. A missing header leaves its id null; both senders (the harness
+    // TracingHandler and the mod's SteamAuthCorrelationHandler) skip empty
+    // values, so a present header is never blank.
     app.Use(
         async (ctx, next) =>
         {

@@ -56,6 +56,7 @@ internal sealed class TracingHandler : DelegatingHandler
     /// a full snapshot response readable in the artifact.
     /// </summary>
     private const int RespBodyMaxChars = 2000;
+    private const string TruncatedMarker = "…[truncated]";
 
     private readonly string _clientKind;
     private readonly TestTracingLevel _level;
@@ -187,14 +188,16 @@ internal sealed class TracingHandler : DelegatingHandler
                     // Decode only a bounded prefix — a char is at most 4 UTF-8 bytes,
                     // so RespBodyMaxChars*4 bytes always yields at least the cap in
                     // chars — rather than materializing a large body as a full string.
+                    // The marker counts against the cap so respBody never exceeds it.
                     var decodeBytes = Math.Min(bytes.Length, RespBodyMaxChars * 4);
                     var text = System.Text.Encoding.UTF8.GetString(bytes, 0, decodeBytes);
                     var truncated = decodeBytes < bytes.Length || text.Length > RespBodyMaxChars;
-                    if (text.Length > RespBodyMaxChars)
-                    {
-                        text = text.Substring(0, RespBodyMaxChars);
-                    }
-                    respBody = truncated ? text + "…[truncated]" : text;
+                    respBody = truncated
+                        ? string.Concat(
+                            text.AsSpan(0, RespBodyMaxChars - TruncatedMarker.Length),
+                            TruncatedMarker
+                        )
+                        : text;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
