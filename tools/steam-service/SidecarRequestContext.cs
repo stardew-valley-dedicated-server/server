@@ -18,39 +18,36 @@ namespace SteamService;
 /// </summary>
 public static class SidecarRequestContext
 {
-    private static readonly AsyncLocal<string?> _requestId = new();
-    private static readonly AsyncLocal<string?> _testId = new();
+    // Both ids share one AsyncLocal so a bind is a single execution-context
+    // value-map rebuild (not one per id) and the pair can never be split — a
+    // boundary restores both or neither.
+    private static readonly AsyncLocal<(string? RequestId, string? TestId)> _ids = new();
 
     /// <summary>The inbound <c>X-Request-Id</c>, if any.</summary>
-    public static string? Current => _requestId.Value;
+    public static string? RequestId => _ids.Value.RequestId;
 
     /// <summary>The inbound <c>X-Test-Id</c> (the originating test's display name), if any.</summary>
-    public static string? TestId => _testId.Value;
+    public static string? TestId => _ids.Value.TestId;
 
     /// <summary>
-    /// Binds both ids for the duration of a request handler. Set together so
-    /// no scope can carry one and drop the other. The returned handle
+    /// Binds both ids for the duration of a request handler. The returned handle
     /// restores the previous values on <see cref="IDisposable.Dispose"/>.
     /// </summary>
-    public static IDisposable Begin(string? requestId, string? testId)
+    public static IDisposable Bind(string? requestId, string? testId)
     {
-        var previousRequestId = _requestId.Value;
-        var previousTestId = _testId.Value;
-        _requestId.Value = requestId;
-        _testId.Value = testId;
-        return new Scope(previousRequestId, previousTestId);
+        var previous = _ids.Value;
+        _ids.Value = (requestId, testId);
+        return new Scope(previous);
     }
 
     private sealed class Scope : IDisposable
     {
-        private readonly string? _previousRequestId;
-        private readonly string? _previousTestId;
+        private readonly (string? RequestId, string? TestId) _previous;
         private bool _disposed;
 
-        public Scope(string? previousRequestId, string? previousTestId)
+        public Scope((string? RequestId, string? TestId) previous)
         {
-            _previousRequestId = previousRequestId;
-            _previousTestId = previousTestId;
+            _previous = previous;
         }
 
         public void Dispose()
@@ -61,8 +58,7 @@ public static class SidecarRequestContext
             }
 
             _disposed = true;
-            _requestId.Value = _previousRequestId;
-            _testId.Value = _previousTestId;
+            _ids.Value = _previous;
         }
     }
 }

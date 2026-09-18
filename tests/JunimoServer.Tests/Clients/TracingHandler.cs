@@ -183,15 +183,18 @@ internal sealed class TracingHandler : DelegatingHandler
                     }
                     response.Content = rewrapped;
 
-                    // Truncated body text. Redaction of any sensitive value is applied
-                    // by the runner's in-place ReportRedactor scrub over
-                    // infrastructure.jsonl (ScrubRunFilesInPlace, on every run), the
-                    // same as every other diagnostic that lands in that stream.
-                    var text = System.Text.Encoding.UTF8.GetString(bytes);
-                    respBody =
-                        text.Length > RespBodyMaxChars
-                            ? text.Substring(0, RespBodyMaxChars) + "…[truncated]"
-                            : text;
+                    // Truncated body text (redaction happens later; see class doc).
+                    // Decode only a bounded prefix — a char is at most 4 UTF-8 bytes,
+                    // so RespBodyMaxChars*4 bytes always yields at least the cap in
+                    // chars — rather than materializing a large body as a full string.
+                    var decodeBytes = Math.Min(bytes.Length, RespBodyMaxChars * 4);
+                    var text = System.Text.Encoding.UTF8.GetString(bytes, 0, decodeBytes);
+                    var truncated = decodeBytes < bytes.Length || text.Length > RespBodyMaxChars;
+                    if (text.Length > RespBodyMaxChars)
+                    {
+                        text = text.Substring(0, RespBodyMaxChars);
+                    }
+                    respBody = truncated ? text + "…[truncated]" : text;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

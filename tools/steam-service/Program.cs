@@ -513,7 +513,7 @@ async Task RunHttpServerAsync(
             }
 
             string? testId = ctx.Request.Headers["X-Test-Id"].FirstOrDefault();
-            using var _scope = SidecarRequestContext.Begin(requestId, testId);
+            using var _scope = SidecarRequestContext.Bind(requestId, testId);
             await next();
         }
     );
