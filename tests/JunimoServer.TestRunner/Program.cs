@@ -980,21 +980,12 @@ try
 {
     var callbacks = new RunnerCallbacks(renderer);
 
-    // Enable collection-level parallelism (default: true) unless:
-    // - SDVD_HOST_CLIENT=true (single shared host process, can't parallelize)
-    // - SDVD_PARALLEL=false (explicit opt-out)
-    var hostClient = string.Equals(
-        Environment.GetEnvironmentVariable("SDVD_HOST_CLIENT"),
-        "true",
+    // Collection-level parallelism (default: true) unless SDVD_PARALLEL=false opts out.
+    var parallel = !string.Equals(
+        Environment.GetEnvironmentVariable("SDVD_PARALLEL"),
+        "false",
         StringComparison.OrdinalIgnoreCase
     );
-    var parallel =
-        !hostClient
-        && !string.Equals(
-            Environment.GetEnvironmentVariable("SDVD_PARALLEL"),
-            "false",
-            StringComparison.OrdinalIgnoreCase
-        );
 
     // SDVD_STOP_ON_FAIL: defaults to true (stop on first failure).
     var stopOnFail = !string.Equals(

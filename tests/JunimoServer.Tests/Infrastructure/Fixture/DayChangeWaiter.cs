@@ -118,23 +118,11 @@ internal sealed class DayChangeWaiter
                     // wedding render) then takes over. On an ordinary day it equals IsReady, so
                     // non-festival/non-wedding tests are unchanged.
                     var readySw = System.Diagnostics.Stopwatch.StartNew();
-                    var settled = await PollingHelper.LongPollAsync(
+                    var settled = await _testBase.ServerApi.WaitForStatusMatchAsync(
                         WaitName.Polling_TestBase_PostTransitionSettle,
-                        async (settleSince, settleRemaining) =>
-                        {
-                            var s = await _testBase.ServerApi.WaitForStatusAsync(
-                                since: settleSince,
-                                dayTransitionComplete: true,
-                                timeout: settleRemaining,
-                                ct: ct
-                            );
-                            return new PollingHelper.LongPollResult(
-                                s != null,
-                                s?.Version ?? settleSince
-                            );
-                        },
                         TestTimings.DayTransitionSettleTimeout,
-                        cancellationToken: ct
+                        dayTransitionComplete: true,
+                        ct: ct
                     );
                     Log(
                         $"Post-transition settle: {readySw.ElapsedMilliseconds}ms"

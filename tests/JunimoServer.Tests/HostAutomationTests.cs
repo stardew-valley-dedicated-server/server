@@ -40,20 +40,11 @@ public class HostAutomationTests : TestBase
         Log($"Set time to {setTimeResult.TimeOfDay}");
 
         // Poll until the game reports IsPaused=true (confirms AlwaysOn paused with 0 players)
-        var pauseConfirmed = await PollingHelper.LongPollAsync(
+        var pauseConfirmed = await ServerApi.WaitForStatusMatchAsync(
             WaitName.Polling_HostAutomation_PauseConfirmed,
-            async (since, remaining) =>
-            {
-                var s = await ServerApi.WaitForStatusAsync(
-                    since: since,
-                    isPaused: true,
-                    timeout: remaining,
-                    ct: ct
-                );
-                return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
-            },
             TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
+            isPaused: true,
+            ct: ct
         );
         Assert.True(pauseConfirmed, "Server should report IsPaused=true with no players connected");
 
@@ -77,29 +68,20 @@ public class HostAutomationTests : TestBase
             // At 10x speed, 2s covers ~28 game-ticks worth of verification.
             // No equality filter on TimeOfDay — use `since` to wait for any newer
             // snapshot, then check TimeOfDay-changed on the returned body.
-            var timeAdvanced = await PollingHelper.LongPollAsync(
+            var timeAdvanced = await ServerApi.WaitForStatusMatchAsync(
                 WaitName.Polling_HostAutomation_TimeAdvanced,
-                async (since, remaining) =>
+                TestTimings.TimePausedVerification,
+                matches: s =>
                 {
-                    var s = await ServerApi.WaitForStatusAsync(
-                        since: since,
-                        timeout: remaining,
-                        ct: ct
-                    );
-                    if (s == null)
+                    if (s.TimeOfDay == time1)
                     {
-                        return new PollingHelper.LongPollResult(false, since);
+                        return false;
                     }
 
-                    if (s.TimeOfDay != time1)
-                    {
-                        Log($"Time changed: {time1} → {s.TimeOfDay}, PlayerCount={s.PlayerCount}");
-                        return new PollingHelper.LongPollResult(true, s.Version);
-                    }
-                    return new PollingHelper.LongPollResult(false, s.Version);
+                    Log($"Time changed: {time1} → {s.TimeOfDay}, PlayerCount={s.PlayerCount}");
+                    return true;
                 },
-                TestTimings.TimePausedVerification,
-                cancellationToken: ct
+                ct: ct
             );
 
             // Time should NOT have advanced (game is paused with no other players)
@@ -134,30 +116,12 @@ public class HostAutomationTests : TestBase
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
 
         // Poll until game is unpaused (confirms game is running with player connected)
-        var unpauseConfirmed = await PollingHelper.LongPollAsync(
+        var unpauseConfirmed = await ServerApi.WaitForStatusMatchAsync(
             WaitName.Polling_HostAutomation_UnpauseConfirmed,
-            async (since, remaining) =>
-            {
-                var s = await ServerApi.WaitForStatusAsync(
-                    since: since,
-                    isPaused: false,
-                    timeout: remaining,
-                    ct: ct
-                );
-                if (s == null)
-                {
-                    return new PollingHelper.LongPollResult(false, since);
-                }
-
-                if (s.TimeOfDay >= TestTimings.Noon)
-                {
-                    return new PollingHelper.LongPollResult(true, s.Version);
-                }
-
-                return new PollingHelper.LongPollResult(false, s.Version);
-            },
             TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
+            matches: s => s.TimeOfDay >= TestTimings.Noon,
+            isPaused: false,
+            ct: ct
         );
         Assert.True(
             unpauseConfirmed,
@@ -178,24 +142,11 @@ public class HostAutomationTests : TestBase
             // Poll until time advances (should complete in ~0.7s at 10x speed).
             // No equality filter on TimeOfDay — wait for any newer snapshot via
             // `since`, then check the >- condition on the returned body.
-            await PollingHelper.LongPollAsync(
+            await ServerApi.WaitForStatusMatchAsync(
                 WaitName.Polling_HostAutomation_TimeAdvancedSecond,
-                async (since, remaining) =>
-                {
-                    var s = await ServerApi.WaitForStatusAsync(
-                        since: since,
-                        timeout: remaining,
-                        ct: ct
-                    );
-                    if (s == null)
-                    {
-                        return new PollingHelper.LongPollResult(false, since);
-                    }
-
-                    return new PollingHelper.LongPollResult(s.TimeOfDay > time1, s.Version);
-                },
                 TestTimings.TimeAdvanceWait,
-                cancellationToken: ct
+                matches: s => s.TimeOfDay > time1,
+                ct: ct
             );
         }
         finally
@@ -631,28 +582,17 @@ public class HostAutomationTests : TestBase
     /// </summary>
     private async Task WaitForNoPlayersAsync(CancellationToken ct)
     {
-        var noPlayers = await PollingHelper.LongPollAsync(
+        var noPlayers = await ServerApi.WaitForStatusMatchAsync(
             WaitName.Polling_HostAutomation_NoPlayers,
-            async (since, remaining) =>
-            {
-                var s = await ServerApi.WaitForStatusAsync(
-                    since: since,
-                    isReady: true,
-                    playerCount: 0,
-                    timeout: remaining,
-                    ct: ct
-                );
-                if (s != null)
-                {
-                    Log(
-                        $"PlayerCount==0 confirmed: PlayerCount={s.PlayerCount}, IsReady={s.IsReady}"
-                    );
-                }
-
-                return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
-            },
             TestTimings.ServerReadyBetweenTests,
-            cancellationToken: ct
+            matches: s =>
+            {
+                Log($"PlayerCount==0 confirmed: PlayerCount={s.PlayerCount}, IsReady={s.IsReady}");
+                return true;
+            },
+            isReady: true,
+            playerCount: 0,
+            ct: ct
         );
         Assert.True(noPlayers, "Server should have no players connected before testing time pause");
     }
@@ -662,20 +602,11 @@ public class HostAutomationTests : TestBase
     /// </summary>
     private async Task WaitForPausedAsync(WaitName waitName, CancellationToken ct)
     {
-        var pauseConfirmed = await PollingHelper.LongPollAsync(
+        var pauseConfirmed = await ServerApi.WaitForStatusMatchAsync(
             waitName,
-            async (since, remaining) =>
-            {
-                var s = await ServerApi.WaitForStatusAsync(
-                    since: since,
-                    isPaused: true,
-                    timeout: remaining,
-                    ct: ct
-                );
-                return new PollingHelper.LongPollResult(s != null, s?.Version ?? since);
-            },
             TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
+            isPaused: true,
+            ct: ct
         );
         Assert.True(pauseConfirmed, "Server should report IsPaused=true with no players connected");
     }

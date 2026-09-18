@@ -31,25 +31,11 @@ public class NavigationTests : TestBase
         // InviteCode is read from a file, not from the snapshot — long-poll for
         // any newer snapshot via `since`, then check IsOnline + InviteCode in
         // the response body.
-        var hasCode = await PollingHelper.LongPollAsync(
+        var hasCode = await ServerApi.WaitForStatusMatchAsync(
             WaitName.Polling_Navigation_HasInviteCode,
-            async (since, remaining) =>
-            {
-                var status = await ServerApi.WaitForStatusAsync(
-                    since: since,
-                    timeout: remaining,
-                    ct: ct
-                );
-                if (status == null)
-                {
-                    return new PollingHelper.LongPollResult(false, since);
-                }
-
-                var matched = status.IsOnline && !string.IsNullOrEmpty(status.InviteCode);
-                return new PollingHelper.LongPollResult(matched, status.Version);
-            },
             TimeSpan.FromSeconds(10),
-            cancellationToken: ct
+            matches: status => status.IsOnline && !string.IsNullOrEmpty(status.InviteCode),
+            ct: ct
         );
         Assert.True(hasCode, "Server should have an invite code");
 

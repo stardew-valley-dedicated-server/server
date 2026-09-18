@@ -10,7 +10,7 @@ namespace JunimoServer.Tests.Clients;
 /// Server status data returned by the /status endpoint.
 /// Mirrors the ServerStatus class from ApiService.
 /// </summary>
-public class ServerStatus
+public class ServerStatus : IVersionedSnapshot
 {
     [JsonPropertyName("playerCount")]
     public int PlayerCount { get; set; }
@@ -1614,7 +1614,7 @@ public class ServerApiClient : IDisposable
         var url = path + "?" + string.Join("&", query);
 
         var response = await GetRetrySafeAsync(url, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+        if (response.StatusCode == HttpStatusCode.RequestTimeout)
         {
             return null;
         }
@@ -1624,7 +1624,7 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// The retryable-fault classifier for the wait/poll loops: connection errors and
+    /// The retryable-fault filter for the wait/poll loops: connection errors and
     /// non-success statuses (<c>EnsureSuccessStatusCode</c> throws
     /// <see cref="HttpRequestException"/>), the per-request timeout
     /// (<see cref="TaskCanceledException"/>), and a connection dropped mid-response —
@@ -1632,10 +1632,10 @@ public class ServerApiClient : IDisposable
     /// <see cref="IOException"/>, not <see cref="HttpRequestException"/>. Anything else,
     /// notably a <c>JsonException</c> from a complete but malformed body, is a genuine
     /// bug — a loop that filters on this lets it propagate so the wait reports it instead
-    /// of retrying to the deadline. (A truncated body is a premature EOF, so it retries;
-    /// only well-formed-transport-but-bad-content surfaces.)
+    /// of retrying to the deadline. Unrelated to <c>TransportFaultClassifier</c>, which
+    /// decides host poisoning on typed codes and deliberately ignores most of these.
     /// </summary>
-    private static bool IsTransportFault(Exception ex) =>
+    private static bool IsRetryableRequestFault(Exception ex) =>
         ex
             is HttpRequestException
                 or IOException
@@ -1660,23 +1660,40 @@ public class ServerApiClient : IDisposable
             name,
             async () =>
             {
-                try
-                {
-                    using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
-                    return await probe(reqCts.Token);
-                }
-                catch (Exception ex) when (IsTransportFault(ex) && !ct.IsCancellationRequested)
-                {
-                    return false;
-                }
+                using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
+                return await probe(reqCts.Token);
             },
             timeout,
             cancellationToken: ct,
             onTimeoutAsync: onTimeoutAsync,
-            // The probe above converts every transport fault to a non-match, so any exception
-            // that still escapes (e.g. a deserialization failure) is a real bug — fail fast
-            // instead of retrying it to the deadline and reporting a masking TimeoutException.
-            retryOnError: false
+            isRetryable: IsRetryableRequestFault
+        );
+    }
+
+    /// <summary>
+    /// <see cref="PollSnapshotAsync"/> for a probe that yields the matched value:
+    /// returns the first non-null result, or <c>null</c> at the deadline.
+    /// </summary>
+    private Task<T?> PollSnapshotForResultAsync<T>(
+        WaitName name,
+        Func<CancellationToken, Task<T?>> probe,
+        TimeSpan timeout,
+        CancellationToken ct,
+        Func<Task<object?>>? onTimeoutAsync
+    )
+        where T : class
+    {
+        return PollingHelper.WaitForResultAsync(
+            name,
+            async () =>
+            {
+                using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
+                return await probe(reqCts.Token);
+            },
+            timeout,
+            cancellationToken: ct,
+            onTimeoutAsync: onTimeoutAsync,
+            isRetryable: IsRetryableRequestFault
         );
     }
 
@@ -1689,6 +1706,7 @@ public class ServerApiClient : IDisposable
     /// healthy server wait is never client-aborted mid-block. A non-null response
     /// matches when <paramref name="matches"/> is null (the server already applied
     /// the filter) or returns true; otherwise the cursor advances to its version.
+    /// A transport fault leaves the cursor unchanged.
     /// </summary>
     private Task<bool> LongPollSnapshotAsync<T>(
         WaitName name,
@@ -1706,37 +1724,24 @@ public class ServerApiClient : IDisposable
             {
                 var serverTimeout =
                     remaining < DefaultWaitServerTimeout ? remaining : DefaultWaitServerTimeout;
-                try
+                using var reqCts = Cts.LinkedTimeout(
+                    ct,
+                    serverTimeout + TestTimings.PollingRequestTimeout
+                );
+                var response = await fetch(since, serverTimeout, reqCts.Token);
+                if (response == null)
                 {
-                    using var reqCts = Cts.LinkedTimeout(
-                        ct,
-                        serverTimeout + TestTimings.PollingRequestTimeout
-                    );
-                    var response = await fetch(since, serverTimeout, reqCts.Token);
-                    if (response == null)
-                    {
-                        // 408 — server-side timeout, no newer snapshot observed.
-                        return new PollingHelper.LongPollResult(false, since);
-                    }
-
-                    var matched = matches == null || matches(response);
-                    return new PollingHelper.LongPollResult(matched, response.Version);
-                }
-                catch (Exception ex) when (IsTransportFault(ex) && !ct.IsCancellationRequested)
-                {
-                    // Cursor is unchanged; the next iteration retries from `since`. Long-poll
-                    // has no client-side delay, so a persistently unreachable server re-issues
-                    // promptly until the deadline — expected; the server block is the pacing.
+                    // 408 — server-side timeout, no newer snapshot observed.
                     return new PollingHelper.LongPollResult(false, since);
                 }
+
+                var matched = matches == null || matches(response);
+                return new PollingHelper.LongPollResult(matched, response.Version);
             },
             timeout,
             cancellationToken: ct,
             onTimeoutAsync: onTimeoutAsync,
-            // The fetch above converts every transport fault to a non-match, so any exception
-            // that still escapes (e.g. a deserialization failure) is a real bug — fail fast
-            // instead of retrying it to the deadline and reporting a masking TimeoutException.
-            retryOnError: false
+            isRetryable: IsRetryableRequestFault
         );
     }
 
@@ -1783,7 +1788,7 @@ public class ServerApiClient : IDisposable
             var response = await _httpClient.SendAsync(request, ct);
 
             if (
-                response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable
+                response.StatusCode != HttpStatusCode.ServiceUnavailable
                 || attempt >= TestTimings.GameThreadRetryMaxAttempts
             )
             {
@@ -1877,6 +1882,46 @@ public class ServerApiClient : IDisposable
         }
 
         return await WaitEndpointAsync<ServerStatus>("/wait/status", query, timeout, ct);
+    }
+
+    /// <summary>
+    /// Long-polls <c>/wait/status</c> until a snapshot passes the server-side filters
+    /// (the same optional arguments as <see cref="WaitForStatusAsync"/>) and
+    /// <paramref name="matches"/>, or <paramref name="timeout"/> expires. Use the
+    /// server filters wherever the field is filterable; <paramref name="matches"/>
+    /// covers the rest (a changed <c>TimeOfDay</c>, a non-empty <c>InviteCode</c>).
+    /// Returns whether a match was observed.
+    /// </summary>
+    public Task<bool> WaitForStatusMatchAsync(
+        WaitName name,
+        TimeSpan timeout,
+        Func<ServerStatus, bool>? matches = null,
+        bool? isReady = null,
+        bool? dayTransitionComplete = null,
+        bool? isPaused = null,
+        int? day = null,
+        int? playerCount = null,
+        CancellationToken ct = default
+    )
+    {
+        return LongPollSnapshotAsync(
+            name,
+            (since, serverTimeout, token) =>
+                WaitForStatusAsync(
+                    since,
+                    isReady,
+                    dayTransitionComplete,
+                    isPaused,
+                    day,
+                    playerCount,
+                    serverTimeout,
+                    token
+                ),
+            timeout,
+            ct,
+            onTimeoutAsync: null,
+            matches
+        );
     }
 
     /// <summary>
@@ -3253,7 +3298,7 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await LongPollSnapshotAsync<PlayersResponse>(
+        return await LongPollSnapshotAsync(
             WaitName.Polling_ServerApi_WaitForPlayerByName,
             (since, serverTimeout, token) =>
                 WaitForPlayersAsync(since: since, timeout: serverTimeout, ct: token),
@@ -3280,7 +3325,7 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await LongPollSnapshotAsync<PlayersResponse>(
+        return await LongPollSnapshotAsync(
             WaitName.Polling_ServerApi_WaitForPlayerById,
             (since, serverTimeout, token) =>
                 WaitForPlayersAsync(
@@ -3404,6 +3449,80 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
+    /// Polls /cabins until a cabin owned by the given player UID appears.
+    /// Prefer this over the name-based variant: OwnerId (UMI) is set immediately
+    /// at AssignFarmhand and avoids the customization-sync race that delays both
+    /// OwnerName and IsAssigned for several seconds after a fresh customization.
+    /// Returns the cabin, or <c>null</c> on timeout (after a <see cref="FailureContext"/> dump).
+    /// </summary>
+    public Task<CabinInfoResponse?> WaitForCabinAssignedByIdAsync(
+        long playerId,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    ) =>
+        WaitForCabinAssignedAsync(
+            WaitName.Polling_TestBase_WaitForCabinAssignedById,
+            c => c.OwnerId == playerId,
+            "playerId",
+            playerId,
+            timeout,
+            ct
+        );
+
+    /// <summary>
+    /// Polls /cabins until an assigned cabin owned by the given farmer name appears.
+    /// Use the UID variant when possible — name lookup races with the customization
+    /// sync (OwnerName can be empty briefly after fresh joins).
+    /// Returns the cabin, or <c>null</c> on timeout (after a <see cref="FailureContext"/> dump).
+    /// </summary>
+    public Task<CabinInfoResponse?> WaitForCabinAssignedByNameAsync(
+        string farmerName,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    ) =>
+        WaitForCabinAssignedAsync(
+            WaitName.Polling_TestBase_WaitForCabinAssignedByName,
+            c => c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned,
+            "farmerName",
+            farmerName,
+            timeout,
+            ct
+        );
+
+    private async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+        WaitName name,
+        Func<CabinInfoResponse, bool> isMatch,
+        string extrasKey,
+        object extrasValue,
+        TimeSpan? timeout,
+        CancellationToken ct
+    )
+    {
+        // Captured so the timeout dump can show the last snapshot the poll saw.
+        CabinsResponse? lastCabins = null;
+        return await PollSnapshotForResultAsync(
+            name,
+            async token =>
+            {
+                lastCabins = await GetCabins(token);
+                return lastCabins?.Cabins.FirstOrDefault(isMatch);
+            },
+            timeout ?? TestTimings.CabinAssignmentTimeout,
+            ct,
+            async () =>
+                await FailureContext.DumpAsync(
+                    this,
+                    reason: "WaitForCabinAssignedAsync_timeout",
+                    extras: new Dictionary<string, object?>
+                    {
+                        [extrasKey] = extrasValue,
+                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
+                    }
+                )
+        );
+    }
+
+    /// <summary>
     /// Long-polls /wait/farmhands until a farmhand with the given name exists.
     /// Intended for tests that verify name/customization behavior specifically;
     /// name sync is the whole point of such assertions.
@@ -3415,7 +3534,7 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await LongPollSnapshotAsync<ServerFarmhandsResponse>(
+        return await LongPollSnapshotAsync(
             WaitName.Polling_ServerApi_WaitForFarmhandByName,
             (since, serverTimeout, token) =>
                 WaitForFarmhandsAsync(
@@ -3440,7 +3559,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Polls DELETE /farmhands?name=X until the farmhand is gone. A DELETE that reports
-    /// Success is the direct signal; a Success=false result is reconciled against the
+    /// Success is the direct signal; a "not found" result is reconciled against the
     /// /farmhands snapshot, and an absent name is also treated as done — see the probe.
     /// </summary>
     public async Task<FarmhandOperationResponse?> WaitForFarmhandDeletedByNameAsync(
@@ -3464,8 +3583,16 @@ public class ServerApiClient : IDisposable
                 // the client's per-request token (ApiService.HandleDeleteFarmhandAsync). If the
                 // game thread is blocked 5-15s (day transition / save sync), the committing
                 // DELETE can surface here as a transport fault, and the next DELETE then reports
-                // "not found" (Success=false) though the deletion already landed. Reconcile the
-                // ambiguous outcome against the snapshot: an absent name means the delete is done.
+                // "not found" (Success=false) though the deletion already landed. Reconcile only
+                // that outcome against the snapshot (an absent name means the delete is done);
+                // "not ready" / "online" / "save in progress" are unambiguous and just retry.
+                if (
+                    result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) != true
+                )
+                {
+                    return false;
+                }
+
                 var farmhands = await GetFarmhands(token);
                 var stillPresent =
                     farmhands?.Farmhands.Any(f =>

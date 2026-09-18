@@ -41,9 +41,6 @@ make test FILTER=PasswordProtection
 
 # Run with web UI
 make test-web
-
-# With host game client (local Stardew Valley + Steam, instead of Docker)
-make test SDVD_HOST_CLIENT=true
 ```
 
 ## Visual Observation
@@ -151,7 +148,6 @@ TestResults/runs/{timestamp}_{sha}/tests/{Class}.{Method}/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SDVD_IMAGE_TAG` | `local` | Docker image tag for server/client |
-| `SDVD_HOST_CLIENT` | `false` | Use local Stardew Valley process instead of Docker containers (requires Steam) |
 | `SDVD_TEST_SCREENSHOTS` | `done` | Screenshot capture mode: none/done/all |
 | `SDVD_TEST_RECORDING` | `none` | Video recording mode: none/failure/all |
 | `NO_COLOR` | unset | Set (to any value) to disable colored output |

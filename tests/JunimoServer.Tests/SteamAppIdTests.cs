@@ -41,8 +41,7 @@ public class SteamAppIdTests : TestBase
     public async Task Server_HasCorrectSteamAppId()
     {
         // Get container logs. Use a timeout since GetLogsAsync can hang on disposed containers.
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCt);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        using var cts = Cts.LinkedTimeout(TestCt, TimeSpan.FromSeconds(30));
         var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
         var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
 
@@ -112,8 +111,7 @@ public class SteamAppIdTests : TestBase
             WaitName.Polling_SteamAppId_SdrStatusLine,
             async () =>
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCt);
-                cts.CancelAfter(TimeSpan.FromSeconds(10));
+                using var cts = Cts.LinkedTimeout(TestCt, TimeSpan.FromSeconds(10));
                 var logs = await Server.Container.GetLogsAsync(ct: cts.Token);
                 var combinedLogs = (logs.Stdout ?? "") + (logs.Stderr ?? "");
 

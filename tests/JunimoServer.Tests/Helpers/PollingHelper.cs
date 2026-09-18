@@ -25,11 +25,11 @@ public static class PollingHelper
     /// <c>poll_completed</c> event under <c>diagnostics</c>. Exceptions from the collector
     /// are swallowed and replaced with an <c>onTimeoutError</c> field. Short-circuited by a
     /// 2-second internal deadline so a broken collector cannot hang the test.</param>
-    /// <param name="retryOnError">See <see cref="PollCoreAsync{T}"/>. Leave <c>true</c> for a
-    /// <paramref name="condition"/> that makes its own network calls without pre-filtering
-    /// transport faults (it relies on the loop to retry through transient blips). Pass
-    /// <c>false</c> only when the condition already converts every retryable fault to a
-    /// non-match, so any escaping exception is a genuine bug that should surface at once.</param>
+    /// <param name="isRetryable">See <see cref="PollCoreAsync{T}"/>. Leave <c>null</c> for a
+    /// <paramref name="condition"/> whose faults are all unexpected: every exception is retried
+    /// to the deadline and the last one surfaces wrapped. Pass a filter when the condition makes
+    /// network calls whose transport blips are expected: those count as a non-match, and any
+    /// other exception is a genuine bug that surfaces at once.</param>
     public static Task<bool> WaitUntilAsync(
         WaitName name,
         Func<Task<bool>> condition,
@@ -37,7 +37,7 @@ public static class PollingHelper
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
         Func<Task<object?>>? onTimeoutAsync = null,
-        bool retryOnError = true
+        Func<Exception, bool>? isRetryable = null
     )
     {
         return WaitTrace.RunAsync<bool>(
@@ -51,11 +51,11 @@ public static class PollingHelper
                         return new PollOutcome<bool>(matched, matched, 0);
                     },
                     timeout,
-                    PollMode.Snapshot,
+                    longPoll: false,
                     pollInterval,
                     cancellationToken,
                     onTimeoutAsync,
-                    retryOnError
+                    isRetryable
                 ),
             cancellationToken
         );
@@ -68,13 +68,15 @@ public static class PollingHelper
     /// </summary>
     /// <param name="name">Wire-stable wait identifier for tracing.</param>
     /// <param name="onTimeoutAsync">See <see cref="WaitUntilAsync"/>.</param>
+    /// <param name="isRetryable">See <see cref="WaitUntilAsync"/>.</param>
     public static Task<T?> WaitForResultAsync<T>(
         WaitName name,
         Func<Task<T?>> producer,
         TimeSpan timeout,
         TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
-        Func<Task<object?>>? onTimeoutAsync = null
+        Func<Task<object?>>? onTimeoutAsync = null,
+        Func<Exception, bool>? isRetryable = null
     )
         where T : class
     {
@@ -89,10 +91,11 @@ public static class PollingHelper
                         return new PollOutcome<T>(result != null, result, 0);
                     },
                     timeout,
-                    PollMode.Snapshot,
+                    longPoll: false,
                     pollInterval,
                     cancellationToken,
-                    onTimeoutAsync
+                    onTimeoutAsync,
+                    isRetryable
                 ),
             cancellationToken
         );
@@ -139,26 +142,24 @@ public static class PollingHelper
     /// </para>
     ///
     /// <para>
-    /// Scope: snapshot-cursor call sites only (<c>WaitForPlayerByIdAsync</c>,
-    /// <c>/wait/farmhands</c> presence-only callers). Stateless-predicate
-    /// sites (<c>/wait/health</c> cold-start retry) and partial-match sites
-    /// that need out-of-snapshot data (<c>WaitForServerOnlineCoreAsync</c>,
-    /// file-derived invite codes) emit <c>long_poll_completed</c> directly
-    /// from a bespoke loop.
+    /// Scope: snapshot-cursor endpoints go through <c>ServerApiClient</c>'s
+    /// <c>WaitFor*Async</c> helpers (<c>WaitForStatusMatchAsync</c>,
+    /// <c>WaitForPlayerByIdAsync</c>, <c>WaitForFarmhandByNameAsync</c>), which
+    /// add the request bound and transport filter; the stateless
+    /// <c>/wait/health</c> site calls this directly. Loops with their own
+    /// failure semantics (<c>WaitForServerOnlineCoreAsync</c>, the
+    /// <c>DayChangeWaiter</c> day loop) emit <c>long_poll_completed</c> from a
+    /// bespoke loop.
     /// </para>
     /// </summary>
-    /// <param name="retryOnError">See <see cref="WaitUntilAsync"/>. There is deliberately no
-    /// client-side delay between long-poll iterations, so when a <paramref name="condition"/>
-    /// converts transport faults to non-matches and passes <c>false</c> here, a persistently
-    /// failing endpoint re-issues promptly until the deadline — expected, because the server
-    /// block is the pacing mechanism and a live server never fails this way.</param>
+    /// <param name="isRetryable">See <see cref="WaitUntilAsync"/>.</param>
     public static Task<bool> LongPollAsync(
         WaitName name,
         Func<long, TimeSpan, Task<LongPollResult>> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
         Func<Task<object?>>? onTimeoutAsync = null,
-        bool retryOnError = true
+        Func<Exception, bool>? isRetryable = null
     )
     {
         return WaitTrace.RunAsync<bool>(
@@ -176,26 +177,14 @@ public static class PollingHelper
                         );
                     },
                     timeout,
-                    PollMode.LongPoll,
+                    longPoll: true,
                     pollInterval: null,
                     cancellationToken,
                     onTimeoutAsync,
-                    retryOnError
+                    isRetryable
                 ),
             cancellationToken
         );
-    }
-
-    /// <summary>
-    /// <see cref="Snapshot"/> throttles each iteration with a client-side
-    /// <c>Task.Delay</c> and emits <c>poll_completed</c>; <see cref="LongPoll"/>
-    /// relies on the server blocking the request, keeps a <c>since</c> cursor,
-    /// and emits <c>long_poll_completed</c> with <c>snapshotVersionAtMatch</c>.
-    /// </summary>
-    private enum PollMode
-    {
-        Snapshot,
-        LongPoll,
     }
 
     /// <summary>
@@ -209,35 +198,38 @@ public static class PollingHelper
     /// The one poll loop behind the three public primitives. Returns
     /// <see cref="PollOutcome{T}.Value"/> on the first match and
     /// <c>default</c> on a clean timeout.
-    /// <see cref="OperationCanceledException"/> is never caught, so
-    /// cancellation propagates to <see cref="WaitTrace"/>.
     ///
     /// <para>
-    /// <paramref name="retryOnError"/> controls how a throwing <paramref name="step"/> is
-    /// handled. When <c>true</c>, the exception is stored and the loop retries until the
-    /// timeout, then surfaces the last one wrapped in a <see cref="TimeoutException"/> — right
-    /// for a step that makes its own network calls without pre-filtering transport faults.
-    /// When <c>false</c>, the exception propagates immediately: use this when the step already
-    /// converts every retryable fault to a non-match, so an escaping exception (e.g. a
-    /// deserialization failure) is a genuine bug that must surface at once instead of burning
-    /// the whole wait budget and reporting a <see cref="TimeoutException"/> that hides it.
-    /// Cancellation always wins over fail-fast: while <paramref name="cancellationToken"/> is
-    /// cancelled, an incidental exception surfaces as a clean cancellation instead of transport
-    /// noise from a torn-down server — even when the deadline expired on the same iteration.
+    /// <paramref name="isRetryable"/> decides what a throwing <paramref name="step"/> means.
+    /// With no filter, every exception except <see cref="OperationCanceledException"/> is
+    /// stored and the loop retries until the timeout, then surfaces the last one wrapped in a
+    /// <see cref="TimeoutException"/> — right for a step whose faults are all unexpected. With
+    /// a filter, a fault it accepts is an expected transport blip and counts as a non-match
+    /// (the wait ends with a clean <c>default</c> at the deadline, the last blip on the event's
+    /// <c>error</c> field), while anything it rejects — e.g. a deserialization failure — is a
+    /// genuine bug that propagates at once instead of burning the whole budget behind a
+    /// masking <see cref="TimeoutException"/>. A filter may accept
+    /// <see cref="OperationCanceledException"/> to absorb a per-request timeout.
+    /// Cancellation always wins: while <paramref name="cancellationToken"/> is cancelled, an
+    /// incidental exception surfaces as a clean cancellation instead of transport noise from a
+    /// torn-down server — even when the deadline expired on the same iteration.
     /// </para>
     /// </summary>
+    /// <param name="longPoll">Snapshot mode (<c>false</c>) throttles each iteration with a
+    /// client-side <c>Task.Delay</c> and emits <c>poll_completed</c>; long-poll mode relies on
+    /// the server blocking the request, keeps a <c>since</c> cursor, and emits
+    /// <c>long_poll_completed</c> with <c>snapshotVersionAtMatch</c>.</param>
     private static async Task<T?> PollCoreAsync<T>(
         WaitName name,
         Func<long, TimeSpan, Task<PollOutcome<T>>> step,
         TimeSpan timeout,
-        PollMode mode,
+        bool longPoll,
         TimeSpan? pollInterval,
         CancellationToken cancellationToken,
         Func<Task<object?>>? onTimeoutAsync,
-        bool retryOnError = true
+        Func<Exception, bool>? isRetryable
     )
     {
-        var longPoll = mode == PollMode.LongPoll;
         var interval = pollInterval ?? TestTimings.FastPollInterval;
         var sw = Stopwatch.StartNew();
         Exception? lastException = null;
@@ -272,11 +264,7 @@ public static class PollingHelper
                     if (outcome.Matched)
                     {
                         succeeded = true;
-                        if (longPoll)
-                        {
-                            snapshotVersionAtMatch = outcome.Version;
-                        }
-
+                        snapshotVersionAtMatch = outcome.Version;
                         EmitWaitMatched(label);
                         return outcome.Value;
                     }
@@ -292,8 +280,8 @@ public static class PollingHelper
                     }
                 }
                 catch (Exception ex)
-                    when (ex is not OperationCanceledException
-                        && (retryOnError || cancellationToken.IsCancellationRequested)
+                    when (cancellationToken.IsCancellationRequested
+                        || (isRetryable?.Invoke(ex) ?? ex is not OperationCanceledException)
                     )
                 {
                     // Cancellation wins over the incidental fault: a reset from an in-flight
@@ -302,8 +290,13 @@ public static class PollingHelper
                     // TimeoutException. Surface it here rather than relying on the next loop, which
                     // may break on an expired budget before reaching ThrowIfCancellationRequested.
                     cancellationToken.ThrowIfCancellationRequested();
-                    // Otherwise store-and-continue to retry through the transient blip (retryOnError).
                     lastException = ex;
+                    if (longPoll)
+                    {
+                        // The server block normally paces long-poll; a fault returns at once, so
+                        // throttle here to keep an unreachable server from a hot loop.
+                        await Task.Delay(interval, cancellationToken);
+                    }
                 }
 
                 if (!longPoll)
@@ -312,8 +305,8 @@ public static class PollingHelper
                 }
             }
 
-            // Surface the last exception if polling timed out due to repeated failures
-            if (lastException != null)
+            // Without a filter, repeated faults are unexpected: surface the last one.
+            if (lastException != null && isRetryable == null)
             {
                 var kind = longPoll ? "Long-poll" : "Polling";
                 throw new TimeoutException(
@@ -331,7 +324,7 @@ public static class PollingHelper
             object? diagnostics = null;
             string? onTimeoutError = null;
             // Only a genuine deadline timeout warrants the diagnostic collector. A fail-fast
-            // exception (retryOnError: false) or a cancellation propagates through here with
+            // exception (rejected by the filter) or a cancellation propagates through here with
             // succeeded == false but deadlineExpired == false — running onTimeoutAsync there
             // would delay the real error behind a 2s dump and emit timeout-shaped diagnostics.
             if (!succeeded && deadlineExpired && onTimeoutAsync != null)

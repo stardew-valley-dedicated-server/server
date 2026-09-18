@@ -3,8 +3,6 @@
   <RunConfiguration>
     <ResultsDirectory>..\..\TestResults</ResultsDirectory>
     <EnvironmentVariables>
-      <!-- Set to "true" to use a local Stardew Valley process instead of Docker containers (requires Steam) -->
-      <!-- <SDVD_HOST_CLIENT>true</SDVD_HOST_CLIENT> -->
       <!-- Tracing tier: none, basic, full (unset = full). See .env.test.example for details. -->
       <!-- <SDVD_TEST_TRACING>none</SDVD_TEST_TRACING> -->
       <!-- Per-container stats collection: docker+game (default), docker, none. -->

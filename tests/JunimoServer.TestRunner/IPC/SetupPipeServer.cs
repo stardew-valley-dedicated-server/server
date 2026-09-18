@@ -59,8 +59,7 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 // we abandon the line rather than let the UI hang. The
                 // linked CTS cancels only the read; the outer ct keeps the
                 // loop running so subsequent reads can still succeed.
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                readCts.CancelAfter(ReadDeadline);
+                using var readCts = JunimoServer.Tests.Helpers.Cts.LinkedTimeout(ct, ReadDeadline);
 
                 string? line;
                 try
