@@ -2110,10 +2110,9 @@ public partial class ApiService : ModService
         // (the mod runs outside tests too).
         var requestId = request.Headers["X-Request-Id"];
 
-        // Extract the test-id header sent by the harness. Unlike X-Request-Id
-        // (minted only at Basic/Full tracing), this is attached on every request
-        // regardless of tracing level, so every server event during the request
-        // is attributable to its originating test. Null in production.
+        // Sent by the harness on every request regardless of tracing level
+        // (unlike X-Request-Id), so every server event during the request is
+        // attributable to its test. Null in production.
         var testId = request.Headers["X-Test-Id"];
 
         // Echo the same id on the response so the client-side
@@ -2160,7 +2159,7 @@ public partial class ApiService : ModService
             Monitor.Log($"[API] Failed to emit X-Snapshot-Age-Ms: {ex.Message}", LogLevel.Debug);
         }
 
-        using var _correlationScope = Diagnostics.ModRequestContext.Bind(requestId, testId);
+        using var _correlationScope = RequestContext.Bind(requestId, testId);
 
         // Per-request stopwatch fed into the http_served event in the
         // finally block. Captured here so early-return paths (WebSocket
@@ -2218,16 +2217,16 @@ public partial class ApiService : ModService
                         await WriteJsonAsync(response, HandleGetHealth());
                         break;
                     case "/wait/status":
-                        await HandleWaitStatusAsync(request, response, requestId);
+                        await HandleWaitStatusAsync(request, response);
                         break;
                     case "/wait/players":
-                        await HandleWaitPlayersAsync(request, response, requestId);
+                        await HandleWaitPlayersAsync(request, response);
                         break;
                     case "/wait/health":
-                        await HandleWaitHealthAsync(request, response, requestId);
+                        await HandleWaitHealthAsync(request, response);
                         break;
                     case "/wait/farmhands":
-                        await HandleWaitFarmhandsAsync(request, response, requestId);
+                        await HandleWaitFarmhandsAsync(request, response);
                         break;
                     case "/diagnostics/state":
                         await WriteJsonAsync(
@@ -3538,8 +3537,7 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitStatusAsync(
         HttpListenerRequest request,
-        HttpListenerResponse response,
-        string? requestId
+        HttpListenerResponse response
     )
     {
         var qs = request.QueryString;
@@ -3586,7 +3584,7 @@ public partial class ApiService : ModService
             return true;
         }
 
-        var matched = await WaitForSnapshotAsync(Matches, timeout, requestId);
+        var matched = await WaitForSnapshotAsync(Matches, timeout);
         if (matched == null)
         {
             response.StatusCode = 408;
@@ -3758,8 +3756,7 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitPlayersAsync(
         HttpListenerRequest request,
-        HttpListenerResponse response,
-        string? requestId
+        HttpListenerResponse response
     )
     {
         var qs = request.QueryString;
@@ -3793,7 +3790,7 @@ public partial class ApiService : ModService
             return true;
         }
 
-        var matched = await WaitForSnapshotAsync(Matches, timeout, requestId);
+        var matched = await WaitForSnapshotAsync(Matches, timeout);
         if (matched == null)
         {
             response.StatusCode = 408;
@@ -3838,8 +3835,7 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitFarmhandsAsync(
         HttpListenerRequest request,
-        HttpListenerResponse response,
-        string? requestId
+        HttpListenerResponse response
     )
     {
         var qs = request.QueryString;
@@ -3893,7 +3889,7 @@ public partial class ApiService : ModService
             return true;
         }
 
-        var matched = await WaitForSnapshotAsync(Matches, timeout, requestId);
+        var matched = await WaitForSnapshotAsync(Matches, timeout);
         if (matched == null)
         {
             response.StatusCode = 408;
@@ -3967,8 +3963,7 @@ public partial class ApiService : ModService
     [ApiResponse(typeof(void), 408, Description = "Timeout elapsed with no match")]
     private async Task HandleWaitHealthAsync(
         HttpListenerRequest request,
-        HttpListenerResponse response,
-        string? requestId
+        HttpListenerResponse response
     )
     {
         var qs = request.QueryString;
@@ -3992,11 +3987,6 @@ public partial class ApiService : ModService
                 (DateTime.UtcNow - new DateTime(tickTicks, DateTimeKind.Utc)).TotalMilliseconds;
             return lastTickMs <= HealthFrozenThresholdMs;
         }
-
-        // Captured while the request scope is still active (AsyncLocal flows
-        // across the awaits above this point), so it can be rebound alongside
-        // requestId after each await continuation below.
-        var testId = Diagnostics.ModRequestContext.TestId;
 
         var deadline = DateTime.UtcNow + timeout;
         while (true)
@@ -4028,11 +4018,6 @@ public partial class ApiService : ModService
                 response.StatusCode = 408;
                 return;
             }
-
-            // Re-bind requestId + testId for any downstream emits — the
-            // continuation may have resumed on a fresh thread-pool worker that
-            // didn't flow our AsyncLocal cleanly. See .claude/rules/asynclocal-pitfalls.md.
-            using var _ = Diagnostics.ModRequestContext.Bind(requestId, testId);
         }
     }
 
@@ -4078,14 +4063,9 @@ public partial class ApiService : ModService
 
     private async Task<GameStateSnapshot?> WaitForSnapshotAsync(
         Func<GameStateSnapshot, bool> predicate,
-        TimeSpan timeout,
-        string? requestId
+        TimeSpan timeout
     )
     {
-        // Captured while the request scope is still active (AsyncLocal flows to
-        // here), so it can be rebound alongside requestId after each await below.
-        var testId = Diagnostics.ModRequestContext.TestId;
-
         var deadline = DateTime.UtcNow + timeout;
         while (true)
         {
@@ -4116,11 +4096,6 @@ public partial class ApiService : ModService
             {
                 return null;
             }
-
-            // Continuation may have resumed on a fresh thread-pool worker;
-            // re-bind so any structured event we emit below carries the
-            // caller's requestId + testId.
-            using var _ = Diagnostics.ModRequestContext.Bind(requestId, testId);
         }
     }
 

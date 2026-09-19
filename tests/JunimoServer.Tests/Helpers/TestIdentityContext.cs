@@ -49,24 +49,19 @@ public static class TestIdentityContext
     }
 
     /// <summary>
-    /// Canonical form of a test display name. One shared normalizer produces both the emitted
-    /// <c>test.displayName</c> and the <c>X-Test-Id</c> header, so the two are identical and the
-    /// <c>testId</c> to <c>test.displayName</c> join is reliable. The value must be printable ASCII
-    /// because the header requires it (<c>HttpClient</c> cannot carry non-ASCII cleanly, and
-    /// <c>HttpListener</c> returns 400 on a CR or LF), which a Theory argument can violate. Each
-    /// non-ASCII character maps to its own hex code, so names that differ only in non-ASCII
-    /// characters produce different output and two tests never merge into one attribution. Applied
-    /// once at the single source above; callers use <see cref="TestIdentity.DisplayName"/> as-is.
+    /// Canonical form of a test display name, used for both the emitted <c>test.displayName</c>
+    /// and the <c>X-Test-Id</c> header so the <c>testId</c> join is exact. Header values must be
+    /// printable ASCII (<c>HttpListener</c> returns 400 on CR or LF), which a Theory argument can
+    /// violate. Each character outside that range maps to its own escape, so names that differ
+    /// only there stay distinct.
     /// </summary>
-    public static string ToHeaderSafeId(string value)
+    private static string ToHeaderSafeId(string value)
     {
-        // Skip plain ASCII names, which every test currently has.
         if (!value.AsSpan().ContainsAnyExceptInRange(' ', '~'))
         {
             return value;
         }
 
-        // Otherwise replace every non-ASCII character with its hex code so the result stays ASCII.
         var sb = new StringBuilder();
         foreach (var c in value)
         {

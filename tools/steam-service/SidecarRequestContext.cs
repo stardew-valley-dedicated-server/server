@@ -12,15 +12,14 @@ namespace SteamService;
 /// Uses <see cref="AsyncLocal{T}"/> so the ids survive awaits and
 /// continuation-thread hops inside request handlers. Events emitted from
 /// SteamKit callback threads (where no HTTP context is active) legitimately
-/// carry <c>requestId = null</c> and <c>testId = null</c> — see
+/// carry <c>requestId = null</c> and <c>testId = null</c>; see
 /// docs/developers/events-schema.md.
 /// </para>
 /// </summary>
 public static class SidecarRequestContext
 {
-    // Both ids share one AsyncLocal so a bind is a single execution-context
-    // value-map rebuild (not one per id) and the pair can never be split — a
-    // boundary restores both or neither.
+    // One AsyncLocal for both ids: a bind is a single execution-context
+    // value-map rebuild, and a boundary restores both or neither.
     private static readonly AsyncLocal<(string? RequestId, string? TestId)> _ids = new();
 
     /// <summary>The inbound <c>X-Request-Id</c>, if any.</summary>

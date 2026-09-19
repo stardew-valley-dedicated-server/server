@@ -1305,8 +1305,8 @@ public class ModEntry : Mod
         // ClientEventLog emissions from the game-loop thread still carry them.
         // The game loop pumps its queue on its own thread; AsyncLocal does
         // not flow across that boundary, so we re-bind inside the action.
-        var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
-        var capturedTestId = Diagnostics.ClientRequestContext.TestId;
+        var capturedRequestId = RequestContext.RequestId;
+        var capturedTestId = RequestContext.TestId;
 
         QueueGameAction(() =>
         {
@@ -1315,10 +1315,7 @@ public class ModEntry : Mod
                 return; // Caller timed out (state was 1); skip to avoid corrupting game state
             }
 
-            using var _correlationScope = Diagnostics.ClientRequestContext.Bind(
-                capturedRequestId,
-                capturedTestId
-            );
+            using var _correlationScope = RequestContext.Bind(capturedRequestId, capturedTestId);
             try
             {
                 result = action();
@@ -1441,8 +1438,8 @@ public class ModEntry : Mod
         // Capture ambient correlation ids on the HTTP handler thread; re-bind
         // inside the game-thread continuation so any event emitted from the
         // condition/failureDetector callbacks carries them.
-        var capturedRequestId = Diagnostics.ClientRequestContext.RequestId;
-        var capturedTestId = Diagnostics.ClientRequestContext.TestId;
+        var capturedRequestId = RequestContext.RequestId;
+        var capturedTestId = RequestContext.TestId;
 
         while (DateTime.UtcNow < deadline)
         {
@@ -1453,7 +1450,7 @@ public class ModEntry : Mod
             var checkCompleted = false;
             QueueGameAction(() =>
             {
-                using var _correlationScope = Diagnostics.ClientRequestContext.Bind(
+                using var _correlationScope = RequestContext.Bind(
                     capturedRequestId,
                     capturedTestId
                 );

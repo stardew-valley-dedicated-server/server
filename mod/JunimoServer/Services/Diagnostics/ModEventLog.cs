@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using JunimoServer.Shared;
 
 namespace JunimoServer.Services.Diagnostics;
 
@@ -62,8 +63,8 @@ public static class ModEventLog
             var entry = new
             {
                 ts = DateTime.UtcNow,
-                requestId = ModRequestContext.RequestId,
-                testId = ModRequestContext.TestId,
+                requestId = RequestContext.RequestId,
+                testId = RequestContext.TestId,
                 service = "server",
                 tickMs,
                 @event = eventType,

@@ -9,24 +9,21 @@ namespace JunimoServer.Tests.Clients;
 /// request. Behavior tiers off <see cref="TestTracing.Level"/>:
 ///
 /// <list type="bullet">
-///   <item><b>None</b> — cheapest. Skip <c>X-Request-Id</c> generation, body
-///   buffering, and response summarization. Emit method, path, status, duration,
-///   request-byte size only.</item>
-///   <item><b>Basic</b> — adds <c>X-Request-Id</c> for mutating verbs
-///   (POST/PUT/PATCH/DELETE) so a debug session can correlate writes with the
-///   mod-side timeline; reads stay header-free.</item>
-///   <item><b>Full</b> — request-id on every verb, plus response-body capture:
-///   the body is buffered, rewrapped so downstream deserialization still works,
-///   truncated to <see cref="RespBodyMaxChars"/>, and emitted as <c>respBody</c>
-///   so artifacts record exactly what a read returned.</item>
+///   <item><b>None</b>: no <c>X-Request-Id</c>, no response-body capture.</item>
+///   <item><b>Basic</b>: <c>X-Request-Id</c> on mutating verbs
+///   (POST/PUT/PATCH/DELETE) so writes correlate with the mod-side timeline;
+///   reads stay header-free.</item>
+///   <item><b>Full</b>: <c>X-Request-Id</c> on every verb, plus response-body
+///   capture: the body is buffered, rewrapped so downstream deserialization
+///   still works, truncated to <see cref="RespBodyMaxChars"/>, and emitted as
+///   <c>respBody</c>.</item>
 /// </list>
 ///
 /// <para>
-/// <c>X-Test-Id</c> (the originating test's display name) is attached to every
-/// request at <b>every</b> level — independent of tracing — so the server's
-/// <c>http_served</c> (and every other server event during the request) is
-/// attributable to its test via <c>ModRequestContext.TestId</c>, even for reads
-/// that carry no <c>X-Request-Id</c>.
+/// <c>X-Test-Id</c> (the originating test's display name) is attached at every
+/// level, so every server event during the request is attributable to its test
+/// via <c>RequestContext.TestId</c>, including reads that carry no
+/// <c>X-Request-Id</c>.
 /// </para>
 ///
 /// <para>
@@ -35,10 +32,9 @@ namespace JunimoServer.Tests.Clients;
 /// </para>
 ///
 /// <para>
-/// Captured <c>respBody</c> is redacted by the runner's in-place
-/// <c>ReportRedactor</c> scrub over <c>infrastructure.jsonl</c>
-/// (<c>ScrubRunFilesInPlace</c>, run on every run), the same as every other
-/// diagnostic in that stream.
+/// Captured <c>respBody</c> is redacted by the runner's <c>ReportRedactor</c>
+/// scrub over <c>infrastructure.jsonl</c> (<c>ScrubRunFilesInPlace</c>), like
+/// every other diagnostic in that stream.
 /// </para>
 /// </summary>
 internal sealed class TracingHandler : DelegatingHandler
@@ -77,10 +73,6 @@ internal sealed class TracingHandler : DelegatingHandler
         var pathAndQuery = request.RequestUri?.PathAndQuery ?? path;
 
         var ambient = CorrelationContext.Current;
-        // Request-id generation tier:
-        //   None:  no header, no scope.
-        //   Basic: header on mutating verbs only (correlate writes with mod events).
-        //   Full:  header on every verb (today's behavior).
         var isMutation = IsMutationMethod(method);
         var attachRequestId = _level switch
         {
@@ -102,13 +94,10 @@ internal sealed class TracingHandler : DelegatingHandler
             }
         }
 
-        // Attach the test-id regardless of tracing level (unlike X-Request-Id):
-        // the server binds it as an AsyncLocal for the request duration so every
-        // server event — including reads that carry no request-id — is attributable
-        // to its originating test. Sourced per-async-flow from the ambient test
-        // identity, so it must be set here, not on HttpClient.DefaultRequestHeaders.
-        // DisplayName is already the header-safe canonical form (see ToHeaderSafeId), so
-        // the server's testId matches the emitted test.displayName exactly.
+        // Attached at every level. Read from the ambient test identity per request,
+        // not set on HttpClient.DefaultRequestHeaders, because the client is shared
+        // across tests. DisplayName is already header-safe (ToHeaderSafeId), so the
+        // server's testId equals the emitted test.displayName.
         var testId = TestIdentityContext.Current?.DisplayName;
         if (!string.IsNullOrEmpty(testId))
         {
@@ -163,13 +152,10 @@ internal sealed class TracingHandler : DelegatingHandler
             // the most-recent observation rather than a stale earlier value.
             HttpResponseDiagnostics.LastPredicateChangedMsAgo = predicateChangedMsAgo;
 
-            // respBytes/respBody are Full-only — at None / Basic we drop both.
-            // At Full, buffer the response body so we can record what the read
-            // returned, then rewrap it in a fresh ByteArrayContent (copying the
-            // original content headers) so downstream ServerApiClient
-            // deserialization still reads the same bytes. respBytes comes from the
-            // actual buffered length (accurate even when Content-Length is absent).
-            // Never let a body-capture failure break the request.
+            // Full only: buffer the body, then rewrap it (copying content headers)
+            // so downstream deserialization reads the same bytes. respBytes is the
+            // buffered length, accurate even without Content-Length. A capture
+            // failure must never break the request.
             if (_level == TestTracingLevel.Full && response.Content != null)
             {
                 try
@@ -186,11 +172,9 @@ internal sealed class TracingHandler : DelegatingHandler
                     response.Content = rewrapped;
                     original.Dispose();
 
-                    // Truncated body text (redaction happens later; see class doc).
-                    // Decode only a bounded prefix — a char is at most 4 UTF-8 bytes,
-                    // so RespBodyMaxChars*4 bytes always yields at least the cap in
-                    // chars — rather than materializing a large body as a full string.
-                    // The marker counts against the cap so respBody never exceeds it.
+                    // Decode only a bounded prefix instead of the whole body: a char
+                    // is at most 4 UTF-8 bytes, so RespBodyMaxChars*4 bytes always
+                    // covers the cap. The marker counts against the cap.
                     var decodeBytes = Math.Min(bytes.Length, RespBodyMaxChars * 4);
                     var text = System.Text.Encoding.UTF8.GetString(bytes, 0, decodeBytes);
                     var truncated = decodeBytes < bytes.Length || text.Length > RespBodyMaxChars;

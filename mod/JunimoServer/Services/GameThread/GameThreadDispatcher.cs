@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using JunimoServer.Services.Diagnostics;
+using JunimoServer.Shared;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 
@@ -85,21 +85,21 @@ public class GameThreadDispatcher : ModService
     /// throws <see cref="TaskCanceledException"/> carrying that token; an action the game thread
     /// has already started runs to completion and reports its real result. Background work that
     /// must wait out a multi-second save uses this overload.
-    /// Captures the ambient <see cref="ModRequestContext.RequestId"/> and
-    /// <see cref="ModRequestContext.TestId"/> at queue time and re-binds them on the game-thread
-    /// side so structured events emitted inside the action carry the triggering request + test
-    /// ids — <c>AsyncLocal</c> does not flow across the external pump boundary.
+    /// Captures the ambient <see cref="RequestContext.RequestId"/> and
+    /// <see cref="RequestContext.TestId"/> at queue time and re-binds them on the game-thread
+    /// side so structured events emitted inside the action carry the triggering request and test
+    /// ids; <c>AsyncLocal</c> does not flow across the external pump boundary.
     /// </summary>
     public async Task RunAsync(Action action, CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        var capturedRequestId = ModRequestContext.RequestId;
-        var capturedTestId = ModRequestContext.TestId;
+        var capturedRequestId = RequestContext.RequestId;
+        var capturedTestId = RequestContext.TestId;
         Action wrapped = () =>
         {
-            using var _correlationScope = ModRequestContext.Bind(capturedRequestId, capturedTestId);
+            using var _correlationScope = RequestContext.Bind(capturedRequestId, capturedTestId);
             action();
         };
         var item = new PendingGameAction(wrapped, tcs);

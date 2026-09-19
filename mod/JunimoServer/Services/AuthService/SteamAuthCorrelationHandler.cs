@@ -1,13 +1,13 @@
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using JunimoServer.Services.Diagnostics;
+using JunimoServer.Shared;
 
 namespace JunimoServer.Services.Auth;
 
 /// <summary>
-/// Forwards the ambient <see cref="ModRequestContext.RequestId"/> and
-/// <see cref="ModRequestContext.TestId"/> to the steam-auth sidecar as
+/// Forwards the ambient <see cref="RequestContext.RequestId"/> and
+/// <see cref="RequestContext.TestId"/> to the steam-auth sidecar as
 /// <c>X-Request-Id</c> / <c>X-Test-Id</c> headers. When a request is made
 /// outside any handler scope (null ambient ids), no header is added and the
 /// sidecar treats the request as orphan.
@@ -22,8 +22,8 @@ internal sealed class SteamAuthCorrelationHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
-        Forward(request, RequestIdHeader, ModRequestContext.RequestId);
-        Forward(request, TestIdHeader, ModRequestContext.TestId);
+        Forward(request, RequestIdHeader, RequestContext.RequestId);
+        Forward(request, TestIdHeader, RequestContext.TestId);
         return base.SendAsync(request, cancellationToken);
     }
 

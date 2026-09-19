@@ -202,10 +202,9 @@ test-verbose:
 	@dotnet run --project $(RUNNER_PROJECT) -- --verbose $(if $(FILTER),--filter "$(FILTER)")
 
 # Run tests with structured JSONL output (for LLM/AI agents)
-# Pins SDVD_TEST_TRACING=full for the AI-debug context (respBody capture,
-# X-Request-Id on reads, wait_started, per-test http_wait mirror). This matches
-# the unset default `make test` already runs at; it's set explicitly so the
-# target is unaffected if that default ever changes.
+# Sets SDVD_TEST_TRACING=full for the AI-debug context (respBody capture,
+# X-Request-Id on reads, wait_started). An SDVD_TEST_TRACING line in .env.test
+# overrides it: TestEnvLoader clobbers process env.
 test-llm: export SDVD_TEST_TRACING=full
 test-llm:
 	@dotnet run --project $(RUNNER_PROJECT) -- --llm $(if $(FILTER),--filter "$(FILTER)")

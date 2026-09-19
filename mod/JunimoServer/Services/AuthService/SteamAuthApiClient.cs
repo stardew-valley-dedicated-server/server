@@ -26,7 +26,7 @@ public class SteamAuthApiClient : IDisposable
     {
         _baseUrl = baseUrl.TrimEnd('/');
         // Handler pipeline: correlation handler adds X-Request-Id from the
-        // ambient ModRequestContext, then the default handler sends.
+        // ambient RequestContext, then the default handler sends.
         var correlationHandler = new SteamAuthCorrelationHandler
         {
             InnerHandler = new HttpClientHandler(),

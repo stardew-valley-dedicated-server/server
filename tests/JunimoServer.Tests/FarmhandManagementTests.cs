@@ -73,10 +73,9 @@ public class FarmhandManagementTests : TestBase
     /// Verifies that deleting a farmhand frees its cabin for reuse. Runs on a dedicated
     /// single-cabin server: <c>CabinStrategy=None</c> caps the pool at
     /// <c>min(designated positions, MaxPlayers) = 1</c> and <c>EnsureAtLeastXCabins</c> can't grow
-    /// it, so once that cabin is customized the freed slot is the ONLY way a later farmer can join.
-    /// The default strategy always keeps a spare cabin, which would let a second join succeed
-    /// without reusing anything — the reuse is only provable against a capped pool. Exclusive so no
-    /// sibling test churns the capped pool.
+    /// it, so once that cabin is customized the freed slot is the only way a later farmer can join.
+    /// The default strategy always keeps a spare cabin, so a second join would succeed without
+    /// reusing anything. Exclusive so no sibling test churns the capped pool.
     /// </summary>
     [Fact]
     [TestServer(Exclusive = true, CabinStrategy = "None", MaxPlayers = 1)]
@@ -115,8 +114,7 @@ public class FarmhandManagementTests : TestBase
         );
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == client1.JoinResult.UniqueMultiplayerId);
 
-        // The pool was full and can't grow, so a second farmer can join ONLY by reusing the slot
-        // the delete freed — there is nowhere else for it to go.
+        // The pool was full and can't grow, so a second farmer can join only by reusing the freed slot.
         var client2 = await Farmers.ConnectNewAsync(ct: TestCt);
         var farmer2Found = await ServerApi.WaitForFarmhandByNameAsync(
             client2.FarmerName,

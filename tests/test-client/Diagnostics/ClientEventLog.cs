@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using JunimoServer.Shared;
 
 namespace JunimoTestClient.Diagnostics;
 
@@ -48,8 +49,8 @@ public static class ClientEventLog
             var entry = new
             {
                 ts = DateTime.UtcNow,
-                requestId = ClientRequestContext.RequestId,
-                testId = ClientRequestContext.TestId,
+                requestId = RequestContext.RequestId,
+                testId = RequestContext.TestId,
                 service = "test-client",
                 tickMs,
                 @event = eventType,
