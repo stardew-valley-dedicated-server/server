@@ -526,9 +526,17 @@ jobs:
       # the BuildKit mount from it before the build, and the extract step (after)
       # writes the updated mount back. Mirrors validate-pr.yml — but with no
       # `changes`-job gating (this job always builds).
-      - name: Cache NuGet mount
+      #
+      # SECURITY: restore-only. The checkout above is PR HEAD on any PR run (fork or
+      # not), so its Dockerfile could plant a tampered package into the mount without
+      # changing the hashed key files. Saving that would poison the default-branch
+      # cache scope a later trusted build restores. Only trusted default-branch runs
+      # (head_sha == '' AND github.ref == refs/heads/master → schedule / dispatch on
+      # master, no PR) save (see the Save/Extract steps); PR runs and dispatches on
+      # other branches restore the warm trusted cache read-only.
+      - name: Restore NuGet mount
         id: nuget-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: nuget-cache-mount
           key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
@@ -751,10 +759,14 @@ jobs:
           failed-report: true
 
       # After the build (which seeds the BuildKit mount), write the updated NuGet
-      # mount back for actions/cache to save. Gated on cache-miss only — matches
-      # validate-pr.yml; do NOT add `if: always()`.
+      # mount back for actions/cache to save. Gated on cache-miss only; do NOT add
+      # `if: always()`. Also gated on a trusted default-branch run — head_sha == ''
+      # (schedule / plain dispatch, no PR) AND github.ref is master, so a dispatch on
+      # a non-default branch can't write the mount either. (Literal refs/heads/master,
+      # like codeql.yml — github.event.repository.default_branch isn't guaranteed
+      # populated on the schedule payload.) See the Restore step's SECURITY note.
       - name: Extract NuGet mount
-        if: steps.nuget-cache.outputs.cache-hit != 'true'
+        if: steps.nuget-cache.outputs.cache-hit != 'true' && needs.gate.outputs.head_sha == '' && github.ref == 'refs/heads/master'
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
         with:
           builder: ${{ steps.buildx.outputs.name }}
@@ -764,6 +776,16 @@ jobs:
               "nuget-cache-mount": "/root/.nuget/packages"
             }
           extract: true
+
+      # Save the extracted mount to the default-branch cache scope. Same gate as the
+      # Extract step: trusted default-branch run + cache-miss only, so PR runs and
+      # non-default-branch dispatches never write.
+      - name: Save NuGet mount
+        if: steps.nuget-cache.outputs.cache-hit != 'true' && needs.gate.outputs.head_sha == '' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: nuget-cache-mount
+          key: ${{ steps.nuget-cache.outputs.cache-primary-key }}
 
       # Per-run artifact tree: summary.json, ctrf-report.json, run-metadata.json,
       # diagnostics/infrastructure.jsonl, tests/{Class}.{Method}/, containers/...
