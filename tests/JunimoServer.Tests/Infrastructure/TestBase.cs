@@ -300,7 +300,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // non-empty (rejects degraded responses where game state wasn't readable).
         // PlayerCount is NOT checked; other tests may have clients connected.
         var readySw = System.Diagnostics.Stopwatch.StartNew();
-        await Lease.Api.WaitForStatusMatchAsync(
+        var serverReady = await Lease.Api.WaitForStatusMatchAsync(
             WaitName.Polling_TestBase_ServerReady,
             TestTimings.ServerReadyBetweenTests,
             matches: status => !string.IsNullOrEmpty(status.FarmName),
@@ -308,6 +308,13 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             ct: ct
         );
         LogTrace($"ServerReady wait: {SetupEventBus.FormatDuration(readySw.Elapsed)}");
+
+        if (!serverReady)
+        {
+            LogWarning(
+                $"{WaitName.Polling_TestBase_ServerReady} did not confirm a ready server within {TestTimings.ServerReadyBetweenTests.TotalSeconds}s; continuing setup."
+            );
+        }
 
         ServerStatus = await Lease.Api.GetStatus();
     }
