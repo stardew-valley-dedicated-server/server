@@ -70,19 +70,39 @@ public class FarmhandManagementTests : TestBase
     }
 
     /// <summary>
-    /// Verifies that after deleting an offline farmhand, the slot becomes available
-    /// and a new player can join using that freed slot.
-    /// This tests the full create → delete → reuse cycle.
+    /// Verifies that deleting a farmhand frees its cabin for reuse. Runs on a dedicated
+    /// single-cabin server: <c>CabinStrategy=None</c> caps the pool at
+    /// <c>min(designated positions, MaxPlayers) = 1</c> and <c>EnsureAtLeastXCabins</c> can't grow
+    /// it, so once that cabin is customized the freed slot is the only way a later farmer can join.
+    /// The default strategy always keeps a spare cabin, so a second join would succeed without
+    /// reusing anything. Exclusive so no sibling test churns the capped pool.
     /// </summary>
     [Fact]
+    [TestServer(Exclusive = true, CabinStrategy = "None", MaxPlayers = 1)]
     public async Task DeleteFarmhand_SlotBecomesReusable()
     {
-        // Create first farmer, disconnect, and wait for persistence
+        // Fill the single-cabin pool: a customized farmhand leaves it with no available slot.
         var client1 = await Farmers.ConnectFastAsync(ct: TestCt);
-        await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
-        Log($"After first join: farmer '{client1.FarmerName}' exists");
+        CabinsResponse? cabins = null;
+        var poolFull = await PollingHelper.WaitUntilAsync(
+            WaitName.Polling_FarmhandManagement_SingleCabinFull,
+            async () =>
+            {
+                cabins = await ServerApi.GetCabins(TestCt);
+                return cabins is { TotalCount: 1, AvailableCount: 0 };
+            },
+            TestTimings.CabinAssignmentTimeout,
+            cancellationToken: TestCt
+        );
+        Assert.True(
+            poolFull,
+            "Capped pool should be full (1 cabin, 0 available) after the first farmer customizes; "
+                + $"got total={cabins?.TotalCount}, available={cabins?.AvailableCount}"
+        );
 
-        // Delete farmer1 (poll until server processes disconnect)
+        await Farmers.DisconnectAndWaitForPersistenceAsync(client1.FarmerName, TestCt);
+
+        // Delete the only farmhand. DELETE runs EnsureAtLeastXCabins, which rebuilds the freed cabin.
         Log($"Deleting farmhand '{client1.FarmerName}'...");
         var deleteResult = await ServerApi.WaitForFarmhandDeletedByNameAsync(
             client1.FarmerName,
@@ -94,28 +114,18 @@ public class FarmhandManagementTests : TestBase
         );
         Farmers.CreatedFarmers.RemoveAll(f => f.Uid == client1.JoinResult.UniqueMultiplayerId);
 
-        // Verify slot is available (uncustomized)
-        var afterDelete = await ServerApi.GetFarmhands(TestCt);
-        Assert.NotNull(afterDelete);
-        var uncustomizedSlots = afterDelete.Farmhands.Count(f => !f.IsCustomized);
-        Assert.True(
-            uncustomizedSlots >= 1,
-            "Should have at least 1 uncustomized slot after deletion"
-        );
-        Log($"After delete: {uncustomizedSlots} uncustomized slot(s) available");
-
-        // Create second farmer using the freed slot
+        // The pool was full and can't grow, so a second farmer can join only by reusing the freed slot.
         var client2 = await Farmers.ConnectNewAsync(ct: TestCt);
-
-        // Verify farmer2 exists (poll until name syncs)
         var farmer2Found = await ServerApi.WaitForFarmhandByNameAsync(
             client2.FarmerName,
             requireCustomized: true,
             ct: TestCt
         );
-
-        Assert.True(farmer2Found, $"Farmer '{client2.FarmerName}' should exist after reusing slot");
-        Log($"Slot reuse successful: farmer '{client2.FarmerName}' joined using freed slot");
+        Assert.True(
+            farmer2Found,
+            $"Farmer '{client2.FarmerName}' should join by reusing the one freed slot"
+        );
+        Log($"Slot reuse successful: farmer '{client2.FarmerName}' joined using the freed slot");
     }
 
     /// <summary>

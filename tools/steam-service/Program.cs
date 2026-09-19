@@ -497,11 +497,12 @@ async Task RunHttpServerAsync(
 
     var app = builder.Build();
 
-    // Correlation middleware: reads the inbound X-Request-Id header, binds it
-    // to SidecarRequestContext for the request duration, and echoes it on
-    // the response. Events emitted inside the pipeline (Logger.LogEvent)
-    // carry this id so the test harness can stitch sidecar events to the
-    // triggering mod request. Missing/blank headers leave Current == null.
+    // Correlation middleware: reads the inbound X-Request-Id / X-Test-Id
+    // headers, binds them to SidecarRequestContext for the request duration,
+    // and echoes the request id on the response. Events emitted inside the
+    // pipeline (Logger.LogEvent) carry both so the test harness can stitch
+    // sidecar events to the triggering mod request and to the originating
+    // test. A missing header leaves its id null.
     app.Use(
         async (ctx, next) =>
         {
@@ -511,7 +512,8 @@ async Task RunHttpServerAsync(
                 ctx.Response.Headers["X-Request-Id"] = requestId;
             }
 
-            using var _scope = SidecarRequestContext.Begin(requestId);
+            string? testId = ctx.Request.Headers["X-Test-Id"].FirstOrDefault();
+            using var _scope = SidecarRequestContext.Bind(requestId, testId);
             await next();
         }
     );

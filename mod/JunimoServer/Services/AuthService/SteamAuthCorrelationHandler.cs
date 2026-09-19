@@ -1,31 +1,40 @@
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using JunimoServer.Services.Diagnostics;
+using JunimoServer.Shared;
 
 namespace JunimoServer.Services.Auth;
 
 /// <summary>
-/// Forwards the ambient <see cref="ModRequestContext.RequestId"/> to the
-/// steam-auth sidecar as an <c>X-Request-Id</c> header. When a request
-/// is made outside any handler scope (null ambient id), no header is
-/// added and the sidecar treats the request as orphan.
+/// Forwards the ambient <see cref="RequestContext.RequestId"/> and
+/// <see cref="RequestContext.TestId"/> to the steam-auth sidecar as
+/// <c>X-Request-Id</c> / <c>X-Test-Id</c> headers. When a request is made
+/// outside any handler scope (null ambient ids), no header is added and the
+/// sidecar treats the request as orphan.
 /// </summary>
 internal sealed class SteamAuthCorrelationHandler : DelegatingHandler
 {
-    private const string HeaderName = "X-Request-Id";
+    private const string RequestIdHeader = "X-Request-Id";
+    private const string TestIdHeader = "X-Test-Id";
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
     )
     {
-        var requestId = ModRequestContext.RequestId;
-        if (!string.IsNullOrEmpty(requestId))
-        {
-            request.Headers.Remove(HeaderName);
-            request.Headers.Add(HeaderName, requestId);
-        }
+        Forward(request, RequestIdHeader, RequestContext.RequestId);
+        Forward(request, TestIdHeader, RequestContext.TestId);
         return base.SendAsync(request, cancellationToken);
+    }
+
+    private static void Forward(HttpRequestMessage request, string header, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+
+        request.Headers.Remove(header);
+        request.Headers.TryAddWithoutValidation(header, value);
     }
 }

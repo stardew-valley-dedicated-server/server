@@ -83,7 +83,8 @@ public class DesyncKicker : ModService
         _currentEndOfDayCancelToken?.Dispose();
         _currentEndOfDayCancelToken = new CancellationTokenSource();
         var token = _currentEndOfDayCancelToken.Token;
-        var capturedRequestId = Diagnostics.ModRequestContext.RequestId;
+        var capturedRequestId = RequestContext.RequestId;
+        var capturedTestId = RequestContext.TestId;
 
         Task.Run(async () =>
         {
@@ -102,7 +103,7 @@ public class DesyncKicker : ModService
 
             _pendingGameThreadActions.Enqueue(() =>
             {
-                using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
+                using var _scope = RequestContext.Bind(capturedRequestId, capturedTestId);
                 if (token.IsCancellationRequested)
                 {
                     return;
@@ -147,7 +148,8 @@ public class DesyncKicker : ModService
         _currentNewDayBarrierCancelToken?.Dispose();
         _currentNewDayBarrierCancelToken = new CancellationTokenSource();
         var token = _currentNewDayBarrierCancelToken.Token;
-        var capturedRequestId = Diagnostics.ModRequestContext.RequestId;
+        var capturedRequestId = RequestContext.RequestId;
+        var capturedTestId = RequestContext.TestId;
 
         Task.Run(async () =>
         {
@@ -167,7 +169,7 @@ public class DesyncKicker : ModService
 
             _pendingGameThreadActions.Enqueue(() =>
             {
-                using var _scope = Diagnostics.ModRequestContext.Bind(capturedRequestId);
+                using var _scope = RequestContext.Bind(capturedRequestId, capturedTestId);
                 if (token.IsCancellationRequested)
                 {
                     return;

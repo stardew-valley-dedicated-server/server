@@ -1,3 +1,4 @@
+using System.Text;
 using Xunit;
 
 namespace JunimoServer.Tests.Helpers;
@@ -42,9 +43,39 @@ public static class TestIdentityContext
             return new TestIdentity(
                 Class: testClass.TestClassSimpleName,
                 Method: testMethod.MethodName,
-                DisplayName: displayName
+                DisplayName: ToHeaderSafeId(displayName)
             );
         }
+    }
+
+    /// <summary>
+    /// Canonical form of a test display name, used for both the emitted <c>test.displayName</c>
+    /// and the <c>X-Test-Id</c> header so the <c>testId</c> join is exact. Header values must be
+    /// printable ASCII (<c>HttpListener</c> returns 400 on CR or LF), which a Theory argument can
+    /// violate. Each character outside that range maps to its own escape, so names that differ
+    /// only there stay distinct.
+    /// </summary>
+    private static string ToHeaderSafeId(string value)
+    {
+        if (!value.AsSpan().ContainsAnyExceptInRange(' ', '~'))
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder();
+        foreach (var c in value)
+        {
+            if (c < ' ' || c > '~')
+            {
+                sb.Append("\\u").Append(((int)c).ToString("X4"));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>

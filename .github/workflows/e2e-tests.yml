@@ -383,8 +383,11 @@ jobs:
       # turns on the in-container draw loop AND the video recorder; on this
       # gpu:false VPS the recorder uses libx264 software encoding (no NVENC). The
       # .mp4 clips land under TestResults/runs/ and are uploaded as artifacts.
-      # SDVD_TEST_SCREENSHOTS / SDVD_TEST_TRACING are intentionally unset here
-      # (as in .env.test) so they take their defaults.
+      # SDVD_TEST_SCREENSHOTS is intentionally unset here (as in .env.test) so it
+      # takes its default. SDVD_TEST_TRACING=none skips the unset default's
+      # per-poll body capture; per-test attribution (X-Test-Id) is sent at every
+      # level, so server events stay attributable to their test.
+      SDVD_TEST_TRACING: none
       SERVER_TPS: "5"
       SERVER_FPS: "5"
       CLIENT_TPS: "5"

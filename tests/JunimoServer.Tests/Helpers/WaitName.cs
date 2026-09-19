@@ -156,8 +156,9 @@ public enum WaitName
     Polling_SaveImport_ReleasedState,
     Polling_SaveImport_OwnershipStateReloaded,
 
-    // FarmhandManagementTests.cs (1)
+    // FarmhandManagementTests.cs (2)
     Polling_FarmhandManagement_FarmhandGone,
+    Polling_FarmhandManagement_SingleCabinFull,
 
     // HostAutomationTests.cs (11)
     Polling_HostAutomation_NoPlayers,

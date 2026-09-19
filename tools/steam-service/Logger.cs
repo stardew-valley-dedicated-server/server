@@ -90,7 +90,8 @@ public static class Logger
             var entry = new
             {
                 ts = DateTime.UtcNow,
-                requestId = SidecarRequestContext.Current,
+                requestId = SidecarRequestContext.RequestId,
+                testId = SidecarRequestContext.TestId,
                 service = "steam-auth",
                 @event = name,
                 data,

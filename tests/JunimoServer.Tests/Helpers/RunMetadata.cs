@@ -223,6 +223,9 @@ public static class RunMetadata
                 result[key] = val;
             }
         }
+
+        // The resolved level, not the raw env var, which is usually unset.
+        result["testTracingLevel"] = TestTracing.Level.ToString();
         return result;
     }
 

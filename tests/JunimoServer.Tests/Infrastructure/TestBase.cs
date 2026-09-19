@@ -121,10 +121,13 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     private CancellationTokenSource? _budgetCts;
     private bool _budgetArmed;
 
-    // Token returned by Lease.Managed.RegisterRunningTest() at the queue→active
-    // transition. Disposed at the very end of DisposeAsync (after lease release)
-    // so server_disposed (per_test_release) annotations still resolve to this
-    // test. Null when AcquireServerAsync was never reached (dispose-during-init).
+    // Instance BindToActiveInstance last bound to; a re-acquire on the same instance is a no-op.
+    private string? _lastBoundInstanceId;
+
+    // Token from Lease.Managed.RegisterRunningTest(), re-pointed by BindToActiveInstance on a
+    // mid-test re-acquire. Disposed at the very end of DisposeAsync (after lease release) so
+    // server_disposed (per_test_release) annotations still resolve to this test. Null when no
+    // instance was ever bound (dispose-during-init).
     private IDisposable? _runningTestToken;
 
     /// <summary>
@@ -151,15 +154,18 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     /// <summary>
     /// Marks the queue→active transition: stamps <see cref="_activeStartTime"/>,
     /// emits <c>test_running</c> for the UI, and arms the per-test timeout.
-    /// Idempotent — only the first call has any effect, so mid-test
-    /// re-acquisitions (e.g. via <see cref="EnsureConnectedAsync"/> when
-    /// a persistent session was found dead) don't reset the timeout.
-    /// Call once per test, at the point where every harness queueing wait
-    /// (turn lock, client capacity, server slot, exclusive gate drain) has
-    /// completed and the test is about to run its own logic.
+    /// Only the first call arms the timeout, so mid-test re-acquisitions
+    /// (e.g. via <see cref="EnsureConnectedAsync"/> when a persistent session
+    /// was found dead) don't reset it; every call re-runs
+    /// <see cref="BindToActiveInstance"/>, since the re-acquired instance may
+    /// differ. Call at the point where every harness queueing wait (turn lock,
+    /// client capacity, server slot, exclusive gate drain) has completed and
+    /// the test is about to run its own logic.
     /// </summary>
     private void MarkActiveAndArmBudget()
     {
+        BindToActiveInstance();
+
         if (_budgetArmed)
         {
             return;
@@ -175,23 +181,47 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
             _testDisplayName ?? $"{_testClassName}.unknown"
         );
 
-        // Register this test as currently executing on the leased server so
-        // broker-side annotations (server_poisoned, server_disposed,
-        // mod_phase forwarding) attribute to the running test rather than the
-        // test that originally took the lease (which differs under
-        // KeepConnected). Lease may be null for dispose-during-init paths;
-        // skip silently in that case.
-        if (Lease != null && _testDisplayName != null)
-        {
-            _runningTestToken = Lease.Managed.RegisterRunningTest(_testDisplayName);
-        }
-
         // Per-test progress heartbeat for the stall watchdog: a long KeepConnected class
         // holds one lease across many sequential methods (no acquire/release between them),
         // so without this its method boundaries would look like a stalled run.
         TestResourceBroker.Instance.MarkRunProgress();
 
         _budgetCts?.CancelAfter(TestTimeout);
+    }
+
+    /// <summary>
+    /// Binds this test's per-instance diagnostics to the currently-leased server; a repeat call on
+    /// the same instance is a no-op. Two bindings must track the active instance:
+    /// <list type="number">
+    ///   <item>the running-test registration, so broker-side annotations (server_poisoned,
+    ///   server_disposed, mod_phase forwarding) attribute to this test rather than the lease owner,
+    ///   which differs under KeepConnected;</item>
+    ///   <item>the <c>test_instance_bound</c> record in <c>infrastructure.jsonl</c>.
+    ///   <c>server_acquired</c> fires only for the test that took the lease; under
+    ///   KeepConnected/adopted sessions one lease spans many methods, so the other methods would
+    ///   have no on-disk test-to-instance link.</item>
+    /// </list>
+    /// A dead KeepConnected session re-acquires a possibly different instance mid-method, so both
+    /// bindings re-run there.
+    /// </summary>
+    private void BindToActiveInstance()
+    {
+        if (
+            Lease?.ServerInstanceId is not { } instanceId
+            || _testDisplayName == null
+            || instanceId == _lastBoundInstanceId
+        )
+        {
+            return;
+        }
+
+        _lastBoundInstanceId = instanceId;
+
+        // The prior token (if any) is on a lease this method no longer holds.
+        _runningTestToken?.Dispose();
+        _runningTestToken = Lease.Managed.RegisterRunningTest(_testDisplayName);
+
+        InfrastructureEventLog.Emit("test_instance_bound", new { serverInstanceId = instanceId });
     }
 
     /// <summary>

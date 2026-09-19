@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using JunimoServer.Shared;
 using JunimoTestClient.Diagnostics;
 using StardewModdingAPI;
 
@@ -186,7 +187,12 @@ public class TestApiServer : IDisposable
             }
         }
 
-        using var _correlationScope = ClientRequestContext.Bind(requestId);
+        // The test-id is attached by the harness on every request regardless of
+        // tracing level, so client-mod events are attributable even for reads
+        // that carry no requestId.
+        var testId = request.Headers["X-Test-Id"];
+
+        using var _correlationScope = RequestContext.Bind(requestId, testId);
 
         // Per-request stopwatch fed into the http_served event in the finally
         // block. Captured here so early-return paths still emit a duration.
