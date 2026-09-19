@@ -177,12 +177,18 @@ jobs:
       # type=gha does not persist BuildKit `--mount=type=cache` directories (the Dockerfile uses
       # one for /root/.nuget/packages on every restore), so NuGet re-downloads on each run. The
       # cache-dance bridges that gap: actions/cache persists a local `nuget-cache-mount` dir across
-      # runs, the inject step seeds the BuildKit mount from it before the build, and the extract
-      # step (after the build) writes the updated mount back for actions/cache to save.
-      - name: Cache NuGet mount
+      # runs, and the inject step seeds the BuildKit mount from it before the build.
+      #
+      # SECURITY: restore-only. This job runs under pull_request_target and checks out the PR
+      # HEAD (fork or not), so its Dockerfile could plant a tampered package into the mount
+      # without changing the hashed key files. Saving that would poison the shared
+      # nuget-cache-mount scope a later trusted build restores. So we restore read-only and never
+      # write back (no extract, no save); the shared key is populated only by trusted
+      # default-branch runs in e2e-tests.yml. A cache miss just rebuilds from scratch.
+      - name: Restore NuGet mount
         id: nuget-cache
         if: needs.changes.outputs.docker == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: nuget-cache-mount
           key: nuget-cache-mount-${{ hashFiles('mod/**/*.csproj', 'tools/steam-service/**/*.csproj', 'Directory.Build.props') }}
@@ -214,18 +220,6 @@ jobs:
           # Read-only: reads the shared `server` scope that preview/release builds populate,
           # but never persists (no cache-to) since the validation image is throwaway.
           cache-from: type=gha,scope=server
-
-      - name: Extract NuGet mount
-        if: needs.changes.outputs.docker == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
-        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-dir: nuget-cache-mount
-          cache-map: |
-            {
-              "nuget-cache-mount": "/root/.nuget/packages"
-            }
-          extract: true
 
       - name: Build summary
         run: |
