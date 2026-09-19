@@ -126,7 +126,10 @@ public class SteamAppIdTests : TestBase
                 return false;
             },
             TimeSpan.FromSeconds(30),
-            cancellationToken: TestCt
+            cancellationToken: TestCt,
+            // A hung GetLogsAsync trips the 10s per-request timeout; retry it against the
+            // outer budget instead of letting that child cancellation end the whole poll.
+            isRetryable: ex => ex is OperationCanceledException && !TestCt.IsCancellationRequested
         );
 
         Assert.True(found, "SDR relay status line should appear in server logs");

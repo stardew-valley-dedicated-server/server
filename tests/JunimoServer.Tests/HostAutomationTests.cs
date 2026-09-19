@@ -89,6 +89,13 @@ public class HostAutomationTests : TestBase
                 timeAdvanced,
                 $"Time should not advance while no players connected, but changed from {time1}"
             );
+
+            // A false return also covers "every observation transport-faulted", which
+            // WaitForStatusMatchAsync reports the same as "clock held". Read the clock
+            // directly so a silent outage during the window can't pass this negative check.
+            var statusFinal = await ServerApi.GetStatus(ct);
+            Assert.NotNull(statusFinal);
+            Assert.Equal(time1, statusFinal!.TimeOfDay);
             LogSuccess("Confirmed: time did not advance while no players connected");
         }
         finally
