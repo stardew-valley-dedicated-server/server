@@ -2803,11 +2803,17 @@ public partial class ApiService : ModService
     /// </summary>
     [ApiEndpoint("GET", "/status", Summary = "Get server status", Tag = "Server", Public = true)]
     [ApiResponse(typeof(ServerStatus), 200, Description = "Server status and game state")]
-    private ServerStatus HandleGetStatus()
+    private ServerStatus HandleGetStatus() => HandleGetStatus(_snapshot);
+
+    /// <summary>
+    /// Builds the <c>/status</c> response from <paramref name="snap"/>. The wait endpoints pass
+    /// the snapshot that satisfied their filter so the body never reflects a later publication
+    /// that no longer matches.
+    /// </summary>
+    private ServerStatus HandleGetStatus(GameStateSnapshot snap)
     {
         var modInfo = Helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
-        var snap = _snapshot;
         var tpsSeconds = _tpsSeconds.Average;
         var tps = tpsSeconds > 0 ? Math.Round(_tpsTicks.Average / tpsSeconds, 1) : 0;
 
@@ -2885,9 +2891,10 @@ public partial class ApiService : ModService
     /// <summary>Reads from periodic snapshot. See <see cref="TakeGameStateSnapshot"/>.</summary>
     [ApiEndpoint("GET", "/players", Summary = "Get connected players", Tag = "Server")]
     [ApiResponse(typeof(PlayersResponse), 200, Description = "List of connected players")]
-    private PlayersResponse HandleGetPlayers()
+    private PlayersResponse HandleGetPlayers() => HandleGetPlayers(_snapshot);
+
+    private static PlayersResponse HandleGetPlayers(GameStateSnapshot snap)
     {
-        var snap = _snapshot;
         return new PlayersResponse { Players = snap.Players, Sequence = snap.Sequence };
     }
 
@@ -3625,12 +3632,11 @@ public partial class ApiService : ModService
 
         EmitPredicateChangedAtHeader(response, changedAt);
 
-        // Delegate to the regular status handler so the response shape is
-        // identical to /status (caller's deserializer doesn't need a
-        // separate type). HandleGetStatus reads _snapshot atomically; the
-        // snapshot sequence may have advanced since Matches saw it, but the
-        // returned data is at least as fresh as what the predicate matched.
-        await WriteJsonAsync(response, HandleGetStatus());
+        // Same response shape as /status (caller's deserializer doesn't need a
+        // separate type), built from the snapshot the predicate matched: the
+        // caller treats a 200 as "filter satisfied", so a re-read of _snapshot
+        // could hand back a later publication that no longer matches.
+        await WriteJsonAsync(response, HandleGetStatus(matched));
     }
 
     private static DateTime MaxUtc(DateTime a, DateTime b) => a > b ? a : b;
@@ -3808,7 +3814,7 @@ public partial class ApiService : ModService
         {
             EmitPredicateChangedAtHeader(response, firstSeen);
         }
-        await WriteJsonAsync(response, HandleGetPlayers());
+        await WriteJsonAsync(response, HandleGetPlayers(matched));
     }
 
     /// <summary>
@@ -3933,7 +3939,7 @@ public partial class ApiService : ModService
         }
         EmitPredicateChangedAtHeader(response, changedAt);
 
-        await WriteJsonAsync(response, HandleGetFarmhands());
+        await WriteJsonAsync(response, HandleGetFarmhands(matched));
     }
 
     /// <summary>
@@ -4152,9 +4158,10 @@ public partial class ApiService : ModService
     /// <summary>Reads from periodic snapshot. See <see cref="TakeGameStateSnapshot"/>.</summary>
     [ApiEndpoint("GET", "/farmhands", Summary = "Get all farmhand slots", Tag = "Farmhands")]
     [ApiResponse(typeof(FarmhandsResponse), 200, Description = "List of farmhand slots")]
-    private FarmhandsResponse HandleGetFarmhands()
+    private FarmhandsResponse HandleGetFarmhands() => HandleGetFarmhands(_snapshot);
+
+    private static FarmhandsResponse HandleGetFarmhands(GameStateSnapshot snap)
     {
-        var snap = _snapshot;
         return new FarmhandsResponse { Farmhands = snap.Farmhands, Sequence = snap.Sequence };
     }
 
