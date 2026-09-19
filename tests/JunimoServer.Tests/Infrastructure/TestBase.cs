@@ -122,7 +122,7 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     private bool _budgetArmed;
 
     // Instance id of the last test_instance_bound emit this method (per-method TestBase instance);
-    // lets EmitInstanceBinding dedupe so a mid-test re-acquire re-binds without duplicating it.
+    // lets BindToActiveInstance dedupe so a mid-test re-acquire re-binds without duplicating it.
     private string? _lastBoundInstanceId;
 
     // Token from Lease.Managed.RegisterRunningTest(), set by BindToActiveInstance at the

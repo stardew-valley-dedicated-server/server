@@ -9,9 +9,8 @@ namespace JunimoServer.Tests.Helpers;
 /// ad-hoc run is fully reconstructable from artifacts without a re-run.
 /// Per-test attribution (the <c>X-Test-Id</c> header) is emitted at every
 /// level, so throughput-sensitive contexts opt down explicitly without losing
-/// it: CI pins <c>none</c> (see <c>.github/workflows/e2e-tests.yml</c>), keeping
-/// the parallel-suite throughput of the old default while every server event
-/// stays test-attributable.
+/// it: CI pins <c>none</c> (see <c>.github/workflows/e2e-tests.yml</c>) for
+/// parallel-suite throughput while every server event stays test-attributable.
 /// </para>
 ///
 /// <para>

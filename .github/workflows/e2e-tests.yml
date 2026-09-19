@@ -384,11 +384,11 @@ jobs:
       # gpu:false VPS the recorder uses libx264 software encoding (no NVENC). The
       # .mp4 clips land under TestResults/runs/ and are uploaded as artifacts.
       # SDVD_TEST_SCREENSHOTS is intentionally unset here (as in .env.test) so it
-      # takes its default. SDVD_TEST_TRACING is pinned to none: the unset default
-      # is now full (rich per-poll body capture for ad-hoc debugging), which the
-      # parallel CI suite doesn't want. Per-test attribution rides the
-      # level-independent X-Test-Id header, so none keeps CI throughput while every
-      # server event stays attributable to its test.
+      # takes its default. SDVD_TEST_TRACING is pinned to none: the unset default is
+      # full (per-poll body capture for ad-hoc debugging), which the parallel CI suite
+      # doesn't want. Per-test attribution rides the level-independent X-Test-Id
+      # header, so none keeps CI throughput while every server event stays
+      # attributable to its test.
       SDVD_TEST_TRACING: none
       SERVER_TPS: "5"
       SERVER_FPS: "5"
