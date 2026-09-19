@@ -3556,8 +3556,10 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Polls DELETE /farmhands?name=X until the farmhand is gone. A DELETE that reports
-    /// Success is the direct signal; a "not found" result is reconciled against the
-    /// /farmhands snapshot, and an absent name is also treated as done — see the probe.
+    /// Success is the direct signal. A "not found" that follows a faulted DELETE is
+    /// reconciled against the /farmhands snapshot — an absent name means that delete
+    /// landed. Any other failure, including a "not found" on an attempt that never
+    /// faulted, retries to the deadline.
     /// </summary>
     public async Task<FarmhandOperationResponse?> WaitForFarmhandDeletedByNameAsync(
         string name,
@@ -3566,25 +3568,38 @@ public class ServerApiClient : IDisposable
     )
     {
         FarmhandOperationResponse? result = null;
+        var deleteWasAmbiguous = false;
         await PollSnapshotAsync(
             WaitName.Polling_ServerApi_WaitForFarmhandDeletedByName,
             async token =>
             {
-                result = await DeleteFarmhandByName(name, token);
+                try
+                {
+                    result = await DeleteFarmhandByName(name, token);
+                }
+                catch (Exception ex) when (IsRetryableRequestFault(ex))
+                {
+                    deleteWasAmbiguous = true;
+                    throw;
+                }
+
                 if (result?.Success == true)
                 {
                     return true;
                 }
 
-                // The server commits the deletion on a 15s game-thread budget that ignores
-                // the client's per-request token (ApiService.HandleDeleteFarmhandAsync). If the
-                // game thread is blocked 5-15s (day transition / save sync), the committing
-                // DELETE can surface here as a transport fault, and the next DELETE then reports
-                // "not found" (Success=false) though the deletion already landed. Reconcile only
-                // that outcome against the snapshot (an absent name means the delete is done);
-                // "not ready" / "online" / "save in progress" are unambiguous and just retry.
+                // A "not found" is evidence of a completed deletion only once a DELETE has
+                // faulted: the server commits on a 15s game-thread budget that ignores the
+                // client's per-request token (ApiService.HandleDeleteFarmhandAsync), so while the
+                // game thread is blocked 5-15s (day transition / save sync) the committing DELETE
+                // surfaces here as a transport fault and the next one reports "not found"
+                // (Success=false) although the deletion landed. Without a prior fault a "not found"
+                // means the name was never persisted, and "not ready" / "online" / "save in
+                // progress" are unambiguous — both retry to the deadline.
                 if (
-                    result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) != true
+                    !deleteWasAmbiguous
+                    || result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                        != true
                 )
                 {
                     return false;
