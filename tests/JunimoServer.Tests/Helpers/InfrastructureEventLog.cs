@@ -43,7 +43,7 @@ namespace JunimoServer.Tests.Helpers;
 /// outer wait in <c>finally</c> by <see cref="PollingHelper.WaitUntilAsync"/>;
 /// observer-time — describes the polling loop's wall-clock duration) ·
 /// <c>long_poll_completed</c> (<c>label, succeeded, iterations, durationMs,
-/// timeoutMs, snapshotVersionAtMatch?, error?, ctCancelled, diagnostics?,
+/// timeoutMs, snapshotSequenceAtMatch?, error?, ctCancelled, diagnostics?,
 /// onTimeoutError?</c>; emitted once per outer wait by
 /// <see cref="PollingHelper.LongPollAsync"/> and by bespoke long-poll outer
 /// loops. <c>iterations</c> counts HTTP round-trips to <c>/wait/*</c> and

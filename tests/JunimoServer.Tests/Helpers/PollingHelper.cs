@@ -103,16 +103,16 @@ public static class PollingHelper
 
     /// <summary>
     /// Result of a single long-poll round-trip. <see cref="Matched"/> is the
-    /// success bit; <see cref="Version"/> is the cursor the next round-trip
-    /// should pass as <c>since=</c> — typically <c>response.Version</c> on a
+    /// success bit; <see cref="Sequence"/> is the cursor the next round-trip
+    /// should pass as <c>since=</c> — typically <c>response.Sequence</c> on a
     /// non-match (so the server doesn't return the same stale snapshot again),
     /// or the prior <c>since</c> value on a 408 / connection error (no newer
-    /// version was observed). <see cref="LongPollAsync"/> only advances the
-    /// internal cursor when this <see cref="Version"/> is greater than the
+    /// sequence was observed). <see cref="LongPollAsync"/> only advances the
+    /// internal cursor when this <see cref="Sequence"/> is greater than the
     /// current one, so passing <c>0</c> here is also safe and equivalent for
     /// any prior cursor &gt; 0.
     /// </summary>
-    public readonly record struct LongPollResult(bool Matched, long Version);
+    public readonly record struct LongPollResult(bool Matched, long Sequence);
 
     /// <summary>
     /// Long-poll variant of <see cref="WaitUntilAsync"/>. Each iteration calls
@@ -173,7 +173,7 @@ public static class PollingHelper
                         return new PollOutcome<bool>(
                             result.Matched,
                             result.Matched,
-                            result.Version
+                            result.Sequence
                         );
                     },
                     timeout,
@@ -189,10 +189,10 @@ public static class PollingHelper
 
     /// <summary>
     /// One iteration's outcome. <see cref="Value"/> is what the outer wait
-    /// returns on a match; <see cref="Version"/> is the snapshot cursor the
+    /// returns on a match; <see cref="Sequence"/> is the snapshot cursor the
     /// next iteration receives as <c>since</c> (always 0 in snapshot mode).
     /// </summary>
-    private readonly record struct PollOutcome<T>(bool Matched, T? Value, long Version);
+    private readonly record struct PollOutcome<T>(bool Matched, T? Value, long Sequence);
 
     /// <summary>
     /// The one poll loop behind the three public primitives. Returns
@@ -218,7 +218,7 @@ public static class PollingHelper
     /// <param name="longPoll">Snapshot mode (<c>false</c>) throttles each iteration with a
     /// client-side <c>Task.Delay</c> and emits <c>poll_completed</c>; long-poll mode relies on
     /// the server blocking the request, keeps a <c>since</c> cursor, and emits
-    /// <c>long_poll_completed</c> with <c>snapshotVersionAtMatch</c>.</param>
+    /// <c>long_poll_completed</c> with <c>snapshotSequenceAtMatch</c>.</param>
     private static async Task<T?> PollCoreAsync<T>(
         WaitName name,
         Func<long, TimeSpan, Task<PollOutcome<T>>> step,
@@ -237,7 +237,7 @@ public static class PollingHelper
         var succeeded = false;
         var deadlineExpired = false;
         long since = 0;
-        long? snapshotVersionAtMatch = null;
+        long? snapshotSequenceAtMatch = null;
         var label = name.ToString();
 
         // Bracket the slot to the helper's lifetime so the wait_matched emit
@@ -264,7 +264,7 @@ public static class PollingHelper
                     if (outcome.Matched)
                     {
                         succeeded = true;
-                        snapshotVersionAtMatch = outcome.Version;
+                        snapshotSequenceAtMatch = outcome.Sequence;
                         EmitWaitMatched(label);
                         return outcome.Value;
                     }
@@ -272,11 +272,11 @@ public static class PollingHelper
                     lastException = null; // Step ran successfully, just didn't match
                     // Advance the cursor on a non-match so the server doesn't
                     // return the same stale snapshot on the next round-trip.
-                    // 408 responses with no observed version leave Version
+                    // 408 responses with no observed sequence leave Sequence
                     // unchanged from `since`, so this guard is a no-op there.
-                    if (outcome.Version > since)
+                    if (outcome.Sequence > since)
                     {
-                        since = outcome.Version;
+                        since = outcome.Sequence;
                     }
                 }
                 catch (Exception ex)
@@ -349,7 +349,7 @@ public static class PollingHelper
                         iterations,
                         durationMs,
                         timeoutMs,
-                        snapshotVersionAtMatch,
+                        snapshotSequenceAtMatch,
                         error,
                         ctCancelled,
                         diagnostics,

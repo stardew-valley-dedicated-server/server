@@ -87,7 +87,7 @@ internal sealed class DayChangeWaiter
                     continue; // 408 — re-issue under our deadline
                 }
 
-                since = status.Version;
+                since = status.Sequence;
 
                 if (status.Day != day || status.Season != season || status.Year != year)
                 {

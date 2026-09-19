@@ -10,7 +10,7 @@ namespace JunimoServer.Tests.Clients;
 /// Server status data returned by the /status endpoint.
 /// Mirrors the ServerStatus class from ApiService.
 /// </summary>
-public class ServerStatus : IVersionedSnapshot
+public class ServerStatus : ISequencedSnapshot
 {
     [JsonPropertyName("playerCount")]
     public int PlayerCount { get; set; }
@@ -93,8 +93,8 @@ public class ServerStatus : IVersionedSnapshot
     /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
     /// <c>/wait/status</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -116,19 +116,16 @@ public class PlayerInfo
     public string Location { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// A snapshot-derived response carrying the server's snapshot version, the
-/// <c>since</c> cursor a <c>/wait/*</c> long-poll advances on each non-match.
-/// </summary>
-public interface IVersionedSnapshot
+/// <summary>Lets a long-poll wait ask only for snapshots newer than the last it saw.</summary>
+public interface ISequencedSnapshot
 {
-    long Version { get; }
+    long Sequence { get; }
 }
 
 /// <summary>
 /// Response from the /players endpoint.
 /// </summary>
-public class PlayersResponse : IVersionedSnapshot
+public class PlayersResponse : ISequencedSnapshot
 {
     [JsonPropertyName("players")]
     public List<PlayerInfo> Players { get; set; } = new();
@@ -137,8 +134,8 @@ public class PlayersResponse : IVersionedSnapshot
     /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
     /// <c>/wait/players</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -435,13 +432,13 @@ public class ServerFarmhandInfo
 /// <summary>
 /// Response from /farmhands endpoint.
 /// </summary>
-public class ServerFarmhandsResponse : IVersionedSnapshot
+public class ServerFarmhandsResponse : ISequencedSnapshot
 {
     [JsonPropertyName("farmhands")]
     public List<ServerFarmhandInfo> Farmhands { get; set; } = new();
 
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -1716,7 +1713,7 @@ public class ServerApiClient : IDisposable
         Func<Task<object?>>? onTimeoutAsync,
         Func<T, bool>? matches = null
     )
-        where T : class, IVersionedSnapshot
+        where T : class, ISequencedSnapshot
     {
         return PollingHelper.LongPollAsync(
             name,
@@ -1736,7 +1733,7 @@ public class ServerApiClient : IDisposable
                 }
 
                 var matched = matches == null || matches(response);
-                return new PollingHelper.LongPollResult(matched, response.Version);
+                return new PollingHelper.LongPollResult(matched, response.Sequence);
             },
             timeout,
             cancellationToken: ct,
@@ -3113,7 +3110,7 @@ public class ServerApiClient : IDisposable
                         // Snapshot advanced but conditions still unmet (e.g., invite
                         // code missing). Update `since` so the next /wait/status
                         // doesn't return immediately on the same snapshot.
-                        since = status.Version;
+                        since = status.Sequence;
                         lastReason = requireInviteCode
                             ? $"IsOnline={status.IsOnline}, IsReady={status.IsReady}, InviteCode='{status.InviteCode ?? "(null)"}'"
                             : $"IsOnline={status.IsOnline}, IsReady={status.IsReady}";
@@ -3149,7 +3146,7 @@ public class ServerApiClient : IDisposable
                     iterations = attempt,
                     durationMs = sw.ElapsedMilliseconds,
                     timeoutMs = (long)timeout.TotalMilliseconds,
-                    snapshotVersionAtMatch = (long?)matchedStatus?.Version,
+                    snapshotSequenceAtMatch = (long?)matchedStatus?.Sequence,
                     error = lastException?.Message,
                     ctCancelled = cancellationToken.IsCancellationRequested,
                 }
