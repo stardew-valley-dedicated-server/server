@@ -92,7 +92,7 @@ public class FarmhandManagementTests : TestBase
                 cabins = await ServerApi.GetCabins(TestCt);
                 return cabins is { TotalCount: 1, AvailableCount: 0 };
             },
-            TestTimings.FarmerRemovalBudget,
+            TestTimings.CabinAssignmentTimeout,
             cancellationToken: TestCt
         );
         Assert.True(
