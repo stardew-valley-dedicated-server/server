@@ -10,7 +10,7 @@ namespace JunimoServer.Tests.Clients;
 /// Server status data returned by the /status endpoint.
 /// Mirrors the ServerStatus class from ApiService.
 /// </summary>
-public class ServerStatus
+public class ServerStatus : ISequencedSnapshot
 {
     [JsonPropertyName("playerCount")]
     public int PlayerCount { get; set; }
@@ -90,11 +90,11 @@ public class ServerStatus
     public bool IsPaused { get; set; }
 
     /// <summary>
-    /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
+    /// Monotonic snapshot sequence. Pass back as <c>?since=N</c> on
     /// <c>/wait/status</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -116,20 +116,26 @@ public class PlayerInfo
     public string Location { get; set; } = string.Empty;
 }
 
+/// <summary>Lets a long-poll wait ask only for snapshots newer than the last it saw.</summary>
+public interface ISequencedSnapshot
+{
+    long Sequence { get; }
+}
+
 /// <summary>
 /// Response from the /players endpoint.
 /// </summary>
-public class PlayersResponse
+public class PlayersResponse : ISequencedSnapshot
 {
     [JsonPropertyName("players")]
     public List<PlayerInfo> Players { get; set; } = new();
 
     /// <summary>
-    /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
+    /// Monotonic snapshot sequence. Pass back as <c>?since=N</c> on
     /// <c>/wait/players</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -426,13 +432,13 @@ public class ServerFarmhandInfo
 /// <summary>
 /// Response from /farmhands endpoint.
 /// </summary>
-public class ServerFarmhandsResponse
+public class ServerFarmhandsResponse : ISequencedSnapshot
 {
     [JsonPropertyName("farmhands")]
     public List<ServerFarmhandInfo> Farmhands { get; set; } = new();
 
-    [JsonPropertyName("version")]
-    public long Version { get; set; }
+    [JsonPropertyName("sequence")]
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -1582,6 +1588,137 @@ public class ServerApiClient : IDisposable
         _httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Get, path).Mark(), ct);
 
     /// <summary>
+    /// One <c>/wait/*</c> round trip: appends the server-side <c>?timeout=</c>
+    /// (default <see cref="DefaultWaitServerTimeout"/>), issues the GET, and maps
+    /// 408 (no match within the server timeout) to <c>null</c>. The public
+    /// <c>WaitFor*Async</c> adapters only build the filter query.
+    /// </summary>
+    private async Task<T?> WaitEndpointAsync<T>(
+        string path,
+        List<string> query,
+        TimeSpan? timeout,
+        CancellationToken ct
+    )
+        where T : class
+    {
+        // The server treats timeout=0 as "use the 10s cap", so a sub-millisecond
+        // remaining budget must not truncate to 0 and block for the full cap.
+        var serverTimeoutMs = Math.Max(
+            1,
+            (long)(timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds)
+        );
+        query.Add($"timeout={serverTimeoutMs}");
+        var url = path + "?" + string.Join("&", query);
+
+        var response = await GetRetrySafeAsync(url, ct);
+        if (response.StatusCode == HttpStatusCode.RequestTimeout)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(ct);
+    }
+
+    /// <summary>
+    /// Retryable-fault filter for the wait/poll loops: connection errors and non-success
+    /// statuses (<see cref="HttpRequestException"/>), the per-request timeout
+    /// (<see cref="OperationCanceledException"/>), and a connection dropped mid-response
+    /// (<c>HttpIOException</c>, an <see cref="IOException"/>, not an
+    /// <see cref="HttpRequestException"/>). Anything else, notably a <c>JsonException</c>
+    /// from a malformed body, is a bug and propagates so the wait reports it instead of
+    /// retrying to the deadline. Distinct from <c>TransportFaultClassifier</c>, which
+    /// decides host poisoning and ignores most of these.
+    /// </summary>
+    private static bool IsRetryableRequestFault(Exception ex) =>
+        ex is HttpRequestException or IOException or OperationCanceledException;
+
+    /// <summary>
+    /// Snapshot poll against a fast endpoint. Each <paramref name="probe"/> call receives a
+    /// token bounded by <see cref="TestTimings.PollingRequestTimeout"/> (the client's own
+    /// timeout is 5 min, so an unbounded request could outlive the poll); a transport fault
+    /// on one iteration counts as "not yet".
+    /// </summary>
+    private Task<bool> PollSnapshotAsync(
+        WaitName name,
+        Func<CancellationToken, Task<bool>> probe,
+        TimeSpan timeout,
+        CancellationToken ct,
+        Func<Task<object?>>? onTimeoutAsync
+    )
+    {
+        return PollingHelper.WaitUntilAsync(
+            name,
+            async () =>
+            {
+                using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
+                return await probe(reqCts.Token);
+            },
+            timeout,
+            cancellationToken: ct,
+            onTimeoutAsync: onTimeoutAsync,
+            isRetryable: IsRetryableRequestFault
+        );
+    }
+
+    /// <summary>
+    /// Long-poll over a <c>/wait/*</c> endpoint. <paramref name="fetch"/> receives the
+    /// <c>since</c> cursor, the server timeout to request, and a request token, and returns
+    /// <c>null</c> on 408. The server timeout is the remaining outer budget capped at
+    /// <see cref="DefaultWaitServerTimeout"/>; the request is bounded at that plus
+    /// <see cref="TestTimings.PollingRequestTimeout"/> so a healthy server wait is never
+    /// client-aborted mid-block. A non-null response matches when <paramref name="matches"/>
+    /// is null (the server already applied the filter) or returns true; otherwise the cursor
+    /// advances to its sequence. A transport fault leaves the cursor unchanged.
+    /// </summary>
+    private Task<bool> LongPollSnapshotAsync<T>(
+        WaitName name,
+        Func<long, TimeSpan, CancellationToken, Task<T?>> fetch,
+        TimeSpan timeout,
+        CancellationToken ct,
+        Func<Task<object?>>? onTimeoutAsync,
+        Func<T, bool>? matches = null
+    )
+        where T : class, ISequencedSnapshot
+    {
+        return PollingHelper.LongPollAsync(
+            name,
+            async (since, remaining) =>
+            {
+                var serverTimeout =
+                    remaining < DefaultWaitServerTimeout ? remaining : DefaultWaitServerTimeout;
+                using var reqCts = Cts.LinkedTimeout(
+                    ct,
+                    serverTimeout + TestTimings.PollingRequestTimeout
+                );
+                var response = await fetch(since, serverTimeout, reqCts.Token);
+                if (response == null)
+                {
+                    // 408: no newer snapshot within the server timeout.
+                    return new PollingHelper.LongPollResult(false, since);
+                }
+
+                var matched = matches == null || matches(response);
+                return new PollingHelper.LongPollResult(matched, response.Sequence);
+            },
+            timeout,
+            cancellationToken: ct,
+            onTimeoutAsync: onTimeoutAsync,
+            isRetryable: IsRetryableRequestFault
+        );
+    }
+
+    /// <summary>
+    /// Timeout collector for the wait helpers: dumps <see cref="FailureContext"/>
+    /// against this client. The dump runs after the poll has already failed, so it
+    /// deliberately does not take the caller's token.
+    /// </summary>
+    private Func<Task<object?>> DumpOnTimeout(
+        string reason,
+        IReadOnlyDictionary<string, object?>? extras = null
+    ) => async () => await FailureContext.DumpAsync(this, reason, extras);
+
+    /// <summary>
     /// Sends an HTTP request with automatic retry on 503 (Service Unavailable).
     /// The server returns 503 when the game thread is blocked during day transitions
     /// or saves. These are transient and resolve within seconds. Only mutating
@@ -1614,7 +1751,7 @@ public class ServerApiClient : IDisposable
             var response = await _httpClient.SendAsync(request, ct);
 
             if (
-                response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable
+                response.StatusCode != HttpStatusCode.ServiceUnavailable
                 || attempt >= TestTimings.GameThreadRetryMaxAttempts
             )
             {
@@ -1658,7 +1795,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Long-poll variant of <see cref="GetStatus"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND the requested
+    /// snapshot sequence exceeds <paramref name="since"/> AND the requested
     /// filters (<paramref name="isReady"/>, <paramref name="isPaused"/>,
     /// <paramref name="day"/>, <paramref name="playerCount"/>) match. Returns
     /// the matching status or <c>null</c> on 408 (no match within the
@@ -1707,25 +1844,52 @@ public class ServerApiClient : IDisposable
             query.Add($"playerCount={pc}");
         }
 
-        var serverTimeoutMs = (long)(
-            timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
+        return await WaitEndpointAsync<ServerStatus>("/wait/status", query, timeout, ct);
+    }
+
+    /// <summary>
+    /// Long-polls <c>/wait/status</c> until a snapshot passes the server-side filters
+    /// (the same optional arguments as <see cref="WaitForStatusAsync"/>) and
+    /// <paramref name="matches"/>, or <paramref name="timeout"/> expires. Use the
+    /// server filters wherever the field is filterable; <paramref name="matches"/>
+    /// covers the rest (a changed <c>TimeOfDay</c>, a non-empty <c>InviteCode</c>).
+    /// Returns whether a match was observed.
+    /// </summary>
+    public Task<bool> WaitForStatusMatchAsync(
+        WaitName name,
+        TimeSpan timeout,
+        Func<ServerStatus, bool>? matches = null,
+        bool? isReady = null,
+        bool? dayTransitionComplete = null,
+        bool? isPaused = null,
+        int? day = null,
+        int? playerCount = null,
+        CancellationToken ct = default
+    )
+    {
+        return LongPollSnapshotAsync(
+            name,
+            (since, serverTimeout, token) =>
+                WaitForStatusAsync(
+                    since,
+                    isReady,
+                    dayTransitionComplete,
+                    isPaused,
+                    day,
+                    playerCount,
+                    serverTimeout,
+                    token
+                ),
+            timeout,
+            ct,
+            onTimeoutAsync: null,
+            matches
         );
-        query.Add($"timeout={serverTimeoutMs}");
-        var url = "/wait/status?" + string.Join("&", query);
-
-        var response = await GetRetrySafeAsync(url, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
-        {
-            return null;
-        }
-
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ServerStatus>(ct);
     }
 
     /// <summary>
     /// Long-poll variant of <see cref="GetPlayers"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND
+    /// snapshot sequence exceeds <paramref name="since"/> AND
     /// <paramref name="playerId"/> (when set) is present in the players list.
     /// Returns the matching players response or <c>null</c> on 408.
     /// </summary>
@@ -1742,20 +1906,7 @@ public class ServerApiClient : IDisposable
             query.Add($"playerId={pid}");
         }
 
-        var serverTimeoutMs = (long)(
-            timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
-        );
-        query.Add($"timeout={serverTimeoutMs}");
-        var url = "/wait/players?" + string.Join("&", query);
-
-        var response = await GetRetrySafeAsync(url, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
-        {
-            return null;
-        }
-
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PlayersResponse>(ct);
+        return await WaitEndpointAsync<PlayersResponse>("/wait/players", query, timeout, ct);
     }
 
     /// <summary>
@@ -1855,20 +2006,7 @@ public class ServerApiClient : IDisposable
             query.Add("ready=true");
         }
 
-        var serverTimeoutMs = (long)(
-            timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
-        );
-        query.Add($"timeout={serverTimeoutMs}");
-        var url = "/wait/health" + (query.Count > 0 ? "?" + string.Join("&", query) : "");
-
-        var response = await GetRetrySafeAsync(url, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
-        {
-            return null;
-        }
-
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<HealthResponse>(ct);
+        return await WaitEndpointAsync<HealthResponse>("/wait/health", query, timeout, ct);
     }
 
     /// <summary>
@@ -1963,7 +2101,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Long-poll variant of <see cref="GetFarmhands"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND the requested
+    /// snapshot sequence exceeds <paramref name="since"/> AND the requested
     /// filters match. Returns the matching farmhands response or <c>null</c>
     /// on 408.
     /// </summary>
@@ -1992,20 +2130,12 @@ public class ServerApiClient : IDisposable
             query.Add($"requireCustomized={rc.ToString().ToLowerInvariant()}");
         }
 
-        var serverTimeoutMs = (long)(
-            timeout?.TotalMilliseconds ?? DefaultWaitServerTimeout.TotalMilliseconds
+        return await WaitEndpointAsync<ServerFarmhandsResponse>(
+            "/wait/farmhands",
+            query,
+            timeout,
+            ct
         );
-        query.Add($"timeout={serverTimeoutMs}");
-        var url = "/wait/farmhands?" + string.Join("&", query);
-
-        var response = await GetRetrySafeAsync(url, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
-        {
-            return null;
-        }
-
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ServerFarmhandsResponse>(ct);
     }
 
     /// <summary>
@@ -2172,38 +2302,27 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForFarmerServerTile,
-            async () =>
+        return await PollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForFarmerServerTile,
+            async token =>
             {
-                try
-                {
-                    // Bound each request well under the outer budget: _httpClient.Timeout is 5
-                    // min, so an unbounded request could outlive the poll and hang.
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var response = await GetRetrySafeAsync("/test/farmers", reqCts.Token);
-                    response.EnsureSuccessStatusCode();
-                    var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(
-                        reqCts.Token
-                    );
-                    var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
-                    return f != null && f.TileX == tileX && f.TileY == tileY;
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    // Per-request timeout or connection error, retry.
-                    return false;
-                }
+                var response = await GetRetrySafeAsync("/test/farmers", token);
+                response.EnsureSuccessStatusCode();
+                var farmers = await response.Content.ReadFromJsonAsync<TestFarmersResponse>(token);
+                var f = farmers?.Farmers.FirstOrDefault(x => x.Id == farmerId);
+                return f != null && f.TileX == tileX && f.TileY == tileY;
             },
-            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
+            timeout ?? TestTimings.NetworkSyncTimeout,
+            ct,
+            DumpOnTimeout(
+                "WaitForFarmerServerTileAsync_timeout",
+                new Dictionary<string, object?>
+                {
+                    ["farmerId"] = farmerId,
+                    ["tileX"] = tileX,
+                    ["tileY"] = tileY,
+                }
+            )
         );
     }
 
@@ -2225,37 +2344,28 @@ public class ServerApiClient : IDisposable
     {
         var url =
             $"/test/object_at_tile?location={Uri.EscapeDataString(location)}&x={tileX}&y={tileY}";
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForObjectAtServerTile,
-            async () =>
+        return await PollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForObjectAtServerTile,
+            async token =>
             {
-                try
-                {
-                    // Bound each request well under the outer budget: _httpClient.Timeout is 5
-                    // min, so an unbounded request could outlive the poll and hang.
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var response = await GetRetrySafeAsync(url, reqCts.Token);
-                    response.EnsureSuccessStatusCode();
-                    var body = await response.Content.ReadFromJsonAsync<TestObjectAtTileResponse>(
-                        reqCts.Token
-                    );
-                    return body?.Present == true;
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    // Per-request timeout or connection error, retry.
-                    return false;
-                }
+                var response = await GetRetrySafeAsync(url, token);
+                response.EnsureSuccessStatusCode();
+                var body = await response.Content.ReadFromJsonAsync<TestObjectAtTileResponse>(
+                    token
+                );
+                return body?.Present == true;
             },
-            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct
+            timeout ?? TestTimings.NetworkSyncTimeout,
+            ct,
+            DumpOnTimeout(
+                "WaitForObjectAtServerTileAsync_timeout",
+                new Dictionary<string, object?>
+                {
+                    ["location"] = location,
+                    ["tileX"] = tileX,
+                    ["tileY"] = tileY,
+                }
+            )
         );
     }
 
@@ -2854,17 +2964,16 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Waits for the server to come online and be ready.
+    /// Long-polls <c>/wait/status</c> until the server is online and ready. Unlike the other
+    /// waits, swallows every fault and returns <c>null</c> on timeout or cancellation.
     /// </summary>
-    /// <param name="timeout">Maximum time to wait</param>
-    /// <param name="pollInterval">Time between status checks</param>
-    /// <param name="cancellationToken">Cancellation token for early abort (e.g., on server error)</param>
-    /// <param name="onProgress">Optional callback for progress reporting (attempt count, detail message)</param>
-    /// <param name="requireInviteCode">If true, also waits for a non-empty invite code (Steam/Galaxy). Servers without Steam auth should pass false.</param>
-    /// <returns>The server status once online, or null if timeout/cancelled</returns>
+    /// <param name="cancellationToken">Early abort, for example on a server error.</param>
+    /// <param name="onProgress">Progress callback (attempt count, last reason).</param>
+    /// <param name="requireInviteCode">Also wait for a non-empty invite code (Steam/Galaxy).
+    /// Servers without Steam auth should pass false.</param>
+    /// <returns>The matching status, or <c>null</c> on timeout or cancellation.</returns>
     public Task<ServerStatus?> WaitForServerOnline(
         TimeSpan timeout,
-        TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
         Action<string>? onProgress = null,
         bool requireInviteCode = true
@@ -2875,7 +2984,6 @@ public class ServerApiClient : IDisposable
             () =>
                 WaitForServerOnlineCoreAsync(
                     timeout,
-                    pollInterval,
                     cancellationToken,
                     onProgress,
                     requireInviteCode
@@ -2887,20 +2995,15 @@ public class ServerApiClient : IDisposable
 
     private async Task<ServerStatus?> WaitForServerOnlineCoreAsync(
         TimeSpan timeout,
-        TimeSpan? pollInterval,
         CancellationToken cancellationToken,
         Action<string>? onProgress,
         bool requireInviteCode
     )
     {
-        // Long-poll path: each iteration calls /wait/status?isReady=true with a
-        // server-side hard cap of 10s. The server blocks until a newer snapshot
-        // satisfies the filter, so a healthy server returns immediately on the
-        // first poll. The legacy 1s pollInterval is unused on this path —
-        // server-side blocking replaces client-side throttling. We still keep
-        // an outer loop so the requireInviteCode path can advance `since` and
-        // re-poll when the snapshot has refreshed but invite codes are still
-        // missing (invite code is read from a file, not from the snapshot).
+        // Each iteration calls /wait/status?isReady=true under the server's 10s cap, so a
+        // healthy server returns on the first poll. The outer loop serves the
+        // requireInviteCode path: the invite code is read from a file, not the snapshot, so
+        // `since` must advance and re-poll when the snapshot refreshed without a code.
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var deadline = DateTime.UtcNow + timeout;
         long since = 0;
@@ -2942,7 +3045,7 @@ public class ServerApiClient : IDisposable
 
                     if (status == null)
                     {
-                        // 408 — server-side timeout. Try again under our deadline.
+                        // 408: no newer snapshot within the server timeout, re-issue under our deadline.
                         lastReason = "server-side timeout (408)";
                     }
                     else
@@ -2966,7 +3069,7 @@ public class ServerApiClient : IDisposable
                         // Snapshot advanced but conditions still unmet (e.g., invite
                         // code missing). Update `since` so the next /wait/status
                         // doesn't return immediately on the same snapshot.
-                        since = status.Version;
+                        since = status.Sequence;
                         lastReason = requireInviteCode
                             ? $"IsOnline={status.IsOnline}, IsReady={status.IsReady}, InviteCode='{status.InviteCode ?? "(null)"}'"
                             : $"IsOnline={status.IsOnline}, IsReady={status.IsReady}";
@@ -3002,7 +3105,7 @@ public class ServerApiClient : IDisposable
                     iterations = attempt,
                     durationMs = sw.ElapsedMilliseconds,
                     timeoutMs = (long)timeout.TotalMilliseconds,
-                    snapshotVersionAtMatch = (long?)matchedStatus?.Version,
+                    snapshotSequenceAtMatch = (long?)matchedStatus?.Sequence,
                     error = lastException?.Message,
                     ctCancelled = cancellationToken.IsCancellationRequested,
                 }
@@ -3139,9 +3242,11 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Polls GET /players until a player with the given name appears.
-    /// Prefer <see cref="WaitForPlayerByIdAsync"/> for fresh joiners: Name can lag
-    /// 1-18 s behind peer-add while the character XML round-trips.
+    /// Long-polls /wait/players until a player with the given name appears. The
+    /// server filters only by id, so the name is matched client-side on every
+    /// newer snapshot. Prefer <see cref="WaitForPlayerByIdAsync"/> for fresh
+    /// joiners: Name can lag 1-18 s behind peer-add while the character XML
+    /// round-trips.
     /// </summary>
     public async Task<bool> WaitForPlayerByNameAsync(
         string name,
@@ -3149,46 +3254,26 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForPlayerByName,
-            async () =>
-            {
-                try
-                {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var players = await GetPlayers(reqCts.Token);
-                    return players?.Players?.Any(p =>
-                            p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                        ) == true;
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    // Request timeout or connection error during server boot, retry
-                    return false;
-                }
-            },
-            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForPlayerByNameAsync_timeout",
-                    extras: new Dictionary<string, object?> { ["name"] = name }
-                )
+        return await LongPollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForPlayerByName,
+            (since, serverTimeout, token) =>
+                WaitForPlayersAsync(since: since, timeout: serverTimeout, ct: token),
+            timeout ?? TestTimings.NetworkSyncTimeout,
+            ct,
+            DumpOnTimeout(
+                "WaitForPlayerByNameAsync_timeout",
+                new Dictionary<string, object?> { ["name"] = name }
+            ),
+            matches: players =>
+                players.Players?.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                == true
         );
     }
 
     /// <summary>
-    /// Polls GET /players until a player with the given UniqueMultiplayerID appears.
-    /// Preferred for fresh joiners: UID is assigned at peer-add, while Name lags the
-    /// character XML round-trip (1-18 s under load).
+    /// Long-polls /wait/players until a player with the given UniqueMultiplayerID
+    /// appears. Preferred for fresh joiners: UID is assigned at peer-add, while
+    /// Name lags the character XML round-trip (1-18 s under load).
     /// </summary>
     public async Task<bool> WaitForPlayerByIdAsync(
         long playerId,
@@ -3196,103 +3281,69 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        // Long-poll path: each iteration calls /wait/players?playerId=N. The
-        // server blocks until a newer snapshot contains the player or the
-        // server-side hard cap (10s) expires. The outer LongPollAsync loop is
-        // bounded by the caller's timeout and emits long_poll_completed on
-        // exit. onTimeoutAsync still runs the failure-context dump on miss.
-        return await Helpers.PollingHelper.LongPollAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForPlayerById,
-            async (since, remaining) =>
+        return await LongPollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForPlayerById,
+            (since, serverTimeout, token) =>
+                WaitForPlayersAsync(
+                    since: since,
+                    playerId: playerId,
+                    timeout: serverTimeout,
+                    ct: token
+                ),
+            timeout ?? TestTimings.NetworkSyncTimeout,
+            ct,
+            DumpOnTimeout(
+                "WaitForPlayerByIdAsync_timeout",
+                new Dictionary<string, object?> { ["playerId"] = playerId }
+            )
+        );
+    }
+
+    /// <summary>
+    /// Polls GET /players until no player whose <paramref name="keyOf"/> is in
+    /// <paramref name="keys"/> remains.
+    /// </summary>
+    private Task<bool> WaitForPlayersRemovedAsync<TKey>(
+        WaitName name,
+        HashSet<TKey> keys,
+        Func<PlayerInfo, TKey> keyOf,
+        string reason,
+        string extrasKey,
+        TimeSpan? timeout,
+        CancellationToken ct
+    )
+    {
+        return PollSnapshotAsync(
+            name,
+            async token =>
             {
-                try
-                {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var players = await WaitForPlayersAsync(
-                        since: since,
-                        playerId: playerId,
-                        timeout: remaining,
-                        ct: reqCts.Token
-                    );
-                    if (players == null)
-                    {
-                        // 408 — server-side timeout, no newer snapshot observed.
-                        return new Helpers.PollingHelper.LongPollResult(false, since);
-                    }
-                    return new Helpers.PollingHelper.LongPollResult(true, players.Version);
-                }
-                catch (Exception) when (!ct.IsCancellationRequested)
-                {
-                    // Connection error or per-request timeout during server boot.
-                    // Cursor is unchanged; the next iteration retries from `since`.
-                    return new Helpers.PollingHelper.LongPollResult(false, since);
-                }
+                var players = await GetPlayers(token);
+                return players?.Players != null
+                    && !players.Players.Any(p => keys.Contains(keyOf(p)));
             },
-            timeout ?? Helpers.TestTimings.NetworkSyncTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-            {
-                // On timeout, pull live ground-truth. The poll is already failed;
-                // this is just enrichment. Don't propagate the original ct so
-                // cancellation by the outer timeout still lets us dump state.
-                return await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForPlayerByIdAsync_timeout",
-                    extras: new Dictionary<string, object?> { ["playerId"] = playerId }
-                );
-            }
+            timeout ?? TestTimings.PlayerRemovalTimeout,
+            ct,
+            DumpOnTimeout(reason, new Dictionary<string, object?> { [extrasKey] = keys.ToArray() })
         );
     }
 
     /// <summary>
     /// Polls GET /players until none of the named players remain.
     /// </summary>
-    public async Task<bool> WaitForPlayersRemovedByNameAsync(
+    public Task<bool> WaitForPlayersRemovedByNameAsync(
         IEnumerable<string> names,
         TimeSpan? timeout = null,
         CancellationToken ct = default
-    )
-    {
-        var nameSet = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForPlayersRemovedByName,
-            async () =>
-            {
-                try
-                {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var players = await GetPlayers(reqCts.Token);
-                    if (players?.Players == null)
-                    {
-                        return false;
-                    }
-
-                    return !players.Players.Any(p => nameSet.Contains(p.Name));
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    // Request timeout or connection error during server boot, retry
-                    return false;
-                }
-            },
-            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForPlayersRemovedByNameAsync_timeout",
-                    extras: new Dictionary<string, object?> { ["names"] = nameSet.ToArray() }
-                )
+    ) =>
+        WaitForPlayersRemovedAsync(
+            WaitName.Polling_ServerApi_WaitForPlayersRemovedByName,
+            names.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            p => p.Name,
+            "WaitForPlayersRemovedByNameAsync_timeout",
+            "names",
+            timeout,
+            ct
         );
-    }
 
     /// <summary>
     /// Polls GET /players until the named player is no longer present.
@@ -3306,50 +3357,20 @@ public class ServerApiClient : IDisposable
     /// <summary>
     /// Polls GET /players until none of the players with the given UniqueMultiplayerIDs remain.
     /// </summary>
-    public async Task<bool> WaitForPlayersRemovedByIdAsync(
+    public Task<bool> WaitForPlayersRemovedByIdAsync(
         IEnumerable<long> playerIds,
         TimeSpan? timeout = null,
         CancellationToken ct = default
-    )
-    {
-        var idSet = playerIds.ToHashSet();
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForPlayersRemovedById,
-            async () =>
-            {
-                try
-                {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var players = await GetPlayers(reqCts.Token);
-                    if (players?.Players == null)
-                    {
-                        return false;
-                    }
-
-                    return !players.Players.Any(p => idSet.Contains(p.Id));
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    return false;
-                }
-            },
-            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForPlayersRemovedByIdAsync_timeout",
-                    extras: new Dictionary<string, object?> { ["playerIds"] = idSet.ToArray() }
-                )
+    ) =>
+        WaitForPlayersRemovedAsync(
+            WaitName.Polling_ServerApi_WaitForPlayersRemovedById,
+            playerIds.ToHashSet(),
+            p => p.Id,
+            "WaitForPlayersRemovedByIdAsync_timeout",
+            "playerIds",
+            timeout,
+            ct
         );
-    }
 
     /// <summary>
     /// Polls GET /players until the player with the given UniqueMultiplayerID is no longer present.
@@ -3370,40 +3391,98 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForAllPlayersRemoved,
-            async () =>
+        return await PollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForAllPlayersRemoved,
+            async token =>
             {
-                try
-                {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var players = await GetPlayers(reqCts.Token);
-                    return players?.Players != null && players.Players.Count == 0;
-                }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
-                {
-                    return false;
-                }
+                var players = await GetPlayers(token);
+                return players?.Players != null && players.Players.Count == 0;
             },
-            timeout ?? Helpers.TestTimings.PlayerRemovalTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForAllPlayersRemovedAsync_timeout"
-                )
+            timeout ?? TestTimings.PlayerRemovalTimeout,
+            ct,
+            DumpOnTimeout("WaitForAllPlayersRemovedAsync_timeout")
         );
     }
 
     /// <summary>
-    /// Polls GET /farmhands until a farmhand with the given name exists.
+    /// Polls /cabins until a cabin owned by the given player UID appears.
+    /// Prefer this over the name-based variant: OwnerId (UMI) is set immediately
+    /// at AssignFarmhand and avoids the customization-sync race that delays both
+    /// OwnerName and IsAssigned for several seconds after a fresh customization.
+    /// Returns the cabin, or <c>null</c> on timeout (after a <see cref="FailureContext"/> dump).
+    /// </summary>
+    public Task<CabinInfoResponse?> WaitForCabinAssignedByIdAsync(
+        long playerId,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    ) =>
+        WaitForCabinAssignedAsync(
+            WaitName.Polling_TestBase_WaitForCabinAssignedById,
+            c => c.OwnerId == playerId,
+            "playerId",
+            playerId,
+            timeout,
+            ct
+        );
+
+    /// <summary>
+    /// Polls /cabins until an assigned cabin owned by the given farmer name appears.
+    /// Use the UID variant when possible: name lookup races with the customization
+    /// sync (OwnerName can be empty briefly after fresh joins).
+    /// Returns the cabin, or <c>null</c> on timeout (after a <see cref="FailureContext"/> dump).
+    /// </summary>
+    public Task<CabinInfoResponse?> WaitForCabinAssignedByNameAsync(
+        string farmerName,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default
+    ) =>
+        WaitForCabinAssignedAsync(
+            WaitName.Polling_TestBase_WaitForCabinAssignedByName,
+            c => c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase) && c.IsAssigned,
+            "farmerName",
+            farmerName,
+            timeout,
+            ct
+        );
+
+    private async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+        WaitName name,
+        Func<CabinInfoResponse, bool> isMatch,
+        string extrasKey,
+        object extrasValue,
+        TimeSpan? timeout,
+        CancellationToken ct
+    )
+    {
+        CabinInfoResponse? result = null;
+        // Captured so the timeout dump can show the last snapshot the poll saw.
+        CabinsResponse? lastCabins = null;
+        await PollSnapshotAsync(
+            name,
+            async token =>
+            {
+                lastCabins = await GetCabins(token);
+                result = lastCabins?.Cabins.FirstOrDefault(isMatch);
+                return result != null;
+            },
+            timeout ?? TestTimings.CabinAssignmentTimeout,
+            ct,
+            async () =>
+                await FailureContext.DumpAsync(
+                    this,
+                    reason: "WaitForCabinAssignedAsync_timeout",
+                    extras: new Dictionary<string, object?>
+                    {
+                        [extrasKey] = extrasValue,
+                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
+                    }
+                )
+        );
+        return result;
+    }
+
+    /// <summary>
+    /// Long-polls /wait/farmhands until a farmhand with the given name exists.
     /// Intended for tests that verify name/customization behavior specifically;
     /// name sync is the whole point of such assertions.
     /// </summary>
@@ -3414,50 +3493,33 @@ public class ServerApiClient : IDisposable
         CancellationToken ct = default
     )
     {
-        return await Helpers.PollingHelper.LongPollAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForFarmhandByName,
-            async (since, remaining) =>
-            {
-                try
+        return await LongPollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForFarmhandByName,
+            (since, serverTimeout, token) =>
+                WaitForFarmhandsAsync(
+                    since: since,
+                    hasFarmhand: name,
+                    requireCustomized: requireCustomized ? true : null,
+                    timeout: serverTimeout,
+                    ct: token
+                ),
+            timeout ?? TestTimings.CabinAssignmentTimeout,
+            ct,
+            DumpOnTimeout(
+                "WaitForFarmhandByNameAsync_timeout",
+                new Dictionary<string, object?>
                 {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    var farmhands = await WaitForFarmhandsAsync(
-                        since: since,
-                        hasFarmhand: name,
-                        requireCustomized: requireCustomized ? true : null,
-                        timeout: remaining,
-                        ct: reqCts.Token
-                    );
-                    if (farmhands == null)
-                    {
-                        return new Helpers.PollingHelper.LongPollResult(false, since);
-                    }
-
-                    return new Helpers.PollingHelper.LongPollResult(true, farmhands.Version);
+                    ["name"] = name,
+                    ["requireCustomized"] = requireCustomized,
                 }
-                catch (Exception) when (!ct.IsCancellationRequested)
-                {
-                    return new Helpers.PollingHelper.LongPollResult(false, since);
-                }
-            },
-            timeout ?? Helpers.TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
-                    this,
-                    reason: "WaitForFarmhandByNameAsync_timeout",
-                    extras: new Dictionary<string, object?>
-                    {
-                        ["name"] = name,
-                        ["requireCustomized"] = requireCustomized,
-                    }
-                )
+            )
         );
     }
 
     /// <summary>
-    /// Retries DELETE /farmhands?name=X until Success == true.
+    /// Polls DELETE /farmhands?name=X until the farmhand is gone: a DELETE that reports
+    /// Success, or, after a DELETE that faulted in transit, a "not found" confirmed by the
+    /// name's absence from /farmhands. Everything else retries to the deadline.
     /// </summary>
     public async Task<FarmhandOperationResponse?> WaitForFarmhandDeletedByNameAsync(
         string name,
@@ -3466,33 +3528,64 @@ public class ServerApiClient : IDisposable
     )
     {
         FarmhandOperationResponse? result = null;
-        await Helpers.PollingHelper.WaitUntilAsync(
-            Helpers.WaitName.Polling_ServerApi_WaitForFarmhandDeletedByName,
-            async () =>
+        var deleteWasAmbiguous = false;
+        await PollSnapshotAsync(
+            WaitName.Polling_ServerApi_WaitForFarmhandDeletedByName,
+            async token =>
             {
                 try
                 {
-                    using var reqCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    reqCts.CancelAfter(Helpers.TestTimings.PollingRequestTimeout);
-                    result = await DeleteFarmhandByName(name, reqCts.Token);
-                    return result?.Success == true;
+                    result = await DeleteFarmhandByName(name, token);
                 }
-                catch (Exception ex)
-                    when (ex
-                            is HttpRequestException
-                                or TaskCanceledException
-                                or OperationCanceledException
-                        && !ct.IsCancellationRequested
-                    )
+                catch (Exception ex) when (IsRetryableRequestFault(ex))
                 {
-                    // 503 (game thread blocked) or request timeout, retry
+                    deleteWasAmbiguous = true;
+                    throw;
+                }
+
+                if (result?.Success == true)
+                {
+                    return true;
+                }
+
+                // A "not found" proves deletion only after a DELETE faulted in transit: the
+                // server commits on a 15s game-thread budget (ApiService.HandleDeleteFarmhandAsync)
+                // that outlives the client's per-request timeout, so while the game thread is
+                // blocked (day transition, save sync) the committing DELETE surfaces here as a
+                // transport fault and the next one reports "not found". Without a prior fault,
+                // "not found" means the name was never persisted; "not ready" / "online" /
+                // "save in progress" are unambiguous. Both retry.
+                if (
+                    !deleteWasAmbiguous
+                    || result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                        != true
+                )
+                {
                     return false;
                 }
+
+                var farmhands = await GetFarmhands(token);
+                var stillPresent =
+                    farmhands?.Farmhands.Any(f =>
+                        string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)
+                    )
+                    ?? true;
+                if (!stillPresent)
+                {
+                    result = new FarmhandOperationResponse
+                    {
+                        Success = true,
+                        Message = $"Farmhand '{name}' confirmed absent after ambiguous delete",
+                    };
+                    return true;
+                }
+
+                return false;
             },
-            timeout ?? Helpers.TestTimings.FarmerDeleteTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await Helpers.FailureContext.DumpAsync(
+            timeout ?? TestTimings.FarmerDeleteTimeout,
+            ct,
+            async () =>
+                await FailureContext.DumpAsync(
                     this,
                     reason: "WaitForFarmhandDeletedByNameAsync_timeout",
                     extras: new Dictionary<string, object?>

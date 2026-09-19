@@ -281,10 +281,10 @@ internal sealed class TestArtifactCollector
                 // Ctrl+C / Docker-down cancels the extraction immediately via
                 // ShutdownCoordinator.Token; RecordingFinalizeBackstop bounds it on
                 // normal and stopOnFail runs, where that token stays live.
-                using var recCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    ShutdownCoordinator.Token
+                using var recCts = Cts.LinkedTimeout(
+                    ShutdownCoordinator.Token,
+                    TestTimings.RecordingFinalizeBackstop
                 );
-                recCts.CancelAfter(TestTimings.RecordingFinalizeBackstop);
                 try
                 {
                     await orchestrator.FinalizeAsync(
@@ -340,10 +340,10 @@ internal sealed class TestArtifactCollector
         // waiting on this finalize before test_failed is emitted, so it runs to
         // completion within the backstop; only a Ctrl+C / Docker-down shutdown
         // aborts it early.
-        using var syncCts = CancellationTokenSource.CreateLinkedTokenSource(
-            ShutdownCoordinator.Token
+        using var syncCts = Cts.LinkedTimeout(
+            ShutdownCoordinator.Token,
+            TestTimings.RecordingFinalizeBackstop
         );
-        syncCts.CancelAfter(TestTimings.RecordingFinalizeBackstop);
         try
         {
             await orchestrator.FinalizeAsync(

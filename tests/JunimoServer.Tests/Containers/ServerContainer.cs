@@ -736,8 +736,7 @@ public class ServerContainer : IAsyncDisposable
         Action<string>? onProgress = null
     )
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(_options.ReadyTimeout);
+        using var timeoutCts = Cts.LinkedTimeout(ct, _options.ReadyTimeout);
 
         // Only wait for invite code on Steam servers (Galaxy SDK must initialize first)
         var requireInviteCode = _options.WithSteam;
@@ -752,7 +751,6 @@ public class ServerContainer : IAsyncDisposable
         {
             var status = await client.WaitForServerOnline(
                 _options.ReadyTimeout,
-                TimeSpan.FromSeconds(2),
                 timeoutCts.Token,
                 msg =>
                 {

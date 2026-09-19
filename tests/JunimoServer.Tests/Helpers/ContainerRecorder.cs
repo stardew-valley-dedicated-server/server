@@ -788,12 +788,11 @@ internal sealed class ContainerRecorder : IAsyncDisposable
             return new ExtractionResult(null, null);
         }
 
-        using var extractCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         // Budget scales with clip duration to cover pathological cases where concat-copy of
         // a large cover set is slow. max(30s, 5×durationSec) holds a 30s floor for short
         // clips and ~6 minutes for a 75s clip.
         var budgetSec = Math.Max(30.0, durationSec * 5.0);
-        extractCts.CancelAfter(TimeSpan.FromSeconds(budgetSec));
+        using var extractCts = Cts.LinkedTimeout(ct, TimeSpan.FromSeconds(budgetSec));
 
         var id = Guid.NewGuid().ToString("N")[..8];
         var clipName = $"clip_{id}.mp4";

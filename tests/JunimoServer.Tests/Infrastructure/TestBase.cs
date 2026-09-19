@@ -300,33 +300,21 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
         // non-empty (rejects degraded responses where game state wasn't readable).
         // PlayerCount is NOT checked; other tests may have clients connected.
         var readySw = System.Diagnostics.Stopwatch.StartNew();
-        await PollingHelper.LongPollAsync(
+        var serverReady = await Lease.Api.WaitForStatusMatchAsync(
             WaitName.Polling_TestBase_ServerReady,
-            async (since, remaining) =>
-            {
-                var status = await Lease.Api.WaitForStatusAsync(
-                    since: since,
-                    isReady: true,
-                    timeout: remaining,
-                    ct: ct
-                );
-                if (status == null)
-                {
-                    return new PollingHelper.LongPollResult(false, since);
-                }
-
-                if (!string.IsNullOrEmpty(status.FarmName))
-                {
-                    return new PollingHelper.LongPollResult(true, status.Version);
-                }
-                // IsReady matched but FarmName empty (degraded snapshot) — advance
-                // cursor and wait for the next snapshot.
-                return new PollingHelper.LongPollResult(false, status.Version);
-            },
             TestTimings.ServerReadyBetweenTests,
-            cancellationToken: ct
+            matches: status => !string.IsNullOrEmpty(status.FarmName),
+            isReady: true,
+            ct: ct
         );
         LogTrace($"ServerReady wait: {SetupEventBus.FormatDuration(readySw.Elapsed)}");
+
+        if (!serverReady)
+        {
+            LogWarning(
+                $"{WaitName.Polling_TestBase_ServerReady} did not confirm a ready server within {TestTimings.ServerReadyBetweenTests.TotalSeconds}s; continuing setup."
+            );
+        }
 
         ServerStatus = await Lease.Api.GetStatus();
     }
@@ -969,82 +957,21 @@ public abstract class TestBase : IAsyncLifetime, IDisposable
     #region Cabin Helpers
 
     /// <summary>
-    /// Polls /cabins until a cabin owned by the given player UID appears.
-    /// Prefer this over the name-based overload: OwnerId (UMI) is set immediately
-    /// at AssignFarmhand and avoids the customization-sync race that delays both
-    /// OwnerName and IsAssigned for several seconds after a fresh customization.
-    /// On timeout dumps <see cref="FailureContext"/>.
+    /// <see cref="ServerApiClient.WaitForCabinAssignedByIdAsync"/> against this test's server.
+    /// Prefer this over the name-based overload: OwnerId is set immediately at assignment.
     /// </summary>
-    protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+    protected Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
         long playerId,
         CancellationToken ct = default
-    )
-    {
-        CabinInfoResponse? result = null;
-        CabinsResponse? lastCabins = null;
-        await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_TestBase_WaitForCabinAssignedById,
-            async () =>
-            {
-                lastCabins = await ServerApi.GetCabins(ct);
-                result = lastCabins?.Cabins.FirstOrDefault(c => c.OwnerId == playerId);
-                return result != null;
-            },
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await FailureContext.DumpAsync(
-                    ServerApi,
-                    reason: "WaitForCabinAssignedAsync_timeout",
-                    extras: new Dictionary<string, object?>
-                    {
-                        ["playerId"] = playerId,
-                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
-                    }
-                )
-        );
-        return result;
-    }
+    ) => ServerApi.WaitForCabinAssignedByIdAsync(playerId, ct: ct);
 
     /// <summary>
-    /// Polls /cabins until a cabin owned by the given farmer name appears.
-    /// Use the UID overload when possible — name lookup races with the
-    /// customization sync (OwnerName can be empty briefly after fresh joins).
-    /// On timeout dumps <see cref="FailureContext"/>.
+    /// <see cref="ServerApiClient.WaitForCabinAssignedByNameAsync"/> against this test's server.
     /// </summary>
-    protected async Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
+    protected Task<CabinInfoResponse?> WaitForCabinAssignedAsync(
         string farmerName,
         CancellationToken ct = default
-    )
-    {
-        CabinInfoResponse? result = null;
-        CabinsResponse? lastCabins = null;
-        await PollingHelper.WaitUntilAsync(
-            WaitName.Polling_TestBase_WaitForCabinAssignedByName,
-            async () =>
-            {
-                lastCabins = await ServerApi.GetCabins(ct);
-                result = lastCabins?.Cabins.FirstOrDefault(c =>
-                    c.OwnerName.Equals(farmerName, StringComparison.OrdinalIgnoreCase)
-                    && c.IsAssigned
-                );
-                return result != null;
-            },
-            TestTimings.CabinAssignmentTimeout,
-            cancellationToken: ct,
-            onTimeoutAsync: async () =>
-                await FailureContext.DumpAsync(
-                    ServerApi,
-                    reason: "WaitForCabinAssignedAsync_timeout",
-                    extras: new Dictionary<string, object?>
-                    {
-                        ["farmerName"] = farmerName,
-                        ["lastCabinsSnapshot"] = lastCabins?.Cabins,
-                    }
-                )
-        );
-        return result;
-    }
+    ) => ServerApi.WaitForCabinAssignedByNameAsync(farmerName, ct: ct);
 
     #endregion
 

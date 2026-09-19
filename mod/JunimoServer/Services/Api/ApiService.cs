@@ -132,12 +132,12 @@ public class ServerStatus
     public double Tps { get; set; }
 
     /// <summary>
-    /// Monotonic snapshot version used by /wait/* long-poll endpoints to
+    /// Monotonic snapshot sequence used by /wait/* long-poll endpoints to
     /// detect a changed snapshot. Test clients pass this back as
     /// <c>?since=N</c> so the server only returns when a newer snapshot
     /// satisfies the requested filters.
     /// </summary>
-    public long Version { get; set; }
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -170,11 +170,11 @@ public class PlayersResponse
     public List<PlayerInfo> Players { get; set; } = new();
 
     /// <summary>
-    /// Monotonic snapshot version (same field as <see cref="ServerStatus.Version"/>).
+    /// Monotonic snapshot sequence (same field as <see cref="ServerStatus.Sequence"/>).
     /// Test clients pass this back as <c>?since=N</c> on /wait/players to wait
     /// for a newer snapshot.
     /// </summary>
-    public long Version { get; set; }
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -492,11 +492,11 @@ public class FarmhandsResponse
     public List<FarmhandInfo> Farmhands { get; set; } = new();
 
     /// <summary>
-    /// Monotonic snapshot version (same field as <see cref="ServerStatus.Version"/>).
+    /// Monotonic snapshot sequence (same field as <see cref="ServerStatus.Sequence"/>).
     /// Test clients pass this back as <c>?since=N</c> on /wait/farmhands to wait
     /// for a newer snapshot.
     /// </summary>
-    public long Version { get; set; }
+    public long Sequence { get; set; }
 }
 
 /// <summary>
@@ -984,10 +984,10 @@ public partial class ApiService : ModService
     // GameManagerService.Instance.
     private static ApiService? _instance;
 
-    // Monotonic snapshot version. Incremented every time a new snapshot is
+    // Monotonic snapshot sequence. Incremented every time a new snapshot is
     // published; used by /wait/* long-poll endpoints to let clients block
     // until the snapshot they care about has changed.
-    private long _snapshotVersion;
+    private long _snapshotSequence;
 
     // TCS that long-poll waiters await. Rotated atomically on every
     // snapshot publish: capture the old TCS, allocate a new one, publish
@@ -1081,7 +1081,7 @@ public partial class ApiService : ModService
         /// Stamped at publish time so a waiter can compare against an
         /// inbound `?since=N` parameter.
         /// </summary>
-        public long Version;
+        public long Sequence;
 
         // ── Per-field change-time tracking ────────────────────────────────
         //
@@ -1389,7 +1389,7 @@ public partial class ApiService : ModService
     /// </summary>
     private void PublishSnapshot(GameStateSnapshot snap)
     {
-        snap.Version = Interlocked.Increment(ref _snapshotVersion);
+        snap.Sequence = Interlocked.Increment(ref _snapshotSequence);
         // Rotate the TCS: install a fresh one for future waiters BEFORE
         // signaling the old one. Otherwise a fast waiter that completes
         // its post-resume snapshot read could observe the new snapshot
@@ -2803,11 +2803,17 @@ public partial class ApiService : ModService
     /// </summary>
     [ApiEndpoint("GET", "/status", Summary = "Get server status", Tag = "Server", Public = true)]
     [ApiResponse(typeof(ServerStatus), 200, Description = "Server status and game state")]
-    private ServerStatus HandleGetStatus()
+    private ServerStatus HandleGetStatus() => HandleGetStatus(_snapshot);
+
+    /// <summary>
+    /// Builds the <c>/status</c> response from <paramref name="snap"/>. The wait endpoints pass
+    /// the snapshot that satisfied their filter so the body never reflects a later publication
+    /// that no longer matches.
+    /// </summary>
+    private ServerStatus HandleGetStatus(GameStateSnapshot snap)
     {
         var modInfo = Helper.ModRegistry.Get("JunimoHost.Server");
         var version = modInfo?.Manifest?.Version?.ToString() ?? "unknown";
-        var snap = _snapshot;
         var tpsSeconds = _tpsSeconds.Average;
         var tps = tpsSeconds > 0 ? Math.Round(_tpsTicks.Average / tpsSeconds, 1) : 0;
 
@@ -2842,7 +2848,7 @@ public partial class ApiService : ModService
                 ServerName = Env.ServerName,
                 StartedAtUtc = ServerCommand.StartTimeUtc?.ToString("o"),
                 Tps = tps,
-                Version = snap.Version,
+                Sequence = snap.Sequence,
                 InviteCode = inviteCode,
                 SteamRelayReady = steamRelayReady,
                 GalaxyLobbyState = galaxyLobbyState,
@@ -2878,17 +2884,18 @@ public partial class ApiService : ModService
             FarmTypeKey = snap.FarmTypeKey,
             IsPaused = snap.IsPaused,
             Tps = tps,
-            Version = snap.Version,
+            Sequence = snap.Sequence,
         };
     }
 
     /// <summary>Reads from periodic snapshot. See <see cref="TakeGameStateSnapshot"/>.</summary>
     [ApiEndpoint("GET", "/players", Summary = "Get connected players", Tag = "Server")]
     [ApiResponse(typeof(PlayersResponse), 200, Description = "List of connected players")]
-    private PlayersResponse HandleGetPlayers()
+    private PlayersResponse HandleGetPlayers() => HandleGetPlayers(_snapshot);
+
+    private static PlayersResponse HandleGetPlayers(GameStateSnapshot snap)
     {
-        var snap = _snapshot;
-        return new PlayersResponse { Players = snap.Players, Version = snap.Version };
+        return new PlayersResponse { Players = snap.Players, Sequence = snap.Sequence };
     }
 
     /// <summary>
@@ -3522,7 +3529,7 @@ public partial class ApiService : ModService
     /// <summary>
     /// Long-poll variant of <c>/status</c>. Query params:
     /// <list type="bullet">
-    /// <item><c>since=N</c> — last observed snapshot version. Required.</item>
+    /// <item><c>since=N</c> — last observed snapshot sequence. Required.</item>
     /// <item><c>isReady=true|false</c> — wait until the snapshot's IsReady matches.</item>
     /// <item><c>isPaused=true|false</c> — wait until the snapshot's IsPaused matches.</item>
     /// <item><c>day=N</c> — wait until the snapshot's Day matches.</item>
@@ -3551,7 +3558,7 @@ public partial class ApiService : ModService
 
         bool Matches(GameStateSnapshot snap)
         {
-            if (snap.Version <= since)
+            if (snap.Sequence <= since)
             {
                 return false;
             }
@@ -3625,12 +3632,11 @@ public partial class ApiService : ModService
 
         EmitPredicateChangedAtHeader(response, changedAt);
 
-        // Delegate to the regular status handler so the response shape is
-        // identical to /status (caller's deserializer doesn't need a
-        // separate type). HandleGetStatus reads _snapshot atomically; the
-        // snapshot version may have advanced since Matches saw it, but the
-        // returned data is at least as fresh as what the predicate matched.
-        await WriteJsonAsync(response, HandleGetStatus());
+        // Same response shape as /status (caller's deserializer doesn't need a
+        // separate type), built from the snapshot the predicate matched: the
+        // caller treats a 200 as "filter satisfied", so a re-read of _snapshot
+        // could hand back a later publication that no longer matches.
+        await WriteJsonAsync(response, HandleGetStatus(matched));
     }
 
     private static DateTime MaxUtc(DateTime a, DateTime b) => a > b ? a : b;
@@ -3638,7 +3644,7 @@ public partial class ApiService : ModService
     /// <summary>
     /// Long-poll variant of <c>/players</c>. Query params:
     /// <list type="bullet">
-    /// <item><c>since=N</c> — last observed snapshot version.</item>
+    /// <item><c>since=N</c> — last observed snapshot sequence.</item>
     /// <item><c>playerId=N</c> — wait until the snapshot's Players list contains the id.</item>
     /// <item><c>timeout=ms</c> — bounded by <see cref="WaitMaxTimeout"/>.</item>
     /// </list>
@@ -3766,7 +3772,7 @@ public partial class ApiService : ModService
 
         bool Matches(GameStateSnapshot snap)
         {
-            if (snap.Version <= since)
+            if (snap.Sequence <= since)
             {
                 return false;
             }
@@ -3798,9 +3804,9 @@ public partial class ApiService : ModService
         }
 
         // Predicate-transition time: for the playerId filter, when that
-        // player first appeared in any snapshot. For the version-only case
-        // (no playerId filter), the snapshot's capture time is the best
-        // we can do — there's no single "field that changed" to report.
+        // player first appeared in any snapshot. For the sequence-only case
+        // (no playerId filter) there is no single changed field to report,
+        // so the snapshot's capture time is the best available.
         if (
             playerIdFilter is long matchedPid
             && matched.PlayerFirstSeenAtUtc.TryGetValue(matchedPid, out var firstSeen)
@@ -3808,14 +3814,14 @@ public partial class ApiService : ModService
         {
             EmitPredicateChangedAtHeader(response, firstSeen);
         }
-        await WriteJsonAsync(response, HandleGetPlayers());
+        await WriteJsonAsync(response, HandleGetPlayers(matched));
     }
 
     /// <summary>
     /// Long-poll variant of <c>/farmhands</c>. Snapshot-backed; reuses
     /// <see cref="WaitForSnapshotAsync"/>. Query params:
     /// <list type="bullet">
-    /// <item><c>since=N</c> — last observed snapshot version.</item>
+    /// <item><c>since=N</c> — last observed snapshot sequence.</item>
     /// <item><c>farmhandCount=N</c> — wait until the snapshot's farmhand list
     /// contains exactly N entries.</item>
     /// <item><c>hasFarmhand=&lt;name&gt;</c> — wait until a farmhand with the
@@ -3847,7 +3853,7 @@ public partial class ApiService : ModService
 
         bool Matches(GameStateSnapshot snap)
         {
-            if (snap.Version <= since)
+            if (snap.Sequence <= since)
             {
                 return false;
             }
@@ -3933,7 +3939,7 @@ public partial class ApiService : ModService
         }
         EmitPredicateChangedAtHeader(response, changedAt);
 
-        await WriteJsonAsync(response, HandleGetFarmhands());
+        await WriteJsonAsync(response, HandleGetFarmhands(matched));
     }
 
     /// <summary>
@@ -4152,10 +4158,11 @@ public partial class ApiService : ModService
     /// <summary>Reads from periodic snapshot. See <see cref="TakeGameStateSnapshot"/>.</summary>
     [ApiEndpoint("GET", "/farmhands", Summary = "Get all farmhand slots", Tag = "Farmhands")]
     [ApiResponse(typeof(FarmhandsResponse), 200, Description = "List of farmhand slots")]
-    private FarmhandsResponse HandleGetFarmhands()
+    private FarmhandsResponse HandleGetFarmhands() => HandleGetFarmhands(_snapshot);
+
+    private static FarmhandsResponse HandleGetFarmhands(GameStateSnapshot snap)
     {
-        var snap = _snapshot;
-        return new FarmhandsResponse { Farmhands = snap.Farmhands, Version = snap.Version };
+        return new FarmhandsResponse { Farmhands = snap.Farmhands, Sequence = snap.Sequence };
     }
 
     [ApiEndpoint("GET", "/settings", Summary = "Get server settings", Tag = "Settings")]

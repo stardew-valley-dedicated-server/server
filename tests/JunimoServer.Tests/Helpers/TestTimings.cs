@@ -48,11 +48,6 @@ public static class TestTimings
     /// </summary>
     public static readonly TimeSpan SteamAccountAllocationBound = TimeSpan.FromSeconds(120);
 
-    /// <summary>
-    /// Timeout for stopping Docker containers during cleanup.
-    /// </summary>
-    public static readonly TimeSpan ContainerStopTimeout = TimeSpan.FromSeconds(10);
-
     #endregion
 
     #region Network & Sync Delays
@@ -108,26 +103,11 @@ public static class TestTimings
     /// Total budget for the delete-retry loop: poll DELETE /farmhands until it
     /// succeeds. The delete API is called immediately after disconnect; if the
     /// server hasn't processed the disconnect yet ("currently online" error), we
-    /// retry with FastPollInterval until this timeout. The server's
-    /// RunOnGameThreadAsync timeout is 5s and a measured delete costs ~0.1s, so
-    /// 35s is ample retry headroom for a briefly-contended game thread.
+    /// retry with FastPollInterval until this timeout. The server runs the delete
+    /// under a 15s game-thread budget and a measured delete costs ~0.1s, so 35s
+    /// covers a game thread blocked by a day transition or save.
     /// </summary>
     public static readonly TimeSpan FarmerDeleteTimeout = TimeSpan.FromSeconds(35);
-
-    /// <summary>
-    /// Delay after killing game processes to ensure they fully exit.
-    /// </summary>
-    public static readonly TimeSpan ProcessExitDelay = TimeSpan.Zero;
-
-    /// <summary>
-    /// Short delay between attempts when waiting for game client to respond.
-    /// </summary>
-    public static readonly TimeSpan GameClientPollDelay = TimeSpan.FromMilliseconds(100);
-
-    /// <summary>
-    /// Delay between connection checks during game client startup.
-    /// </summary>
-    public static readonly TimeSpan GameClientStartupPollDelay = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// Patience window for a non-Steam client lease that finds the pool empty
@@ -203,12 +183,6 @@ public static class TestTimings
     #region Polling Intervals
 
     /// <summary>
-    /// Interval between status polls when waiting for day change.
-    /// The /status endpoint is lightweight; 500ms reduces detection latency.
-    /// </summary>
-    public static readonly TimeSpan DayChangePollInterval = TimeSpan.FromMilliseconds(500);
-
-    /// <summary>
     /// Interval for tight polling loops in tests (chat responses, state sync, etc.).
     /// Short interval to minimize wasted time while avoiding busy-spinning.
     /// </summary>
@@ -225,16 +199,6 @@ public static class TestTimings
     #endregion
 
     #region Cleanup Delays
-
-    /// <summary>
-    /// Delay between kill command retries during cleanup.
-    /// </summary>
-    public static readonly TimeSpan KillRetryDelay = TimeSpan.FromMilliseconds(500);
-
-    /// <summary>
-    /// Time to wait for background tasks to complete during cleanup.
-    /// </summary>
-    public static readonly TimeSpan TaskCleanupTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Backstop timeout on the serial cleanup phase (disconnect, farmer delete,
@@ -309,11 +273,6 @@ public static class TestTimings
     #endregion
 
     #region HTTP Client Timeouts
-
-    /// <summary>
-    /// Timeout for quick HTTP health checks.
-    /// </summary>
-    public static readonly TimeSpan HttpHealthCheckTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Per-request timeout for HTTP calls inside polling loops.
