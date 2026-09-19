@@ -246,63 +246,71 @@ public static class PollingHelper
 
         try
         {
-            while (true)
+            try
             {
-                var remaining = timeout - sw.Elapsed;
-                if (remaining <= TimeSpan.Zero)
+                while (true)
                 {
-                    deadlineExpired = true;
-                    break;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                iterations++;
-
-                try
-                {
-                    var outcome = await step(since, remaining);
-                    if (outcome.Matched)
+                    var remaining = timeout - sw.Elapsed;
+                    if (remaining <= TimeSpan.Zero)
                     {
-                        succeeded = true;
-                        snapshotSequenceAtMatch = outcome.Sequence;
-                        EmitWaitMatched(label);
-                        return outcome.Value;
+                        deadlineExpired = true;
+                        break;
                     }
 
-                    lastException = null; // Step ran successfully, just didn't match
-                    // Advance the cursor on a non-match so the server doesn't
-                    // return the same stale snapshot on the next round-trip.
-                    // 408 responses with no observed sequence leave Sequence
-                    // unchanged from `since`, so this guard is a no-op there.
-                    if (outcome.Sequence > since)
-                    {
-                        since = outcome.Sequence;
-                    }
-                }
-                catch (Exception ex)
-                    when (cancellationToken.IsCancellationRequested
-                        || (isRetryable?.Invoke(ex) ?? ex is not OperationCanceledException)
-                    )
-                {
-                    // Cancellation wins over the incidental fault: a reset from an in-flight
-                    // request while the server is torn down must surface as a clean cancellation,
-                    // not a stored exception the deadline break could later re-wrap as a masking
-                    // TimeoutException. Surface it here rather than relying on the next loop, which
-                    // may break on an expired budget before reaching ThrowIfCancellationRequested.
                     cancellationToken.ThrowIfCancellationRequested();
-                    lastException = ex;
-                    if (longPoll)
+                    iterations++;
+
+                    try
                     {
-                        // The server block normally paces long-poll; a fault returns at once, so
-                        // throttle here to keep an unreachable server from a hot loop.
+                        var outcome = await step(since, remaining);
+                        if (outcome.Matched)
+                        {
+                            succeeded = true;
+                            snapshotSequenceAtMatch = outcome.Sequence;
+                            EmitWaitMatched(label);
+                            return outcome.Value;
+                        }
+
+                        lastException = null; // Step ran successfully, just didn't match
+                        // Advance the cursor on a non-match so the server doesn't
+                        // return the same stale snapshot on the next round-trip.
+                        // 408 responses with no observed sequence leave Sequence
+                        // unchanged from `since`, so this guard is a no-op there.
+                        if (outcome.Sequence > since)
+                        {
+                            since = outcome.Sequence;
+                        }
+                    }
+                    catch (Exception ex)
+                        when (cancellationToken.IsCancellationRequested
+                            || (isRetryable?.Invoke(ex) ?? ex is not OperationCanceledException)
+                        )
+                    {
+                        // Cancellation wins over the incidental fault: a reset from an in-flight
+                        // request while the server is torn down must surface as a clean cancellation,
+                        // not a stored exception the deadline break could later re-wrap as a masking
+                        // TimeoutException. Surface it here rather than relying on the next loop, which
+                        // may break on an expired budget before reaching ThrowIfCancellationRequested.
+                        cancellationToken.ThrowIfCancellationRequested();
+                        lastException = ex;
+                        if (longPoll)
+                        {
+                            // The server block normally paces long-poll; a fault returns at once, so
+                            // throttle here to keep an unreachable server from a hot loop.
+                            await Task.Delay(interval, cancellationToken);
+                        }
+                    }
+
+                    if (!longPoll)
+                    {
                         await Task.Delay(interval, cancellationToken);
                     }
                 }
-
-                if (!longPoll)
-                {
-                    await Task.Delay(interval, cancellationToken);
-                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastException = ex; // the completion event names the fault that ended the wait
+                throw;
             }
 
             // Without a filter, repeated faults are unexpected: surface the last one.
