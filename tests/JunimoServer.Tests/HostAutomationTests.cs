@@ -39,14 +39,7 @@ public class HostAutomationTests : TestBase
         Assert.True(setTimeResult.Success, $"SetTime failed: {setTimeResult.Error}");
         Log($"Set time to {setTimeResult.TimeOfDay}");
 
-        // Poll until the game reports IsPaused=true (confirms AlwaysOn paused with 0 players)
-        var pauseConfirmed = await ServerApi.WaitForStatusMatchAsync(
-            WaitName.Polling_HostAutomation_PauseConfirmed,
-            TestTimings.NetworkSyncTimeout,
-            isPaused: true,
-            ct: ct
-        );
-        Assert.True(pauseConfirmed, "Server should report IsPaused=true with no players connected");
+        await WaitForPausedAsync(WaitName.Polling_HostAutomation_PauseConfirmed, ct);
 
         // Read current time
         var status1 = await ServerApi.GetStatus(ct);
@@ -63,11 +56,10 @@ public class HostAutomationTests : TestBase
 
         try
         {
-            // Poll for the verification window. If time advances at any point,
-            // the test fails immediately instead of waiting the full duration.
-            // At 10x speed, 2s covers ~28 game-ticks worth of verification.
-            // No equality filter on TimeOfDay — use `since` to wait for any newer
-            // snapshot, then check TimeOfDay-changed on the returned body.
+            // Watch the verification window; a match means time advanced and the test
+            // fails without waiting out the window. At 10x speed, 2s covers ~28
+            // game-ticks. TimeOfDay has no server filter, so wait for any newer snapshot
+            // and compare on the body.
             var timeAdvanced = await ServerApi.WaitForStatusMatchAsync(
                 WaitName.Polling_HostAutomation_TimeAdvanced,
                 TestTimings.TimePausedVerification,
@@ -146,9 +138,8 @@ public class HostAutomationTests : TestBase
 
         try
         {
-            // Poll until time advances (should complete in ~0.7s at 10x speed).
-            // No equality filter on TimeOfDay — wait for any newer snapshot via
-            // `since`, then check the >- condition on the returned body.
+            // Poll until time advances (~0.7s at 10x speed). TimeOfDay has no server
+            // filter, so wait for any newer snapshot and compare on the body.
             await ServerApi.WaitForStatusMatchAsync(
                 WaitName.Polling_HostAutomation_TimeAdvancedSecond,
                 TestTimings.TimeAdvanceWait,
@@ -592,11 +583,6 @@ public class HostAutomationTests : TestBase
         var noPlayers = await ServerApi.WaitForStatusMatchAsync(
             WaitName.Polling_HostAutomation_NoPlayers,
             TestTimings.ServerReadyBetweenTests,
-            matches: s =>
-            {
-                Log($"PlayerCount==0 confirmed: PlayerCount={s.PlayerCount}, IsReady={s.IsReady}");
-                return true;
-            },
             isReady: true,
             playerCount: 0,
             ct: ct

@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using JunimoServer.TestRunner.Rendering;
+using JunimoServer.Tests.Helpers;
 
 namespace JunimoServer.TestRunner.IPC;
 
@@ -59,7 +60,7 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 // we abandon the line rather than let the UI hang. The
                 // linked CTS cancels only the read; the outer ct keeps the
                 // loop running so subsequent reads can still succeed.
-                using var readCts = JunimoServer.Tests.Helpers.Cts.LinkedTimeout(ct, ReadDeadline);
+                using var readCts = Cts.LinkedTimeout(ct, ReadDeadline);
 
                 string? line;
                 try
@@ -70,7 +71,7 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 {
                     // Deadline expired without the outer shutdown firing.
                     // Emit a diagnostic and keep looping — next line may recover.
-                    JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                    InfrastructureEventLog.Emit(
                         "setup_ipc_read_deadline",
                         new { deadlineMs = (long)ReadDeadline.TotalMilliseconds }
                     );
@@ -88,7 +89,7 @@ public sealed class SetupPipeServer : IAsyncDisposable
                 // itself trip deeper paths.
                 if (line.Length > MaxLineBytes)
                 {
-                    JunimoServer.Tests.Helpers.InfrastructureEventLog.Emit(
+                    InfrastructureEventLog.Emit(
                         "setup_ipc_oversized_line",
                         new { bytes = line.Length, limit = MaxLineBytes }
                     );

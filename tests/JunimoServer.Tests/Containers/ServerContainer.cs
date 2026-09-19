@@ -751,7 +751,6 @@ public class ServerContainer : IAsyncDisposable
         {
             var status = await client.WaitForServerOnline(
                 _options.ReadyTimeout,
-                TimeSpan.FromSeconds(2),
                 timeoutCts.Token,
                 msg =>
                 {

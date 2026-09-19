@@ -1557,7 +1557,6 @@ internal sealed class ManagedServer : IAsyncDisposable
             // Verify the server is actually back online
             var status = await api.WaitForServerOnline(
                 timeout: TimeSpan.FromSeconds(120),
-                pollInterval: TimeSpan.FromSeconds(2),
                 cancellationToken: ct,
                 requireInviteCode: Server.Options.WithSteam
             );
@@ -1600,7 +1599,6 @@ internal sealed class ManagedServer : IAsyncDisposable
             // Verify the server is actually back online
             var status = await api.WaitForServerOnline(
                 timeout: TimeSpan.FromSeconds(120),
-                pollInterval: TimeSpan.FromSeconds(2),
                 cancellationToken: ct,
                 requireInviteCode: Server.Options.WithSteam
             );

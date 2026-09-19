@@ -3804,9 +3804,9 @@ public partial class ApiService : ModService
         }
 
         // Predicate-transition time: for the playerId filter, when that
-        // player first appeared in any snapshot. For the version-only case
-        // (no playerId filter), the snapshot's capture time is the best
-        // we can do — there's no single "field that changed" to report.
+        // player first appeared in any snapshot. For the sequence-only case
+        // (no playerId filter) there is no single changed field to report,
+        // so the snapshot's capture time is the best available.
         if (
             playerIdFilter is long matchedPid
             && matched.PlayerFirstSeenAtUtc.TryGetValue(matchedPid, out var firstSeen)

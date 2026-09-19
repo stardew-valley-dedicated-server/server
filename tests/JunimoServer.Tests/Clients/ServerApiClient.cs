@@ -90,7 +90,7 @@ public class ServerStatus : ISequencedSnapshot
     public bool IsPaused { get; set; }
 
     /// <summary>
-    /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
+    /// Monotonic snapshot sequence. Pass back as <c>?since=N</c> on
     /// <c>/wait/status</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
     [JsonPropertyName("sequence")]
@@ -131,7 +131,7 @@ public class PlayersResponse : ISequencedSnapshot
     public List<PlayerInfo> Players { get; set; } = new();
 
     /// <summary>
-    /// Monotonic snapshot version. Pass back as <c>?since=N</c> on
+    /// Monotonic snapshot sequence. Pass back as <c>?since=N</c> on
     /// <c>/wait/players</c> long-poll requests to wait for a newer snapshot.
     /// </summary>
     [JsonPropertyName("sequence")]
@@ -1621,29 +1621,23 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// The retryable-fault filter for the wait/poll loops: connection errors and
-    /// non-success statuses (<c>EnsureSuccessStatusCode</c> throws
-    /// <see cref="HttpRequestException"/>), the per-request timeout
-    /// (<see cref="TaskCanceledException"/>), and a connection dropped mid-response —
-    /// a premature EOF surfaces as <c>HttpIOException</c>, which derives from
-    /// <see cref="IOException"/>, not <see cref="HttpRequestException"/>. Anything else,
-    /// notably a <c>JsonException</c> from a complete but malformed body, is a genuine
-    /// bug — a loop that filters on this lets it propagate so the wait reports it instead
-    /// of retrying to the deadline. Unrelated to <c>TransportFaultClassifier</c>, which
-    /// decides host poisoning on typed codes and deliberately ignores most of these.
+    /// Retryable-fault filter for the wait/poll loops: connection errors and non-success
+    /// statuses (<see cref="HttpRequestException"/>), the per-request timeout
+    /// (<see cref="OperationCanceledException"/>), and a connection dropped mid-response
+    /// (<c>HttpIOException</c>, an <see cref="IOException"/>, not an
+    /// <see cref="HttpRequestException"/>). Anything else, notably a <c>JsonException</c>
+    /// from a malformed body, is a bug and propagates so the wait reports it instead of
+    /// retrying to the deadline. Distinct from <c>TransportFaultClassifier</c>, which
+    /// decides host poisoning and ignores most of these.
     /// </summary>
     private static bool IsRetryableRequestFault(Exception ex) =>
-        ex
-            is HttpRequestException
-                or IOException
-                or TaskCanceledException
-                or OperationCanceledException;
+        ex is HttpRequestException or IOException or OperationCanceledException;
 
     /// <summary>
-    /// Snapshot poll against a fast endpoint. Each <paramref name="probe"/> call
-    /// receives a token bounded by <see cref="TestTimings.PollingRequestTimeout"/>
-    /// (the client's own timeout is 5 min, so an unbounded request could outlive the
-    /// poll and hang); a transport fault on one iteration counts as "not yet".
+    /// Snapshot poll against a fast endpoint. Each <paramref name="probe"/> call receives a
+    /// token bounded by <see cref="TestTimings.PollingRequestTimeout"/> (the client's own
+    /// timeout is 5 min, so an unbounded request could outlive the poll); a transport fault
+    /// on one iteration counts as "not yet".
     /// </summary>
     private Task<bool> PollSnapshotAsync(
         WaitName name,
@@ -1668,42 +1662,14 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// <see cref="PollSnapshotAsync"/> for a probe that yields the matched value:
-    /// returns the first non-null result, or <c>null</c> at the deadline.
-    /// </summary>
-    private Task<T?> PollSnapshotForResultAsync<T>(
-        WaitName name,
-        Func<CancellationToken, Task<T?>> probe,
-        TimeSpan timeout,
-        CancellationToken ct,
-        Func<Task<object?>>? onTimeoutAsync
-    )
-        where T : class
-    {
-        return PollingHelper.WaitForResultAsync(
-            name,
-            async () =>
-            {
-                using var reqCts = Cts.LinkedTimeout(ct, TestTimings.PollingRequestTimeout);
-                return await probe(reqCts.Token);
-            },
-            timeout,
-            cancellationToken: ct,
-            onTimeoutAsync: onTimeoutAsync,
-            isRetryable: IsRetryableRequestFault
-        );
-    }
-
-    /// <summary>
-    /// Long-poll over a <c>/wait/*</c> endpoint. <paramref name="fetch"/> receives
-    /// the <c>since</c> cursor, the server timeout to request, and a request token;
-    /// it returns <c>null</c> on 408. The server timeout is the remaining outer
-    /// budget capped at <see cref="DefaultWaitServerTimeout"/>, and the request is
-    /// bounded at that plus <see cref="TestTimings.PollingRequestTimeout"/> so a
-    /// healthy server wait is never client-aborted mid-block. A non-null response
-    /// matches when <paramref name="matches"/> is null (the server already applied
-    /// the filter) or returns true; otherwise the cursor advances to its version.
-    /// A transport fault leaves the cursor unchanged.
+    /// Long-poll over a <c>/wait/*</c> endpoint. <paramref name="fetch"/> receives the
+    /// <c>since</c> cursor, the server timeout to request, and a request token, and returns
+    /// <c>null</c> on 408. The server timeout is the remaining outer budget capped at
+    /// <see cref="DefaultWaitServerTimeout"/>; the request is bounded at that plus
+    /// <see cref="TestTimings.PollingRequestTimeout"/> so a healthy server wait is never
+    /// client-aborted mid-block. A non-null response matches when <paramref name="matches"/>
+    /// is null (the server already applied the filter) or returns true; otherwise the cursor
+    /// advances to its sequence. A transport fault leaves the cursor unchanged.
     /// </summary>
     private Task<bool> LongPollSnapshotAsync<T>(
         WaitName name,
@@ -1728,7 +1694,7 @@ public class ServerApiClient : IDisposable
                 var response = await fetch(since, serverTimeout, reqCts.Token);
                 if (response == null)
                 {
-                    // 408 — server-side timeout, no newer snapshot observed.
+                    // 408: no newer snapshot within the server timeout.
                     return new PollingHelper.LongPollResult(false, since);
                 }
 
@@ -1829,7 +1795,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Long-poll variant of <see cref="GetStatus"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND the requested
+    /// snapshot sequence exceeds <paramref name="since"/> AND the requested
     /// filters (<paramref name="isReady"/>, <paramref name="isPaused"/>,
     /// <paramref name="day"/>, <paramref name="playerCount"/>) match. Returns
     /// the matching status or <c>null</c> on 408 (no match within the
@@ -1923,7 +1889,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Long-poll variant of <see cref="GetPlayers"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND
+    /// snapshot sequence exceeds <paramref name="since"/> AND
     /// <paramref name="playerId"/> (when set) is present in the players list.
     /// Returns the matching players response or <c>null</c> on 408.
     /// </summary>
@@ -2135,7 +2101,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Long-poll variant of <see cref="GetFarmhands"/>. Server blocks until the
-    /// snapshot version exceeds <paramref name="since"/> AND the requested
+    /// snapshot sequence exceeds <paramref name="since"/> AND the requested
     /// filters match. Returns the matching farmhands response or <c>null</c>
     /// on 408.
     /// </summary>
@@ -2998,17 +2964,16 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Waits for the server to come online and be ready.
+    /// Long-polls <c>/wait/status</c> until the server is online and ready. Unlike the other
+    /// waits, swallows every fault and returns <c>null</c> on timeout or cancellation.
     /// </summary>
-    /// <param name="timeout">Maximum time to wait</param>
-    /// <param name="pollInterval">Time between status checks</param>
-    /// <param name="cancellationToken">Cancellation token for early abort (e.g., on server error)</param>
-    /// <param name="onProgress">Optional callback for progress reporting (attempt count, detail message)</param>
-    /// <param name="requireInviteCode">If true, also waits for a non-empty invite code (Steam/Galaxy). Servers without Steam auth should pass false.</param>
-    /// <returns>The server status once online, or null if timeout/cancelled</returns>
+    /// <param name="cancellationToken">Early abort, for example on a server error.</param>
+    /// <param name="onProgress">Progress callback (attempt count, last reason).</param>
+    /// <param name="requireInviteCode">Also wait for a non-empty invite code (Steam/Galaxy).
+    /// Servers without Steam auth should pass false.</param>
+    /// <returns>The matching status, or <c>null</c> on timeout or cancellation.</returns>
     public Task<ServerStatus?> WaitForServerOnline(
         TimeSpan timeout,
-        TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default,
         Action<string>? onProgress = null,
         bool requireInviteCode = true
@@ -3019,7 +2984,6 @@ public class ServerApiClient : IDisposable
             () =>
                 WaitForServerOnlineCoreAsync(
                     timeout,
-                    pollInterval,
                     cancellationToken,
                     onProgress,
                     requireInviteCode
@@ -3031,20 +2995,15 @@ public class ServerApiClient : IDisposable
 
     private async Task<ServerStatus?> WaitForServerOnlineCoreAsync(
         TimeSpan timeout,
-        TimeSpan? pollInterval,
         CancellationToken cancellationToken,
         Action<string>? onProgress,
         bool requireInviteCode
     )
     {
-        // Long-poll path: each iteration calls /wait/status?isReady=true with a
-        // server-side hard cap of 10s. The server blocks until a newer snapshot
-        // satisfies the filter, so a healthy server returns immediately on the
-        // first poll. The legacy 1s pollInterval is unused on this path —
-        // server-side blocking replaces client-side throttling. We still keep
-        // an outer loop so the requireInviteCode path can advance `since` and
-        // re-poll when the snapshot has refreshed but invite codes are still
-        // missing (invite code is read from a file, not from the snapshot).
+        // Each iteration calls /wait/status?isReady=true under the server's 10s cap, so a
+        // healthy server returns on the first poll. The outer loop serves the
+        // requireInviteCode path: the invite code is read from a file, not the snapshot, so
+        // `since` must advance and re-poll when the snapshot refreshed without a code.
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var deadline = DateTime.UtcNow + timeout;
         long since = 0;
@@ -3086,7 +3045,7 @@ public class ServerApiClient : IDisposable
 
                     if (status == null)
                     {
-                        // 408 — server-side timeout. Try again under our deadline.
+                        // 408: no newer snapshot within the server timeout, re-issue under our deadline.
                         lastReason = "server-side timeout (408)";
                     }
                     else
@@ -3468,7 +3427,7 @@ public class ServerApiClient : IDisposable
 
     /// <summary>
     /// Polls /cabins until an assigned cabin owned by the given farmer name appears.
-    /// Use the UID variant when possible — name lookup races with the customization
+    /// Use the UID variant when possible: name lookup races with the customization
     /// sync (OwnerName can be empty briefly after fresh joins).
     /// Returns the cabin, or <c>null</c> on timeout (after a <see cref="FailureContext"/> dump).
     /// </summary>
@@ -3495,14 +3454,16 @@ public class ServerApiClient : IDisposable
         CancellationToken ct
     )
     {
+        CabinInfoResponse? result = null;
         // Captured so the timeout dump can show the last snapshot the poll saw.
         CabinsResponse? lastCabins = null;
-        return await PollSnapshotForResultAsync(
+        await PollSnapshotAsync(
             name,
             async token =>
             {
                 lastCabins = await GetCabins(token);
-                return lastCabins?.Cabins.FirstOrDefault(isMatch);
+                result = lastCabins?.Cabins.FirstOrDefault(isMatch);
+                return result != null;
             },
             timeout ?? TestTimings.CabinAssignmentTimeout,
             ct,
@@ -3517,6 +3478,7 @@ public class ServerApiClient : IDisposable
                     }
                 )
         );
+        return result;
     }
 
     /// <summary>
@@ -3555,11 +3517,9 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Polls DELETE /farmhands?name=X until the farmhand is gone. A DELETE that reports
-    /// Success is the direct signal. A "not found" that follows a faulted DELETE is
-    /// reconciled against the /farmhands snapshot — an absent name means that delete
-    /// landed. Any other failure, including a "not found" on an attempt that never
-    /// faulted, retries to the deadline.
+    /// Polls DELETE /farmhands?name=X until the farmhand is gone: a DELETE that reports
+    /// Success, or, after a DELETE that faulted in transit, a "not found" confirmed by the
+    /// name's absence from /farmhands. Everything else retries to the deadline.
     /// </summary>
     public async Task<FarmhandOperationResponse?> WaitForFarmhandDeletedByNameAsync(
         string name,
@@ -3588,14 +3548,13 @@ public class ServerApiClient : IDisposable
                     return true;
                 }
 
-                // A "not found" is evidence of a completed deletion only once a DELETE has
-                // faulted: the server commits on a 15s game-thread budget that ignores the
-                // client's per-request token (ApiService.HandleDeleteFarmhandAsync), so while the
-                // game thread is blocked 5-15s (day transition / save sync) the committing DELETE
-                // surfaces here as a transport fault and the next one reports "not found"
-                // (Success=false) although the deletion landed. Without a prior fault a "not found"
-                // means the name was never persisted, and "not ready" / "online" / "save in
-                // progress" are unambiguous — both retry to the deadline.
+                // A "not found" proves deletion only after a DELETE faulted in transit: the
+                // server commits on a 15s game-thread budget (ApiService.HandleDeleteFarmhandAsync)
+                // that outlives the client's per-request timeout, so while the game thread is
+                // blocked (day transition, save sync) the committing DELETE surfaces here as a
+                // transport fault and the next one reports "not found". Without a prior fault,
+                // "not found" means the name was never persisted; "not ready" / "online" /
+                // "save in progress" are unambiguous. Both retry.
                 if (
                     !deleteWasAmbiguous
                     || result?.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase)

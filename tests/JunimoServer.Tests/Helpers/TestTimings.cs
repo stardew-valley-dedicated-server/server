@@ -103,9 +103,9 @@ public static class TestTimings
     /// Total budget for the delete-retry loop: poll DELETE /farmhands until it
     /// succeeds. The delete API is called immediately after disconnect; if the
     /// server hasn't processed the disconnect yet ("currently online" error), we
-    /// retry with FastPollInterval until this timeout. The server's
-    /// RunOnGameThreadAsync timeout is 5s and a measured delete costs ~0.1s, so
-    /// 35s is ample retry headroom for a briefly-contended game thread.
+    /// retry with FastPollInterval until this timeout. The server runs the delete
+    /// under a 15s game-thread budget and a measured delete costs ~0.1s, so 35s
+    /// covers a game thread blocked by a day transition or save.
     /// </summary>
     public static readonly TimeSpan FarmerDeleteTimeout = TimeSpan.FromSeconds(35);
 
@@ -181,12 +181,6 @@ public static class TestTimings
     #endregion
 
     #region Polling Intervals
-
-    /// <summary>
-    /// Interval between status polls when waiting for day change.
-    /// The /status endpoint is lightweight; 500ms reduces detection latency.
-    /// </summary>
-    public static readonly TimeSpan DayChangePollInterval = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// Interval for tight polling loops in tests (chat responses, state sync, etc.).

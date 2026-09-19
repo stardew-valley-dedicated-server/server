@@ -97,7 +97,6 @@ public class WorldTransitionGuardTests : TestBase
     {
         var status = await ServerApi.WaitForServerOnline(
             WorldLoadTimeout,
-            pollInterval: TimeSpan.FromSeconds(2),
             cancellationToken: TestCt,
             requireInviteCode: Server.Options.WithSteam
         );
