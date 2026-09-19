@@ -250,6 +250,10 @@ public static class PollingHelper
             {
                 while (true)
                 {
+                    // Before the deadline check: a cancelled caller must surface as a
+                    // cancellation, not a clean timeout with the diagnostic dump attached.
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     var remaining = timeout - sw.Elapsed;
                     if (remaining <= TimeSpan.Zero)
                     {
@@ -257,7 +261,6 @@ public static class PollingHelper
                         break;
                     }
 
-                    cancellationToken.ThrowIfCancellationRequested();
                     iterations++;
 
                     try
