@@ -174,15 +174,17 @@ internal sealed class TracingHandler : DelegatingHandler
             {
                 try
                 {
-                    var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                    var original = response.Content;
+                    var bytes = await original.ReadAsByteArrayAsync(cancellationToken);
                     respBytes = bytes.LongLength;
 
                     var rewrapped = new ByteArrayContent(bytes);
-                    foreach (var header in response.Content.Headers)
+                    foreach (var header in original.Headers)
                     {
                         rewrapped.Headers.TryAddWithoutValidation(header.Key, header.Value);
                     }
                     response.Content = rewrapped;
+                    original.Dispose();
 
                     // Truncated body text (redaction happens later; see class doc).
                     // Decode only a bounded prefix — a char is at most 4 UTF-8 bytes,
