@@ -119,7 +119,7 @@ State of the boot-time game content check. On every `serve` start with a complet
 }
 ```
 
-`status` is one of `pending`, `running`, `completed`, `failed`, `skipped` (no completed download, or no account) or `disabled` (`VALIDATE_ON_BOOT=false`). `detail` is the pass summary on `completed` and the error message on `failed`. A healthy install passes with nothing fetched: the pass knows the four depot files a later step rewrites on purpose (the execstack-patched Galaxy libraries, the pruned `Content/ContentHashes.json`, SMAPI's replacement `StardewValley` launcher, the entrypoint-written `steam_appid.txt`) and does not treat them as corrupt. A failure (no usable login, Steam unreachable, disk error) is terminal: the game boots with the files as they are, and `download` remains the manual repair. While the game container waits, its `/status` reports `phase: "validating"`.
+`status` is one of `pending`, `running`, `completed`, `failed`, `skipped` (no completed download, or no account) or `disabled` (`VALIDATE_ON_BOOT=false`). `detail` is the pass summary on `completed` and the error message on `failed`. A healthy install passes with nothing fetched: the pass knows the four depot files a later step rewrites on purpose (the execstack-patched Galaxy libraries, the pruned `Content/ContentHashes.json`, SMAPI's replacement `StardewValley` launcher, the entrypoint-written `steam_appid.txt`) and does not treat them as corrupt. A failure (no usable login, Steam unreachable, disk error, an unreadable completion marker) is terminal: the game boots with the files as they are, and `download` remains the manual repair. While the game container waits, its `/status` reports `phase: "validating"`.
 
 ### POST /game/validate
 

@@ -1060,10 +1060,14 @@ async Task<SteamAuthService.DownloadSummary> RunGameContentValidationAsync(
     await gameValidationLock.WaitAsync();
     try
     {
-        var installedManifestId = SteamAuthService.ReadInstalledManifestId(
-            targetDir,
-            StardewValleyAppId
-        );
+        // A repair is only a repair while it can pin the installed version; without the id the
+        // pass would fetch the current public manifest, which is an unattended game update.
+        var installedManifestId =
+            SteamAuthService.ReadInstalledManifestId(targetDir, StardewValleyAppId)
+            ?? throw new InvalidOperationException(
+                $"completion marker in {targetDir} is missing or unreadable, so the installed "
+                    + "manifest is unknown; run `download` to reinstall or update explicitly"
+            );
         return await svc.DownloadGameAsync(
             StardewValleyAppId,
             targetDir,
