@@ -105,7 +105,16 @@ public class SteamGameServerNetworkingService : ModService
             // Create and add our GameServer-based network server
             _monitor.Log("Adding SteamGameServerNetServer for SDR connections", LogLevel.Info);
             var gameServerNet = new SteamGameServerNetServer(Game1.server, _monitor, _helper);
-            servers.Add(gameServerNet);
+
+            // Register through SMAPI's Multiplayer.InitServer so it attaches its message hook
+            // (OnServerProcessingMessage). Without it, SMAPI's mod-context handshake never runs
+            // for SDR clients, so the host's mod list never reaches them and client-side mods
+            // report the host as missing the mod. The vanilla LidgrenServer gets this in
+            // GameServer.initializeHost; this custom server is added by reflection and must do it here.
+            var multiplayer = _helper
+                .Reflection.GetField<Multiplayer>(typeof(Game1), "multiplayer")
+                .GetValue();
+            servers.Add(multiplayer.InitServer(gameServerNet));
             gameServerNet.initialize();
 
             _serverAdded = true;

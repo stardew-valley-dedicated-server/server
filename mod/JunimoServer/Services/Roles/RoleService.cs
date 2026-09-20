@@ -121,8 +121,8 @@ public class RoleService : ModService
     }
 
     /// <summary>
-    /// Called when a player connects via SMAPI (Galaxy/invite code connections).
-    /// Note: This does NOT fire for Steam SDR connections — see OnSteamFarmhandAccepted.
+    /// Called when a player connects via SMAPI. Fires for every transport whose server is
+    /// registered through Multiplayer.InitServer, including Steam SDR.
     /// </summary>
     private void OnPeerConnected(object sender, PeerConnectedEventArgs e)
     {
@@ -130,9 +130,9 @@ public class RoleService : ModService
     }
 
     /// <summary>
-    /// Called when a farmhand is accepted via Steam SDR (SteamGameServerNetServer).
-    /// SMAPI's PeerConnected does not fire for custom server implementations,
-    /// so we handle admin promotion directly here with the known Steam ID.
+    /// Called when a farmhand is accepted via Steam SDR (SteamGameServerNetServer), carrying the
+    /// Steam ID directly so no reflection lookup is needed. PeerConnected also fires for SDR, but
+    /// TryAutoPromoteAdmin returns early for an existing admin, so both paths running is safe.
     /// </summary>
     private void OnSteamFarmhandAccepted(long playerId, string steamId)
     {

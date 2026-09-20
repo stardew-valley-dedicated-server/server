@@ -50,8 +50,9 @@ internal sealed class SteamGameServerNetServer : HookableServer
     /// <summary>
     /// Raised when a farmhand is accepted via Steam SDR.
     /// Parameters: (farmerId, steamId).
-    /// Used by RoleService for admin auto-promotion since SMAPI's PeerConnected
-    /// does not fire for custom server implementations.
+    /// Used by RoleService for admin auto-promotion: it delivers the Steam ID at accept time so no
+    /// reflection lookup is needed. SMAPI's PeerConnected also fires for SDR (the server is
+    /// registered via Multiplayer.InitServer); promotion is idempotent, so both firing is safe.
     /// </summary>
     internal static event Action<long, string> FarmhandAccepted;
 
