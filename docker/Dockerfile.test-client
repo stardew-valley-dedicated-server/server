@@ -64,7 +64,7 @@ RUN for patch in /smapi-patches/*.patch; do \
         echo "Applying ${patch}" && git -C /smapi apply --check "${patch}" && git -C /smapi apply "${patch}"; \
     done
 
-COPY docker/smapi/build-installer.sh /smapi-build.sh
+COPY --chmod=0755 docker/smapi/build-installer.sh /smapi-build.sh
 RUN --mount=type=cache,target=/root/.nuget/packages \
     /smapi-build.sh /smapi /game /smapi-patches "${SMAPI_VERSION}" /out
 

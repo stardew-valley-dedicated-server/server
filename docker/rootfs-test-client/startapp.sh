@@ -49,24 +49,33 @@ wait_for_game_files() {
     echo "Game files detected!"
 }
 
+# The installer copies the bundle one entry at a time and exits 0 even when it fails, so a
+# launcher alone proves nothing; check the launcher, the runtime files, and the last entry the
+# installer writes (a bundled mod's manifest).
+smapi_install_complete() {
+    [ -e "${SMAPI_EXECUTABLE}" ] &&
+        [ -e "${GAME_DEST_DIR}/StardewModdingAPI.dll" ] &&
+        [ -e "${GAME_DEST_DIR}/StardewModdingAPI.deps.json" ] &&
+        [ -e "${GAME_DEST_DIR}/Mods/ConsoleCommands/manifest.json" ]
+}
+
 init_smapi() {
     # Same SMAPI build and shared-volume lock as the server's startapp.sh, but a client installs
-    # only onto a volume with no SMAPI at all (a client booting before the server). Upgrades are
-    # the server's job: it reinstalls on a build-id mismatch, so a client image built from a
-    # different revision never fights it over the shared volume.
+    # only onto a volume with no complete SMAPI install (a client booting before the server).
+    # Upgrades are the server's job: it reinstalls on a build-id mismatch, so a client image built
+    # from a different revision never fights it over the shared volume.
     local want stamp
     want="$(cat /opt/smapi/BUILD_ID)"
     stamp="${GAME_DEST_DIR}/smapi-internal/.sdvd-smapi-build"
     (
         flock 9
-        if [ -e "${SMAPI_EXECUTABLE}" ]; then
+        if smapi_install_complete; then
             echo "SMAPI $(cat "${stamp}" 2>/dev/null || echo '(unstamped build)') already installed"
         else
             echo "Installing SMAPI ${want}..."
             /opt/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path "${GAME_DEST_DIR}"
-            # The installer exits 0 on failure, so gate the stamp on the launcher existing
-            if [ ! -e "${SMAPI_EXECUTABLE}" ]; then
-                print_error "SMAPI install failed: ${SMAPI_EXECUTABLE} is missing"
+            if ! smapi_install_complete; then
+                print_error "SMAPI install failed: the SMAPI files in ${GAME_DEST_DIR} are incomplete"
                 exit 1
             fi
             echo "${want}" > "${stamp}"

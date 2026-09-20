@@ -229,6 +229,16 @@ init_patch_dll() {
     fi
 }
 
+# The installer copies the bundle one entry at a time and exits 0 even when it fails, so a
+# launcher alone proves nothing; check the launcher, the runtime files, and the last entry the
+# installer writes (a bundled mod's manifest).
+smapi_install_complete() {
+    [ -e "${SMAPI_EXECUTABLE}" ] &&
+        [ -e "${GAME_DEST_DIR}/StardewModdingAPI.dll" ] &&
+        [ -e "${GAME_DEST_DIR}/StardewModdingAPI.deps.json" ] &&
+        [ -e "${GAME_DEST_DIR}/Mods/ConsoleCommands/manifest.json" ]
+}
+
 init_smapi() {
     # The image ships its own SMAPI build (/opt/smapi, built by the Dockerfile's smapi-builder stage
     # from upstream + patches/smapi). The volume's install is keyed on that build's id, so a new
@@ -239,17 +249,16 @@ init_smapi() {
     stamp="${GAME_DEST_DIR}/smapi-internal/.sdvd-smapi-build"
     (
         flock 9
-        if [ -e "${SMAPI_EXECUTABLE}" ] && [ "$(cat "${stamp}" 2>/dev/null)" = "${want}" ]; then
+        if smapi_install_complete && [ "$(cat "${stamp}" 2>/dev/null)" = "${want}" ]; then
             echo "SMAPI ${want} already installed, skipping."
         else
             echo "Installing SMAPI ${want}..."
-            # The installer exits 0 on failure, so drop the previous launcher first and gate the
-            # stamp on the new one existing: a failed install then retries next boot instead of
-            # stamping a stale build
+            # Drop the previous launcher first so a failed install leaves nothing to stamp and
+            # retries next boot instead of keeping a stale build
             rm -f "${SMAPI_EXECUTABLE}"
             /opt/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path "${GAME_DEST_DIR}"
-            if [ ! -e "${SMAPI_EXECUTABLE}" ]; then
-                print_error "SMAPI install failed: ${SMAPI_EXECUTABLE} is missing"
+            if ! smapi_install_complete; then
+                print_error "SMAPI install failed: the SMAPI files in ${GAME_DEST_DIR} are incomplete"
                 exit 1
             fi
             echo "${want}" > "${stamp}"

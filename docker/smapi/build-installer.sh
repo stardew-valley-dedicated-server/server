@@ -8,7 +8,7 @@
 # Output layout under <out-dir>:
 #   internal/linux/SMAPI.Installer  self-contained installer (run with --no-prompt --install --game-path)
 #   internal/linux/install.dat      the SMAPI bundle the installer lays out into the game folder
-#   BUILD_ID                        <smapi-version>-<12 hex of sha256 over the patch series>
+#   BUILD_ID                        <smapi-version>-<12 hex of sha256 over the patch series and this script>
 #   LICENSE.txt                     upstream's LGPL notice (SMAPI is LGPL v3)
 set -euo pipefail
 
@@ -84,8 +84,9 @@ chmod 755 "${bundle}/unix-launcher.sh" "${bundle}/StardewModdingAPI" "${internal
 (cd "${bundle}" && zip -q -r "../install.dat" .)
 rm -rf "${bundle}"
 
-# reinstall key + license
-patch_hash="$(cat "${patches}"/*.patch | sha256sum | cut -c1-12)"
+# reinstall key + license: any input that shapes the artifact must move the key, or an existing
+# volume keeps the stale install
+patch_hash="$(cat "${patches}"/*.patch "$0" | sha256sum | cut -c1-12)"
 printf '%s\n' "${version}-${patch_hash}" > "${out}/BUILD_ID"
 cp "${src}/LICENSE.txt" "${out}/LICENSE.txt"
 
