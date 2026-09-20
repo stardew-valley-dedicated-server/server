@@ -84,8 +84,12 @@ chmod 755 "${bundle}/unix-launcher.sh" "${bundle}/StardewModdingAPI" "${internal
 (cd "${bundle}" && zip -q -r "../install.dat" .)
 rm -rf "${bundle}"
 
-# reinstall key + license: any input that shapes the artifact must move the key, or an existing
-# volume keeps the stale install
+# reinstall key + license: keyed on the SMAPI version, patch series, and this packaging script —
+# the repo-controlled inputs that reshape the artifact — so changing any of them reinstalls over an
+# existing volume instead of keeping a stale build. Upstream/toolchain drift is deliberately out of
+# scope: the ${SMAPI_VERSION} tag, game reference DLLs, and SDK image are pinned or build an
+# equivalent artifact, and byte-hashing the package would churn the key every build (compiled DLLs
+# and the zip carry timestamps) and force a needless reinstall on every upgrade.
 patch_hash="$(cat "${patches}"/*.patch "$0" | sha256sum | cut -c1-12)"
 printf '%s\n' "${version}-${patch_hash}" > "${out}/BUILD_ID"
 cp "${src}/LICENSE.txt" "${out}/LICENSE.txt"
