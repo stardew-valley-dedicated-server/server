@@ -12,7 +12,12 @@ internal static class Config
         (Env("API_ENABLED") ?? "true").ToLowerInvariant() != "false";
 
     public static readonly string GitSha = Env("SDVD_GIT_SHA") ?? "";
-    public static readonly string SmapiVersion = Env("SMAPI_VERSION") ?? "";
+
+    /// <summary>Id of the SMAPI build the image ships and of the one installed in the game volume (startapp.sh init_smapi); they differ only if that install failed.</summary>
+    public static readonly string SmapiImageBuild = ReadTrimmed("/opt/smapi/BUILD_ID");
+    public static readonly string SmapiInstalledBuild = ReadTrimmed(
+        $"{GamePath}/smapi-internal/.sdvd-smapi-build"
+    );
     public static readonly string BaseUrl = $"http://127.0.0.1:{Env("API_PORT") ?? "8080"}";
 
     /// <summary>Steam auth sidecar URL the server itself uses (docker-compose STEAM_AUTH_URL).</summary>
@@ -69,4 +74,7 @@ internal static class Config
         || name.Contains("SECRET", StringComparison.OrdinalIgnoreCase);
 
     private static string? Env(string name) => Environment.GetEnvironmentVariable(name);
+
+    private static string ReadTrimmed(string path) =>
+        File.Exists(path) ? File.ReadAllText(path).Trim() : "";
 }

@@ -56,7 +56,7 @@ The rule loads in full on Read of a matching path.
 | `netfield-revert-pattern.md` | `mod/JunimoServer/**` | Don't revert peer-replicated NetField writes inside `fieldChangeEvent` — interpolation makes Set a no-op |
 | `no-level-0-marriage-map.md` | `mod/**/*.cs`, `tests/**/*.cs` | A farmhand must be `houseUpgradeLevel >= 1` before marrying — a level-0 married farmhouse crashes `_newDayAfterFade` |
 | `one-parser-per-contract.md` | `mod/**/*.cs`, `tests/**/*.cs`, `tools/**/*.cs` | A contract parsed at multiple sites gets one canonical typed record + parser; grep every syntactic form when hoisting literals |
-| `one-second-update-ticked-fires-per-game-tick.md` | `mod/**/*.cs` | Fires every 60 game ticks (12s at `SERVER_TPS=5`): gate sequential handlers on wall-clock; one-shot host writes go on `OnSaveLoaded` |
+| `one-second-update-ticked-fires-per-game-tick.md` | `mod/**/*.cs` | Per real second only on our patched SMAPI (`patches/smapi`), per 60 ticks on stock: gate sequential handlers on wall-clock; one-shot host writes go on `OnSaveLoaded` |
 | `one-writer-per-artifact.md` | `tests/JunimoServer.TestRunner/**`, `tests/JunimoServer.Tests/Fixtures/**` | Two producers of one artifact = silent schema drift — merge upstream state, not downstream files |
 | `passing-test-isnt-proof-the-scenario-ran.md` | `tests/**/*.cs` | A green test proves its assertions held, not that the scenario ran — read the run artifact to confirm the intended events fired |
 | `plans-cite-files-not-lines.md` | `.claude/plans/**` | Plans cite files and symbols, never `:123` — positions drift over a plan's shelf life; in-session findings still cite exact lines |

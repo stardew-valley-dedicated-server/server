@@ -1,0 +1,23 @@
+Derive the one-second event divisor from the game's tick rate
+
+GameLoop.OneSecondUpdateTicking/Ticked fire on every 60th update tick, which is one real
+second only at the stock 60 ticks/sec. A host that throttles the game (TargetElapsedTime =
+1000/TPS ms) gets the events every 60/TPS seconds instead. Derive the divisor from the game's
+own TargetElapsedTime so the events keep their one-real-second contract at any tick rate.
+
+diff --git a/src/SMAPI/Framework/SCore.cs b/src/SMAPI/Framework/SCore.cs
+index 036ec76..9a4d706 100644
+--- a/src/SMAPI/Framework/SCore.cs
++++ b/src/SMAPI/Framework/SCore.cs
+@@ -1136,7 +1136,10 @@ internal class SCore : IDisposable
+             ** Game update tick
+             *********/
+             {
+-                bool isOneSecond = SCore.TicksElapsed % 60 == 0;
++                // one game-second is one second of ticks at the rate the game actually runs, i.e. the target
++                // tick rate set on the game (60 for a stock game, lower on a throttled headless host)
++                uint ticksPerSecond = Math.Max(1u, (uint)Math.Round(1000.0 / instance.TargetElapsedTime.TotalMilliseconds));
++                bool isOneSecond = SCore.TicksElapsed % ticksPerSecond == 0;
+                 events.UnvalidatedUpdateTicking.RaiseEmpty();
+                 events.UpdateTicking.RaiseEmpty();
+                 if (isOneSecond)

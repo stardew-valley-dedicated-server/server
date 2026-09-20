@@ -1,0 +1,30 @@
+Suppress the XACT init error log on a headless game without audio content
+
+A game installed without Content/XACT (a headless server) throws FileNotFoundException in
+Game1.InitializeSounds, catches it, and falls back to its dummy audio engine; the catch logs
+the exception as an error, which SMAPI prints as [ERROR game]. The fallback is the expected
+state on such an install, so drop that one log line the same way SGameLogger drops the
+Steam-not-loaded one. Any other XACT failure (content present) still logs.
+
+diff --git a/src/SMAPI/Framework/SGameLogger.cs b/src/SMAPI/Framework/SGameLogger.cs
+index 1949078..d181450 100644
+--- a/src/SMAPI/Framework/SGameLogger.cs
++++ b/src/SMAPI/Framework/SGameLogger.cs
+@@ -1,4 +1,5 @@
+ using System;
++using System.IO;
+ using StardewModdingAPI.Internal;
+ using StardewValley.Logging;
+ 
+@@ -64,6 +65,11 @@ internal class SGameLogger : IGameLogger
+             );
+         }
+ 
++        // game without audio content (a headless install strips Content/XACT): the game already fell
++        // back to its dummy audio engine, so the missing wave bank is expected there
++        else if (error == "Game.Initialize() caught exception initializing XACT." && exception is FileNotFoundException)
++            return;
++
+         // any other error
+         else
+         {

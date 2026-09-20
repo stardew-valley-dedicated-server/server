@@ -87,7 +87,9 @@ Then run the [Quick Upgrade](#quick-upgrade) command again.
 
 ## Updating Game Files
 
-To download the latest Stardew Valley game files or SMAPI updates:
+SMAPI ships inside the server image and is installed into the game volume on startup, so a
+[Quick Upgrade](#quick-upgrade) also updates SMAPI. To download the latest Stardew Valley game
+files:
 
 **1. Stop the server**
 

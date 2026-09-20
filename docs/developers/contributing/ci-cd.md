@@ -147,7 +147,7 @@ The validation pipeline runs on every pull request targeting `master`. It ensure
 
 - **PR title** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format. The repo squash-merges, so the title becomes the commit subject — checking it here fails a bad title on the PR before it merges.
 - **Commit messages** - Must follow [Conventional Commits](https://www.conventionalcommits.org/) format
-- **Docker build** - Ensures the image builds successfully (without pushing)
+- **Docker build** - Ensures the image builds successfully (without pushing). The build clones the pinned SMAPI release and applies the `patches/smapi/` series, so a patch that no longer applies fails here
 - **Formatting** - Runs `dotnet csharpier check .` over the whole tree, plus the analyzer style rules for the test projects (the only C# that compiles game-free on the runner — the mod's analyzers gate via the Docker build); fails on formatting drift or style violations (fix locally with `make lint-fix`)
 - **JS/TS** - Runs `biome ci` over the projects scoped in the root `biome.jsonc`; fails on formatting drift or lint errors (fix locally with `make lint-fix`)
 - **Line endings** - Fails if a file with CRLF line endings reached the index, bypassing the LF normalization `.gitattributes` enforces

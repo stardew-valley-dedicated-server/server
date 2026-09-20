@@ -4,8 +4,9 @@
 # Build: make build-test-client
 # Usage: started by the test broker via Testcontainers (see tests/JunimoServer.Tests/Containers/GameClientContainer.cs)
 #
-# NOTE: This Dockerfile reuses the game-downloader stage from the main Dockerfile
-# to get game DLLs needed for building the test-client mod.
+# NOTE: This Dockerfile duplicates the game-downloader and smapi-builder stages of the main
+# Dockerfile: the game DLLs build the test-client mod, and the SMAPI build is what a client
+# installs into the shared game volume when it boots before the server.
 
 # Global build arguments
 ARG SMAPI_VERSION=4.5.2
@@ -29,13 +30,6 @@ RUN dotnet publish -c Release -o /app --no-restore
 # ============================================================================
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS game-downloader
 
-ARG SMAPI_VERSION
-
-RUN apt-get update && apt-get install -y \
-    curl \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=steam-service-builder /app /steam-service
 WORKDIR /steam-service
 
@@ -49,16 +43,33 @@ RUN --mount=type=secret,id=steam_username \
     export GAME_DIR=/game && \
     dotnet SteamService.dll download --skip-sdk
 
-# Download and install SMAPI
-RUN curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
-    unzip -q /tmp/smapi.zip -d /tmp/smapi && \
-    printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
-    --install \
-    --game-path /game && \
-    rm -rf /tmp/smapi /tmp/smapi.zip
+# ============================================================================
+# Stage 3: Build SMAPI from source with the patch series applied (same as main Dockerfile)
+# ============================================================================
+# The client shares the server's game volume, so it must install the same SMAPI build when it
+# boots onto an empty volume (init_smapi in docker/rootfs-test-client/startapp.sh).
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS smapi-builder
+
+ARG SMAPI_VERSION
+
+# zip keeps the Unix permission bits inside install.dat (the SDK image has git but no zip)
+RUN apt-get update && apt-get install -y --no-install-recommends zip && rm -rf /var/lib/apt/lists/*
+
+COPY --from=game-downloader /game /game
+RUN git clone --depth 1 --branch "${SMAPI_VERSION}" https://github.com/Pathoschild/SMAPI.git /smapi
+
+# A patch that no longer applies to the pinned upstream fails the build here, not silently at runtime
+COPY patches/smapi /smapi-patches
+RUN for patch in /smapi-patches/*.patch; do \
+        echo "Applying ${patch}" && git -C /smapi apply --check "${patch}" && git -C /smapi apply "${patch}"; \
+    done
+
+COPY docker/smapi/build-installer.sh /smapi-build.sh
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    /smapi-build.sh /smapi /game /smapi-patches "${SMAPI_VERSION}" /out
 
 # ============================================================================
-# Stage 3: Build test-client mod using game DLLs
+# Stage 4: Build test-client mod using game DLLs
 # ============================================================================
 # SDK 10.0 (not 6.0): ModBuildConfig 4.4.0's analyzer targets Roslyn 4.9, which
 # the 6.0 SDK's 4.3 compiler rejects (CS9057). The net6.0 TFM still builds fine.
@@ -66,8 +77,11 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS mod-builder
 
 ARG BUILD_CONFIGURATION=Release
 
-# Copy game DLLs from downloader stage
+# Mod compilation resolves StardewModdingAPI.dll from the game folder, so install our build there
 COPY --from=game-downloader /game /game
+COPY --from=smapi-builder /out /tmp/smapi
+RUN /tmp/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path /game && \
+    rm -rf /tmp/smapi
 
 # Copy project files first for better layer caching
 # (.editorconfig: code-style rules enforced at build via EnforceCodeStyleInBuild)
@@ -91,11 +105,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     && cp /src/tests/test-client/manifest.json /output/JunimoTestClient/manifest.json
 
 # ============================================================================
-# Stage 4: Final runtime image
+# Stage 5: Final runtime image
 # ============================================================================
 FROM jlesage/baseimage-gui:debian-13-v4.13 AS client
-
-ARG SMAPI_VERSION
 
 ENV APP_NAME="Stardew Test Client" \
     USER_ID=1000 \
@@ -115,7 +127,6 @@ ENV APP_NAME="Stardew Test Client" \
     CLIENT_FPS=0 \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
-    SMAPI_VERSION=${SMAPI_VERSION} \
     SMAPI_MODS_PATH=/data/Mods \
     # Test client API port (can be overridden per container)
     JUNIMO_TEST_PORT=5123
@@ -129,7 +140,6 @@ RUN add-pkg \
     locales \
     procps \
     scrot \
-    unzip \
     x11-utils \
     xauth \
     xz-utils \
@@ -160,6 +170,9 @@ RUN \
     # at startup, so it stays writable for any configured non-root user; set-cont-env is used
     # because cont-env overrides container env, so HOME can't be supplied from compose.
     set-cont-env HOME /config
+
+# Our SMAPI build, installed into the game volume by startapp.sh
+COPY --from=smapi-builder /out /opt/smapi
 
 # Copy SMAPI config (client-specific settings)
 COPY docker/rootfs-test-client/data/smapi-config.json /data/smapi-config.json

@@ -230,26 +230,32 @@ init_patch_dll() {
 }
 
 init_smapi() {
-    # Installation check
-    if [ -e "${SMAPI_EXECUTABLE}" ]; then
-        echo "SMAPI already initialized, skipping."
-    else
-        echo "Installing SMAPI ${SMAPI_VERSION}..."
-
-        # Download
-        curl -L https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip -o /data/smapi.zip
-        unzip -q /data/smapi.zip -d /data/smapi/
-
-        # Install
-        printf "2\n\n" | "/data/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
-            --install \
-            --game-path "${GAME_DEST_DIR}"
-
-        # Cleanup
-        rm -rf "/data/smapi" /data/smapi.zip
-
-        echo "SMAPI installed successfully!"
-    fi
+    # The image ships its own SMAPI build (/opt/smapi, built by the Dockerfile's smapi-builder stage
+    # from upstream + patches/smapi). The volume's install is keyed on that build's id, so a new
+    # image reinstalls over whatever the volume holds. Test clients install into this volume too,
+    # so check-and-install is serialized on a lock in the volume.
+    local want stamp
+    want="$(cat /opt/smapi/BUILD_ID)"
+    stamp="${GAME_DEST_DIR}/smapi-internal/.sdvd-smapi-build"
+    (
+        flock 9
+        if [ -e "${SMAPI_EXECUTABLE}" ] && [ "$(cat "${stamp}" 2>/dev/null)" = "${want}" ]; then
+            echo "SMAPI ${want} already installed, skipping."
+        else
+            echo "Installing SMAPI ${want}..."
+            # The installer exits 0 on failure, so drop the previous launcher first and gate the
+            # stamp on the new one existing: a failed install then retries next boot instead of
+            # stamping a stale build
+            rm -f "${SMAPI_EXECUTABLE}"
+            /opt/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path "${GAME_DEST_DIR}"
+            if [ ! -e "${SMAPI_EXECUTABLE}" ]; then
+                print_error "SMAPI install failed: ${SMAPI_EXECUTABLE} is missing"
+                exit 1
+            fi
+            echo "${want}" > "${stamp}"
+            echo "SMAPI installed successfully!"
+        fi
+    ) 9> "${GAME_DEST_DIR}/.smapi-install.lock"
 
     # Always override the config file so we can update the one that is stored inside a volume
     echo "Applying SMAPI runtime overrides..."
