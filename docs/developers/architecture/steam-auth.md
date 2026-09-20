@@ -106,6 +106,38 @@ Get an encrypted app ticket for GOG Galaxy authentication.
 }
 ```
 
+### GET /game/validate-status
+
+State of the boot-time game content check. On every `serve` start with a completed game download, the sidecar chunk-hash validates the installed depot in the background and re-downloads corrupt chunks, pinned to the installed manifest so a repair never upgrades the game. The game container's entrypoint polls this endpoint and holds the game back while `status` is `pending` or `running`, because the pass rewrites files on the shared game volume.
+
+```json
+{
+  "status": "completed",
+  "detail": null,
+  "started_at": "2026-01-01T00:00:00.0000000+00:00",
+  "finished_at": "2026-01-01T00:01:30.0000000+00:00"
+}
+```
+
+`status` is one of `pending`, `running`, `completed`, `failed`, `skipped` (no completed download, or no account) or `disabled` (`VALIDATE_ON_BOOT=false`). `detail` is the pass summary on `completed` and the error message on `failed`. A healthy install passes with nothing fetched: the pass knows the four depot files a later step rewrites on purpose (the execstack-patched Galaxy libraries, the pruned `Content/ContentHashes.json`, SMAPI's replacement `StardewValley` launcher, the entrypoint-written `steam_appid.txt`) and does not treat them as corrupt. A failure (no usable login, Steam unreachable, disk error) is terminal: the game boots with the files as they are, and `download` remains the manual repair. While the game container waits, its `/status` reports `phase: "validating"`.
+
+### POST /game/validate
+
+Runs the same validate/repair pass now, on demand, and answers when it is done (minutes for a full install). `?account=N` picks the Steam session (default 0); `?target_dir=` validates a directory other than `GAME_DIR`, which the E2E suite uses to repair a scratch copy of the game volume. One pass runs at a time, shared with the boot pass.
+
+```json
+{
+  "status": "completed",
+  "detail": "1 repaired, 0 downloaded, 3210 unchanged",
+  "target_dir": "/data/game",
+  "files_repaired": 1,
+  "files_downloaded": 0,
+  "files_unchanged": 3210,
+  "started_at": "2026-01-01T00:00:00.0000000+00:00",
+  "finished_at": "2026-01-01T00:01:30.0000000+00:00"
+}
+```
+
 ## Available Commands
 
 The steam-auth service supports several commands:
@@ -298,6 +330,7 @@ STEAM_REFRESH_TOKEN=xxx STEAM_USERNAME=user docker compose run steam-auth downlo
 | `SESSION_DIR` | Token storage directory | /data/steam-session |
 | `GAME_DIR` | Game files directory | /data/game |
 | `FORCE_REDOWNLOAD` | Set to "1" to re-download all files | - |
+| `VALIDATE_ON_BOOT` | Set to "false" to skip the boot-time validation/repair of the installed game files (`GET /game/validate-status`) | true |
 | `STEAM_KEEP_LANGUAGES` | Comma-separated language codes whose fonts to keep in the download (e.g. `pt-BR,ru-RU`). Default strips all localized content (English-only). | - |
 
 ### Game Server Container

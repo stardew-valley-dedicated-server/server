@@ -49,23 +49,33 @@ public class SharedSteamAuth : IAsyncDisposable
 
     private const int ContainerPort = 3001;
     public const string NetworkAlias = "steam-auth";
+    private const string SharedSlug = "steam-auth-shared";
+
+    // Role label on the per-container log dir and on infrastructure events; distinct per
+    // instance so a test-owned sidecar never shares an artifact with the host's shared one.
+    private readonly string _slug;
+    private readonly string _networkAlias;
 
     private SharedSteamAuth(
         IContainer container,
         string runId,
         string containerName,
-        Infrastructure.DockerHost host
+        Infrastructure.DockerHost host,
+        string slug,
+        string networkAlias
     )
     {
         _container = container;
         _runId = runId;
         _containerName = containerName;
         _host = host;
-        _containerLog = new ContainerLogFile("steam-auth-shared");
+        _slug = slug;
+        _networkAlias = networkAlias;
+        _containerLog = new ContainerLogFile(slug);
         _logStreamReader = new ContainerLogStreamReader(
             _host.ApiClient,
             _container,
-            "steam-auth-shared",
+            slug,
             HostId,
             HandleLine
         );
@@ -87,7 +97,7 @@ public class SharedSteamAuth : IAsyncDisposable
         // The return value (was-an-event) is intentionally discarded: this path
         // has no human-facing sink to keep transport lines off of — container.log
         // is a verbatim record by design.
-        SimpleContainerLogStreamer.TryForwardSdvdEvent(line, "steam-auth-shared");
+        SimpleContainerLogStreamer.TryForwardSdvdEvent(line, _slug);
         _containerLog.WriteLine(line);
     }
 
@@ -101,6 +111,19 @@ public class SharedSteamAuth : IAsyncDisposable
     /// <param name="steamAccountsJson">
     /// The host's slice of <c>STEAM_ACCOUNTS</c> as a renumbered-from-0 JSON array.
     /// </param>
+    /// <param name="validateOnBoot">
+    /// Leave the sidecar's boot-time game validation on. Off for the host's shared sidecar: the
+    /// shared game volume is populated and verified before the run (CI's <c>download</c> step /
+    /// <c>make setup</c>), so a re-hash would only delay every Steam server's start behind the
+    /// sidecar's <c>/game/validate-status</c> gate. A test that owns its own sidecar turns it on.
+    /// </param>
+    /// <param name="networkAlias">
+    /// DNS name on the host's bridge. A test-owned sidecar must pick a unique one: a second
+    /// container behind <see cref="NetworkAlias"/> would answer other tests' <c>STEAM_AUTH_URL</c>.
+    /// </param>
+    /// <param name="containerSlug">
+    /// Artifact role (per-container log dir, infrastructure event <c>role</c>); unique per instance.
+    /// </param>
     public static async Task<SharedSteamAuth> CreateAndStartAsync(
         INetwork network,
         string imageTag,
@@ -108,7 +131,10 @@ public class SharedSteamAuth : IAsyncDisposable
         string steamSessionVolume,
         CancellationToken ct,
         Infrastructure.DockerHost host,
-        string? steamAccountsJson
+        string? steamAccountsJson,
+        bool validateOnBoot = false,
+        string networkAlias = NetworkAlias,
+        string containerSlug = SharedSlug
     )
     {
         var runId = Guid.NewGuid().ToString("N")[..8];
@@ -125,7 +151,7 @@ public class SharedSteamAuth : IAsyncDisposable
             .WithImagePullPolicy(imageTag == "local" ? PullPolicy.Never : PullPolicy.Missing)
             .WithName(containerName)
             .WithNetwork(network)
-            .WithNetworkAliases(NetworkAlias)
+            .WithNetworkAliases(networkAlias)
             .WithPortBinding(ContainerPort, true)
             .WithVolumeMount(steamSessionVolume, "/data/steam-session")
             .WithVolumeMount(gameDataVolume, "/data/game")
@@ -136,6 +162,7 @@ public class SharedSteamAuth : IAsyncDisposable
             // this its structured events stay silent even here, where the harness
             // consumes them via SimpleContainerLogStreamer.
             .WithEnvironment("SDVD_ENV", "test")
+            .WithEnvironment("VALIDATE_ON_BOOT", validateOnBoot ? "true" : "false")
             .WithCreateParameterModifier(p =>
             {
                 p.Labels ??= new Dictionary<string, string>();
@@ -184,7 +211,14 @@ public class SharedSteamAuth : IAsyncDisposable
 
         // Instantiate first so the streaming loop is running before StartAsync;
         // the streamer gracefully retries while the container is not yet created.
-        var instance = new SharedSteamAuth(container, runId, containerName, host);
+        var instance = new SharedSteamAuth(
+            container,
+            runId,
+            containerName,
+            host,
+            containerSlug,
+            networkAlias
+        );
         var startSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
@@ -193,7 +227,7 @@ public class SharedSteamAuth : IAsyncDisposable
                 "container_started",
                 new
                 {
-                    role = "steam-auth-shared",
+                    role = containerSlug,
                     name = containerName,
                     image = $"sdvd/steam-service:{imageTag}",
                     runId,
@@ -208,7 +242,7 @@ public class SharedSteamAuth : IAsyncDisposable
                 "container_start_failed",
                 new
                 {
-                    role = "steam-auth-shared",
+                    role = containerSlug,
                     name = containerName,
                     image = $"sdvd/steam-service:{imageTag}",
                     runId,
@@ -239,7 +273,112 @@ public class SharedSteamAuth : IAsyncDisposable
     /// <summary>
     /// Returns the steam-auth URL for server containers to use (via Docker network).
     /// </summary>
-    public string GetUrlForServer() => $"http://{NetworkAlias}:{ContainerPort}";
+    public string GetUrlForServer() => $"http://{_networkAlias}:{ContainerPort}";
+
+    /// <summary>
+    /// Runs one shell script inside the sidecar (<c>sh -c</c>). Test scaffolding for the game
+    /// volume (scratch copies, deliberate corruption) goes through here; keep it to one exec per
+    /// step, per <c>minimize-exec-count-and-cut-unconsumed-diagnostic-execs.md</c>.
+    /// </summary>
+    public Task<ExecResult> ExecAsync(string script, CancellationToken ct) =>
+        _container.ExecAsync(["sh", "-c", script], ct);
+
+    /// <summary>Outcome of <c>POST /game/validate</c> / <c>GET /game/validate-status</c>.</summary>
+    public sealed class GameValidationOutcome
+    {
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "";
+
+        [JsonPropertyName("detail")]
+        public string? Detail { get; set; }
+
+        [JsonPropertyName("files_repaired")]
+        public int? FilesRepaired { get; set; }
+
+        [JsonPropertyName("files_downloaded")]
+        public int? FilesDownloaded { get; set; }
+
+        [JsonPropertyName("files_unchanged")]
+        public int? FilesUnchanged { get; set; }
+
+        public bool IsTerminal => Status is not ("pending" or "running");
+    }
+
+    /// <summary>
+    /// Runs the sidecar's validate/repair pass on <paramref name="targetDir"/> with the given
+    /// account's live session and returns when it is done. A full install takes minutes to hash,
+    /// so the request is given <paramref name="timeout"/>.
+    /// </summary>
+    public async Task<GameValidationOutcome> ValidateGameContentAsync(
+        int accountIndex,
+        string targetDir,
+        TimeSpan timeout,
+        CancellationToken ct
+    )
+    {
+        using var http = new HttpClient { Timeout = timeout };
+        var url =
+            $"{GetHostUrl()}/game/validate?account={accountIndex}&target_dir={Uri.EscapeDataString(targetDir)}";
+        using var response = await http.PostAsync(url, content: null, ct);
+        var json = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"POST /game/validate returned {(int)response.StatusCode}: {json}"
+            );
+        }
+
+        return JsonSerializer.Deserialize<GameValidationOutcome>(json)
+            ?? throw new InvalidOperationException("POST /game/validate returned an empty body");
+    }
+
+    /// <summary>Current boot-time validation state (<c>GET /game/validate-status</c>).</summary>
+    public async Task<GameValidationOutcome> GetBootValidationStatusAsync(CancellationToken ct)
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var json = await http.GetStringAsync($"{GetHostUrl()}/game/validate-status", ct);
+        return JsonSerializer.Deserialize<GameValidationOutcome>(json)
+            ?? throw new InvalidOperationException(
+                "GET /game/validate-status returned an empty body"
+            );
+    }
+
+    /// <summary>
+    /// Waits for the boot-time validation to reach a terminal state and returns it.
+    /// </summary>
+    public async Task<GameValidationOutcome> WaitForBootValidationTerminalAsync(
+        TimeSpan timeout,
+        CancellationToken ct
+    )
+    {
+        GameValidationOutcome? last = null;
+        var ok = await PollingHelper.WaitUntilAsync(
+            name: WaitName.Polling_SharedSteamAuth_BootValidationTerminal,
+            condition: async () =>
+            {
+                last = await GetBootValidationStatusAsync(ct);
+                return last.IsTerminal;
+            },
+            timeout: timeout,
+            pollInterval: TimeSpan.FromSeconds(2),
+            cancellationToken: ct
+        );
+        if (!ok)
+        {
+            throw new TimeoutException(
+                $"steam-auth boot validation still '{last?.Status}' after {timeout.TotalSeconds:0}s"
+            );
+        }
+
+        return last!;
+    }
+
+    /// <summary>Daemon-reported healthcheck status of the sidecar container.</summary>
+    public async Task<string?> GetDockerHealthStatusAsync(CancellationToken ct)
+    {
+        var inspect = await _host.ApiClient.Containers.InspectContainerAsync(_container.Id, ct);
+        return inspect.State?.Health?.Status;
+    }
 
     /// <summary>
     /// Returns the coordinator-visible port for the container's API. Goes
@@ -649,7 +788,7 @@ public class SharedSteamAuth : IAsyncDisposable
             "container_stopped",
             new
             {
-                role = "steam-auth-shared",
+                role = _slug,
                 name = _containerName,
                 runId = _runId,
                 preDisposeState,
@@ -665,7 +804,7 @@ public class SharedSteamAuth : IAsyncDisposable
                 "container_oom_killed",
                 new
                 {
-                    role = "steam-auth-shared",
+                    role = _slug,
                     name = _containerName,
                     runId = _runId,
                     host_id = HostId,

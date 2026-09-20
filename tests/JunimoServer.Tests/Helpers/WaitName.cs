@@ -90,8 +90,9 @@ public enum WaitName
     Polling_ServerApi_WaitForFarmerServerTile,
     Polling_ServerApi_WaitForObjectAtServerTile,
 
-    // SharedSteamAuth.cs (1)
+    // SharedSteamAuth.cs (2)
     Polling_SharedSteamAuth_AccountsReady,
+    Polling_SharedSteamAuth_BootValidationTerminal,
 
     // CabinStrategyTests.cs (3)
     Polling_CabinStrategy_OurCabinAssigned,

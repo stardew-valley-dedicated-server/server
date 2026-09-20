@@ -1414,33 +1414,28 @@ public class SteamAuthService
     // ========================================================================
 
     /// <summary>
-    /// Checks if the app is already downloaded with the specified manifest.
+    /// Manifest id recorded by the completion marker of a finished download, or null when there
+    /// is no marker or it is unreadable.
     /// </summary>
-    private bool IsAlreadyDownloaded(string downloadDir, uint appId, ulong manifestId)
+    public static ulong? ReadInstalledManifestId(string downloadDir, uint appId)
     {
         var markerPath = Path.Combine(downloadDir, $".download-manifest-{appId}");
         if (!File.Exists(markerPath))
         {
-            return false;
+            return null;
         }
 
         try
         {
-            var content = File.ReadAllText(markerPath);
-            var doc = JsonDocument.Parse(content);
-
-            if (doc.RootElement.TryGetProperty("manifestId", out var savedManifest))
-            {
-                var savedManifestId = savedManifest.GetUInt64();
-                return savedManifestId == manifestId;
-            }
+            using var doc = JsonDocument.Parse(File.ReadAllText(markerPath));
+            return doc.RootElement.TryGetProperty("manifestId", out var saved)
+                ? saved.GetUInt64()
+                : null;
         }
         catch
         {
-            // Marker file corrupted or invalid, proceed with download
+            return null;
         }
-
-        return false;
     }
 
     /// <summary>
@@ -1489,6 +1484,49 @@ public class SteamAuthService
     /// aren't reclaimed on reconfigure (a size concern, not a correctness one).
     /// </para>
     /// </summary>
+    private const string ContentManifestDepotPath = "Content/ContentHashes.json";
+
+    private static bool IsContentManifest(string depotFileName) =>
+        depotFileName.Replace('\\', '/') == ContentManifestDepotPath;
+
+    /// <summary>
+    /// Depot files a later step rewrites on purpose, so a repair pass must not restore the depot
+    /// copy: the SMAPI installer replaces the <c>StardewValley</c> launcher with its own (keeping
+    /// <c>StardewValley-original</c>), and the game container's entrypoint writes
+    /// <c>steam_appid.txt</c> on every boot. Neither is content the game loads from the depot.
+    /// </summary>
+    internal static bool IsPostInstallOwned(string depotFileName) =>
+        depotFileName.Replace('\\', '/') is "StardewValley" or "steam_appid.txt";
+
+    /// <summary>
+    /// True when <paramref name="manifestPath"/> is in the state <see cref="PruneContentManifest"/>
+    /// leaves: parseable, non-empty, and every listed asset present on disk. Anything else
+    /// (truncation, garbage, an entry for a missing file) is treated as corrupt.
+    /// </summary>
+    internal static bool IsPrunedContentManifest(string manifestPath)
+    {
+        Dictionary<string, JsonElement>? entries;
+        try
+        {
+            entries = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                File.ReadAllText(manifestPath)
+            );
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        if (entries == null || entries.Count == 0)
+        {
+            return false;
+        }
+
+        var contentDir = Path.GetDirectoryName(manifestPath)!;
+        return entries.Keys.All(key =>
+            File.Exists(Path.Combine(contentDir, key.Replace('/', Path.DirectorySeparatorChar)))
+        );
+    }
+
     private void PruneContentManifest(string downloadDir)
     {
         var contentDir = Path.Combine(downloadDir, "Content");
@@ -1829,7 +1867,31 @@ public class SteamAuthService
         return false;
     }
 
-    public async Task DownloadGameAsync(uint appId, string? targetDir = null)
+    /// <summary>
+    /// Per-file outcome counts of one <see cref="DownloadGameAsync"/> pass.
+    /// </summary>
+    /// <param name="FilesRepaired">Existed at the right size but had corrupt chunks re-fetched.</param>
+    /// <param name="FilesDownloaded">Missing or wrong-sized, fetched in full.</param>
+    /// <param name="FilesUnchanged">Present and every chunk hash matched.</param>
+    public sealed record DownloadSummary(int FilesRepaired, int FilesDownloaded, int FilesUnchanged)
+    {
+        public override string ToString() =>
+            $"{FilesRepaired} repaired, {FilesDownloaded} downloaded, {FilesUnchanged} unchanged";
+    }
+
+    /// <summary>
+    /// Downloads or repairs an app depot. Every existing file is chunk-hash validated and only
+    /// invalid chunks are fetched, so this is also the repair path for corrupt content.
+    /// </summary>
+    /// <param name="pinnedManifestId">
+    /// Depot manifest to install. Null fetches the current public manifest (install or update);
+    /// a pinned id repairs the installed version without upgrading it.
+    /// </param>
+    public async Task<DownloadSummary> DownloadGameAsync(
+        uint appId,
+        string? targetDir = null,
+        ulong? pinnedManifestId = null
+    )
     {
         // Reconnect if disconnected (can happen during long downloads). Passing null
         // config means saved-session-only; throws InvalidOperationException if no
@@ -1914,32 +1976,13 @@ public class SteamAuthService
                 throw new Exception($"Could not find depot for OS: {targetOs}");
             }
 
-            var depotInfo = depots[depotId.ToString()];
-
-            // Get manifest ID - structure is: manifests/public/gid
-            var publicManifest = depotInfo["manifests"]["public"];
-            string? manifestIdStr = null;
-
-            // Try gid first (newer structure)
-            if (publicManifest["gid"].Value != null)
-            {
-                manifestIdStr = publicManifest["gid"].Value;
-            }
-            // Fallback to direct value (older structure)
-            else if (publicManifest.Value != null)
-            {
-                manifestIdStr = publicManifest.Value;
-            }
-
-            if (string.IsNullOrEmpty(manifestIdStr))
-            {
-                Logger.Log($"{_logPrefix} Could not find manifest. Public manifest structure:");
-                PrintKeyValue(publicManifest, "  ", 5);
-                throw new Exception("Could not find public manifest gid");
-            }
-
-            var manifestId = ulong.Parse(manifestIdStr);
-            Logger.Log($"{_logPrefix} Manifest ID: {manifestId}");
+            var manifestId =
+                pinnedManifestId ?? ResolvePublicManifestId(depots[depotId.ToString()]);
+            Logger.Log(
+                pinnedManifestId.HasValue
+                    ? $"{_logPrefix} Manifest ID: {manifestId} (pinned to the installed version)"
+                    : $"{_logPrefix} Manifest ID: {manifestId}"
+            );
 
             // Always validate files to detect corruption/deletion
             var forceRedownload = Environment.GetEnvironmentVariable("FORCE_REDOWNLOAD") == "1";
@@ -2025,6 +2068,8 @@ public class SteamAuthService
             var processedFiles = 0;
             var processedBytes = 0L;
             var skippedExisting = 0;
+            var repairedFiles = 0;
+            var downloadedFiles = 0;
 
             foreach (var file in manifest.Files)
             {
@@ -2051,11 +2096,34 @@ public class SteamAuthService
 
                 // Check if file already exists and validate its chunks
                 List<DepotManifest.ChunkData> chunksToDownload = file.Chunks;
+                var isRepair = false;
 
                 if (!forceRedownload && File.Exists(filePath))
                 {
+                    // The content manifest is rewritten after every pass (PruneContentManifest),
+                    // so neither its size nor its hash can match the depot; accept it when it is
+                    // in the state the prune leaves, else re-fetch and re-prune it. Files a later
+                    // installer owns are left alone on a repair pass: restoring the depot copy
+                    // would undo that install on every boot.
+                    if (
+                        (IsContentManifest(file.FileName) && IsPrunedContentManifest(filePath))
+                        || (pinnedManifestId.HasValue && IsPostInstallOwned(file.FileName))
+                    )
+                    {
+                        processedFiles++;
+                        processedBytes += (long)file.TotalSize;
+                        skippedExisting++;
+                        continue;
+                    }
+
                     var existingSize = new FileInfo(filePath).Length;
-                    if (existingSize == (long)file.TotalSize)
+                    if (existingSize != (long)file.TotalSize)
+                    {
+                        Logger.Log(
+                            $"{_logPrefix} {file.FileName}: size {existingSize} != {file.TotalSize}, downloading"
+                        );
+                    }
+                    else
                     {
                         // Size matches - validate chunk checksums
                         await using var existingFs = new FileStream(
@@ -2064,8 +2132,31 @@ public class SteamAuthService
                             FileAccess.Read,
                             FileShare.Read
                         );
+                        // The Galaxy libs are rewritten after download (execstack flag); hash
+                        // them as shipped or the patch re-downloads their chunk every pass.
+                        Stream validationView = existingFs;
+                        if (ExecstackPatcher.IsGalaxyLib(file.FileName))
+                        {
+                            try
+                            {
+                                if (
+                                    ExecstackPatcher.TryFindExecstackFlagOffset(existingFs) is
+                                    { } flagOffset
+                                )
+                                {
+                                    validationView = ExecstackPatcher.AsShippedView(
+                                        existingFs,
+                                        flagOffset
+                                    );
+                                }
+                            }
+                            catch (InvalidDataException)
+                            {
+                                // Header is damaged: hash the raw bytes and let the chunk fail.
+                            }
+                        }
                         var invalidChunks = ChunkValidator.ValidateFileChunks(
-                            existingFs,
+                            validationView,
                             file.Chunks
                         );
 
@@ -2080,10 +2171,16 @@ public class SteamAuthService
 
                         // Some chunks invalid - only download those
                         chunksToDownload = invalidChunks;
+                        isRepair = true;
                         Logger.Log(
                             $"{_logPrefix} {file.FileName}: {invalidChunks.Count}/{file.Chunks.Count} chunks need repair"
                         );
                     }
+                }
+                else if (!forceRedownload && pinnedManifestId.HasValue)
+                {
+                    // Only worth a line on a repair pass; a fresh install is all missing files.
+                    Logger.Log($"{_logPrefix} {file.FileName}: missing, downloading");
                 }
 
                 // Download file chunks - must write at correct offsets
@@ -2176,6 +2273,14 @@ public class SteamAuthService
 
                 processedBytes += fileBytes;
                 processedFiles++;
+                if (isRepair)
+                {
+                    repairedFiles++;
+                }
+                else
+                {
+                    downloadedFiles++;
+                }
 
                 // Progress update every 100 files
                 if (processedFiles % 100 == 0 || processedFiles == totalFiles)
@@ -2221,12 +2326,31 @@ public class SteamAuthService
             );
 
             Logger.LogTotal($"{_logPrefix} Total time:");
+            return new DownloadSummary(repairedFiles, downloadedFiles, skippedExisting);
         }
         catch (Exception ex)
         {
             Logger.Log($"{_logPrefix} Download failed: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Reads the public branch's manifest id from a depot's product info
+    /// (<c>manifests/public/gid</c>, or the bare <c>manifests/public</c> value in the older layout).
+    /// </summary>
+    private ulong ResolvePublicManifestId(KeyValue depotInfo)
+    {
+        var publicManifest = depotInfo["manifests"]["public"];
+        var manifestIdStr = publicManifest["gid"].Value ?? publicManifest.Value;
+        if (string.IsNullOrEmpty(manifestIdStr))
+        {
+            Logger.Log($"{_logPrefix} Could not find manifest. Public manifest structure:");
+            PrintKeyValue(publicManifest, "  ", 5);
+            throw new Exception("Could not find public manifest gid");
+        }
+
+        return ulong.Parse(manifestIdStr);
     }
 
     // ========================================================================

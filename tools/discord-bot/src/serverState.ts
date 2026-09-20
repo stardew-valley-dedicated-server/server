@@ -9,7 +9,10 @@
 export interface StatusSignals {
     isOnline: boolean;
     isReady: boolean;
-    /** "downloading" or "starting" while the container's startup script answers; absent once the mod does. */
+    /**
+     * "downloading", "validating" or "starting" while the container's startup script answers;
+     * absent once the mod does.
+     */
     phase?: string;
 }
 
@@ -171,6 +174,8 @@ export function resolveServerState(status: StatusSignals | null): ServerState {
                 detail: "Downloading game files.",
                 hint: NO_GAME_DATA_HINT,
             };
+        case "validating":
+            return { kind: "provisioning", label: "Starting", detail: "Checking game files.", hint: NO_GAME_DATA_HINT };
         case "starting":
             return { kind: "provisioning", label: "Starting", detail: "Launching the game.", hint: NO_GAME_DATA_HINT };
         default:

@@ -28,10 +28,12 @@ describe("resolveServerState", () => {
 
     test("startup phases from the container are provisioning", () => {
         const downloading = resolveServerState({ isOnline: false, isReady: false, phase: "downloading" });
+        const validating = resolveServerState({ isOnline: false, isReady: false, phase: "validating" });
         const starting = resolveServerState({ isOnline: false, isReady: false, phase: "starting" });
         expect(downloading.kind).toBe("provisioning");
+        expect(validating.kind).toBe("provisioning");
         expect(starting.kind).toBe("provisioning");
-        expect(downloading.detail).not.toBe(starting.detail);
+        expect(new Set([downloading.detail, validating.detail, starting.detail]).size).toBe(3);
     });
 
     test("an unknown phase falls back to loading", () => {

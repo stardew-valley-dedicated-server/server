@@ -117,12 +117,15 @@ See [Troubleshooting](/admins/troubleshooting) for detailed solutions.
 
 ### "Asset does not appear to be a valid XNB file"
 
-Log errors like `Failed to spawn NPC '...'` or `Couldn't create the '...' location` with `ContentLoadException: Asset does not appear to be a valid XNB file` mean a game content file on disk is corrupted (for example from an interrupted download). The server doesn't repair game files on its own, so the error returns every restart until you re-run the downloader. It validates all game files and re-downloads the broken pieces:
+Log errors like `Failed to spawn NPC '...'` or `Couldn't create the '...' location` with `ContentLoadException: Asset does not appear to be a valid XNB file` mean a game content file on disk is corrupted (for example from an interrupted download). Every time the steam-auth container starts it checks all game files and re-downloads the broken pieces before the server boots, so a full restart repairs this on its own:
+
+```bash
+docker compose restart
+```
+
+If the steam-auth log shows `Game file validation failed` (usually a Steam login problem), run `docker compose run --rm -it steam-auth setup` to log in again, then repair by hand:
 
 ```bash
 docker compose run --rm steam-auth download
 docker compose restart server
 ```
-
-If it fails with a login error, run `docker compose run --rm -it steam-auth setup` first.
-

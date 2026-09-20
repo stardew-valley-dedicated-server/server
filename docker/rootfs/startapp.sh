@@ -16,11 +16,12 @@ STEAM_SDK_DIR="${HOME}/.steam/sdk64"
 # half-downloaded game. StardewValleyAppId is 413150 (see tools/steam-service/Program.cs).
 GAME_DOWNLOAD_MARKER="${GAME_DEST_DIR}/.download-manifest-413150"
 API_PORT="${API_PORT:-8080}"
-# Lifecycle phase served on the API port until the mod takes over: "downloading" | "starting".
+# Lifecycle phase served on the API port until the mod takes over:
+# "downloading" | "validating" | "starting".
 PHASE_FILE="/tmp/startup-phase"
 # SDVD_COMPOSE_REV of the docker-compose.yml this image ships with (validate-pr.yml keeps them
 # equal). Keep it a bare unindented assignment — validate-pr.yml greps this exact line.
-EXPECTED_COMPOSE_REV=3
+EXPECTED_COMPOSE_REV=4
 
 # Validate required environment variables
 validate_environment() {
@@ -181,12 +182,61 @@ start_phase_responder() {
     echo "Phase responder serving /status on port ${API_PORT} ($(cat "${PHASE_FILE}"))"
 }
 
+# Holds the game back while steam-auth's boot-time validation may still be rewriting corrupt
+# files on the shared game volume (GET /game/validate-status, tools/steam-service/Program.cs).
+# Only pending/running block; every terminal state releases the wait, because repair is
+# best-effort and must never keep the server down. An unreachable endpoint gets a short budget
+# rather than an immediate pass: `docker compose restart` brings both containers up at once, and
+# steam-auth binds HTTP only after its Steam logins.
+wait_for_content_validation() {
+    local url="${STEAM_AUTH_URL:-}" body status unreachable=0 held=false
+    [ -n "${url}" ] || return 0
+
+    while true; do
+        body="$(curl -fsS --max-time 5 "${url}/game/validate-status" 2>/dev/null || true)"
+        status="$(printf '%s' "${body}" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')"
+        case "${status}" in
+            pending|running)
+                unreachable=0
+                if [ "${held}" = false ]; then
+                    held=true
+                    echo "validating" > "${PHASE_FILE}"
+                fi
+                echo "Waiting for steam-auth to finish validating the game files (${status})..."
+                sleep 5
+                ;;
+            failed)
+                echo "steam-auth could not validate the game files; starting anyway (see: docker compose logs steam-auth)."
+                break
+                ;;
+            "")
+                unreachable=$((unreachable + 1))
+                if [ "${unreachable}" -ge 12 ]; then
+                    echo "steam-auth did not answer at ${url}/game/validate-status; starting without the game file check."
+                    break
+                fi
+                echo "Waiting for steam-auth to report its game file check (${unreachable}/12)..."
+                sleep 5
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    if [ "${held}" = true ]; then
+        echo "starting" > "${PHASE_FILE}"
+    fi
+    return 0
+}
+
 init_stardew() {
     local STEAM_AUTH_GAME_DIR="/data/game"
 
     # Installation check
     if [ -e "${GAME_DOWNLOAD_MARKER}" ]; then
         echo "Game already initialized, skipping."
+        wait_for_content_validation
         return
     fi
 
@@ -207,6 +257,7 @@ init_stardew() {
     done
 
     echo "Game files detected!"
+    wait_for_content_validation
     echo "starting" > "${PHASE_FILE}"
 
     # Symlink the game directory to expected location

@@ -218,6 +218,7 @@ These are rarely needed but available for advanced use cases:
 | `ENABLE_MOD_INCOMPATIBLE_OPTIMIZATIONS` | Enable performance optimizations that may break some mods | `true` |
 | `FORCE_NEW_DEBUG_GAME` | Force creation of a new debug game on startup | `false` |
 | `AUTO_SLEEP_GRACE_SECONDS` | Wall-clock seconds an empty server waits past 1:00 AM in-game before the host sleeps and closes the day | `300` |
+| `VALIDATE_ON_BOOT` | Verify the installed game files on every steam-auth start and re-download corrupt pieces before the server boots; `false` skips the check | `true` |
 
 ::: warning
 These variables are for advanced users. Changing them may cause unexpected behavior.
