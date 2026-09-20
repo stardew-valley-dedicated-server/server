@@ -23,6 +23,10 @@
  *   STEAM_PASSWORD        - Password (fallback if STEAM_ACCOUNTS not set)
  *   STEAM_REFRESH_TOKEN   - Refresh token (fallback if STEAM_ACCOUNTS not set)
  *
+ * Environment Variables (serve):
+ *   VALIDATE_ON_BOOT      - "false" skips the boot-time chunk-hash validation/repair of the
+ *                           installed game depot (default: enabled)
+ *
  * HTTP API Query Parameters:
  *   ?account=N            - Use account N for the request (default: 0)
  *
@@ -41,6 +45,9 @@ var port = int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "3001");
 
 const uint StardewValleyAppId = 413150;
 const uint SteamworksSdkAppId = 1007; // Steamworks SDK Redistributable (steamclient.so)
+
+// One game validate/repair pass at a time (boot pass and POST /game/validate).
+var gameValidationLock = new SemaphoreSlim(1, 1);
 
 // Parse command
 var command = args.Length > 0 ? args[0].ToLower() : "serve";
@@ -842,6 +849,76 @@ async Task RunHttpServerAsync(
         }
     );
 
+    // Read by the game container's entrypoint (wait_for_content_validation in startapp.sh),
+    // which holds the game back while status is pending/running. Pure read, like /health.
+    var contentValidator = new GameContentValidator();
+    app.MapGet("/game/validate-status", () => Results.Json(contentValidator.Current.ToJson()));
+
+    // On-demand validate/repair of a game directory (default: GAME_DIR), synchronous: the
+    // response is the pass's outcome. Serialized with the boot pass so two passes never
+    // rewrite one file at once. `target_dir` lets the E2E suite exercise the repair path on a
+    // scratch copy of the game volume without disturbing the live install.
+    app.MapPost(
+        "/game/validate",
+        async (HttpContext ctx) =>
+        {
+            try
+            {
+                var svc = await EnsureAccountReadyAsync(ctx);
+                var targetDir = ctx.Request.Query["target_dir"].FirstOrDefault() ?? gameDir;
+                // Only the install or a scratch copy under the temp dir: the pass writes depot
+                // files into whatever it is pointed at.
+                var isScratch = Path.GetFullPath(targetDir)
+                    .StartsWith(Path.GetTempPath(), StringComparison.Ordinal);
+                if (targetDir != gameDir && !isScratch)
+                {
+                    return Results.Json(
+                        new
+                        {
+                            error = $"target_dir must be {gameDir} or a directory under {Path.GetTempPath()}",
+                        },
+                        statusCode: 400
+                    );
+                }
+                if (!Directory.Exists(targetDir))
+                {
+                    return Results.Json(
+                        new { error = $"target_dir not found: {targetDir}" },
+                        statusCode: 400
+                    );
+                }
+
+                var validator = new GameContentValidator();
+                SteamAuthService.DownloadSummary? summary = null;
+                await validator.RunAsync(async () =>
+                {
+                    summary = await RunGameContentValidationAsync(svc, targetDir);
+                    return summary.ToString();
+                });
+
+                var outcome = validator.Current;
+                return Results.Json(
+                    new
+                    {
+                        status = GameContentValidator.StateName(outcome.State),
+                        detail = outcome.Detail,
+                        target_dir = targetDir,
+                        files_repaired = summary?.FilesRepaired,
+                        files_downloaded = summary?.FilesDownloaded,
+                        files_unchanged = summary?.FilesUnchanged,
+                        started_at = outcome.StartedAt?.ToString("o"),
+                        finished_at = outcome.FinishedAt?.ToString("o"),
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[HTTP] Game validation failed to start: {ex.Message}");
+                return Results.Json(new { error = ex.Message }, statusCode: 500);
+            }
+        }
+    );
+
     Logger.Log($"[SteamService] HTTP API listening on port {httpPort}");
     Logger.Log($"[SteamService] {accts.Count} account(s) configured");
     Console.WriteLine("[SteamService] Endpoints:");
@@ -851,6 +928,10 @@ async Task RunHttpServerAsync(
     Console.WriteLine("  GET  /steam/refresh-token - Get refresh token (?account=N)");
     Console.WriteLine("  POST /steam/renew-token   - Renew the refresh token (?account=N)");
     Console.WriteLine("  POST /steam/lobby/create  - Create lobby (?account=N)");
+    Console.WriteLine("  GET  /game/validate-status - Boot-time game content validation state");
+    Console.WriteLine(
+        "  POST /game/validate       - Validate/repair game files now (?account=N&target_dir=)"
+    );
 
     // Volumes provisioned before the execstack patch existed still carry the flag on the
     // Galaxy libs; fresh downloads are handled by the download-completion hook. Only runs
@@ -892,6 +973,8 @@ async Task RunHttpServerAsync(
     // aborts the in-flight download, which resumes next boot.
     if (!File.Exists(gameDownloadMarker))
     {
+        // The marker is the gate for a first-run download, so nothing waits on the validator.
+        contentValidator.MarkSkipped("no completed game download to validate");
         if (accts.Count == 0)
         {
             Logger.Log(
@@ -904,8 +987,97 @@ async Task RunHttpServerAsync(
             _ = Task.Run(() => BootstrapGameFilesAsync(accts, configs));
         }
     }
+    else if (GetEnvTrimmed("VALIDATE_ON_BOOT")?.ToLowerInvariant() == "false")
+    {
+        contentValidator.MarkDisabled("VALIDATE_ON_BOOT=false");
+    }
+    else if (accts.Count == 0)
+    {
+        contentValidator.MarkSkipped("no Steam account configured");
+    }
+    else
+    {
+        // Runs while the HTTP server is already up, so a slow disk can't fail the healthcheck.
+        _ = Task.Run(() => ValidateGameContentAsync(contentValidator, accts, configs));
+    }
 
     await app.RunAsync();
+}
+
+/// <summary>
+/// Boot-time self-heal for corrupt game content on the shared game volume. Best-effort: any
+/// failure (no usable login, Steam down, disk error) is logged and reaches a terminal state,
+/// because the game container waits on it and must still boot; the operator runbook
+/// (`download`) stays the fallback. Uses account 0's one Steam session, like the first-run
+/// bootstrap.
+/// </summary>
+async Task ValidateGameContentAsync(
+    GameContentValidator validator,
+    Dictionary<int, SteamAuthService> accts,
+    Dictionary<int, (string user, string? pass, string? token)> configs
+)
+{
+    var (accountIndex, svc) = accts.OrderBy(kv => kv.Key).First();
+    var cfg = configs[accountIndex];
+    var loginConfig = new SteamAuthService.LoginConfig(cfg.user, cfg.pass, cfg.token);
+
+    Logger.Log(
+        "[SteamService] Validating installed game files (repairs corrupt chunks in place)..."
+    );
+    await validator.RunAsync(async () =>
+    {
+        await svc.EnsureLoggedInAsync(loginConfig);
+        var summary = await RunGameContentValidationAsync(svc, gameDir);
+        return summary.ToString();
+    });
+
+    var outcome = validator.Current;
+    if (outcome.State == GameContentValidator.State.Completed)
+    {
+        Logger.Log($"[SteamService] Game file validation complete: {outcome.Detail}.");
+    }
+    else
+    {
+        Logger.Log(
+            $"[SteamService] WARNING: Game file validation failed: {outcome.Detail}. The server "
+                + "starts with the files as they are; corrupt content is repaired by "
+                + "`docker compose run --rm steam-auth download` once Steam login works."
+        );
+    }
+}
+
+/// <summary>
+/// Chunk-hash validates the game depot in <paramref name="targetDir"/> and re-downloads the bad
+/// chunks, pinned to the manifest recorded by the directory's completion marker so a repair
+/// never doubles as an unattended game update. One pass at a time process-wide: two passes on
+/// the same directory would contend for the files they rewrite.
+/// </summary>
+async Task<SteamAuthService.DownloadSummary> RunGameContentValidationAsync(
+    SteamAuthService svc,
+    string targetDir
+)
+{
+    await gameValidationLock.WaitAsync();
+    try
+    {
+        // A repair is only a repair while it can pin the installed version; without the id the
+        // pass would fetch the current public manifest, which is an unattended game update.
+        var installedManifestId =
+            SteamAuthService.ReadInstalledManifestId(targetDir, StardewValleyAppId)
+            ?? throw new InvalidOperationException(
+                $"completion marker in {targetDir} is missing or unreadable, so the installed "
+                    + "manifest is unknown; run `download` to reinstall or update explicitly"
+            );
+        return await svc.DownloadGameAsync(
+            StardewValleyAppId,
+            targetDir,
+            pinnedManifestId: installedManifestId
+        );
+    }
+    finally
+    {
+        gameValidationLock.Release();
+    }
 }
 
 /// <summary>
@@ -934,7 +1106,17 @@ async Task BootstrapGameFilesAsync(
                 $"[SteamService] Game files not found, downloading on first run (attempt {attempt})..."
             );
             await svc.EnsureLoggedInAsync(loginConfig);
-            await DownloadGameAndSdkAsync(svc);
+            // Same lock as the validate/repair passes: a POST /game/validate must not write the
+            // volume while the first-run download is filling it.
+            await gameValidationLock.WaitAsync();
+            try
+            {
+                await DownloadGameAndSdkAsync(svc);
+            }
+            finally
+            {
+                gameValidationLock.Release();
+            }
             Logger.Log("[SteamService] First-run game download complete.");
             return;
         }

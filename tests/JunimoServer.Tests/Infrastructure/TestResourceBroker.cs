@@ -219,6 +219,15 @@ public sealed class TestResourceBroker : IAsyncDisposable
     // rule isn't violated. Hosts that aren't Steam-capable have no entry.
     private readonly ConcurrentDictionary<string, SharedSteamAuth> _steamAuthByHost = new();
 
+    /// <summary>
+    /// The shared steam-auth sidecar serving <paramref name="host"/>, or null on a host that is
+    /// not Steam-capable. Tests that drive the sidecar's own endpoints (game validation) go
+    /// through here instead of starting a second sidecar, which could not log in: Steam allows
+    /// one live session per account and the shared one holds them all.
+    /// </summary>
+    internal SharedSteamAuth? TryGetSteamAuth(DockerHost host) =>
+        _steamAuthByHost.TryGetValue(host.Id, out var sa) ? sa : null;
+
     // Per-host Steam-account allocators, parallel to _steamAuthByHost. Each
     // allocator's index space is slice-local (0..k-1). The broker routes
     // allocate/release calls via host.Id so a server bound to host H only

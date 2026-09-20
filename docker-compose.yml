@@ -22,7 +22,7 @@ services:
       - ./.local-container/settings:/data/settings
       - ./diagnostics:/data/diagnostics
     environment:
-      - SDVD_COMPOSE_REV=3
+      - SDVD_COMPOSE_REV=4
       - STEAM_AUTH_URL=http://steam-auth:${STEAM_AUTH_PORT:-3001}
       - SETTINGS_PATH=/data/settings/server-settings.json
       - USER_ID=${USER_ID:-1000}
@@ -67,6 +67,7 @@ services:
       - STEAM_PASSWORD
       - STEAM_REFRESH_TOKEN
       - STEAM_KEEP_LANGUAGES
+      - VALIDATE_ON_BOOT
     restart: unless-stopped
 
   # Discord bot for server status display and chat relay

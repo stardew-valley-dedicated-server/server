@@ -4,7 +4,7 @@
 **Priority:** 1 (low)
 **GitHub Issue(s):** none
 **Area:** steam-service, docker
-**Related:** [`corrupt-content-self-heal.md`](corrupt-content-self-heal.md)
+**Related:** none
 **Observed:** production report: `Failed to spawn NPC 'Vincent'` (`ContentLoadException` on a stripped portrait); the `MermaidHouse` tilesheet path found by reading
 **Next step:** design sign-off on the `Texture2D` interceptor and the expanded skip patterns before Phase 1 starts
 

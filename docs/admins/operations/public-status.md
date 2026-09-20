@@ -54,7 +54,7 @@ The whole contract is one `fetch`:
 const res = await fetch("https://203.0.113.10/farm/status", { cache: "no-store" });
 if (!res.ok) throw new Error("unreachable");
 const status = await res.json();
-// status.isOnline, status.isReady, status.phase ("downloading" or "starting" before the game runs),
+// status.isOnline, status.isReady, status.phase ("downloading", "validating" or "starting" before the game runs),
 // status.playerCount, status.maxPlayers,
 // status.inviteCode (the universal S-code; null until a Galaxy lobby exists),
 // status.connectionStatusCode (whether the code is usable and by whom; see the table above),
