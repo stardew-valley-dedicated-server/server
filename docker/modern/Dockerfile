@@ -5,6 +5,8 @@
 # fully tested. The production image is docker/Dockerfile (Debian/glibc). This
 # image is not wired into the Makefile or CI; it builds only via
 # docker/modern/docker-compose.yml, manually.
+# Runs stock SMAPI from the prebuilt installer zip; the source-patched SMAPI build the
+# production image ships (patches/smapi, smapi-builder stage) is not ported here.
 # Reference: docs/admins/operations/modern-docker.md
 # ============================================================================
 # Modern Docker Image for Stardew Valley Dedicated Server

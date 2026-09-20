@@ -20,14 +20,6 @@ RUN dotnet publish -c Release -o /app --no-restore
 # ============================================================================
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS game-downloader
 
-ARG SMAPI_VERSION
-
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy steam-service from builder
 COPY --from=steam-service-builder /app /steam-service
 WORKDIR /steam-service
@@ -42,22 +34,43 @@ RUN --mount=type=secret,id=steam_username \
     export GAME_DIR=/game && \
     dotnet SteamService.dll download --skip-sdk
 
-# Download and install SMAPI
-RUN curl -fL --retry 5 --retry-delay 2 "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip && \
-    unzip -q /tmp/smapi.zip -d /tmp/smapi && \
-    printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
-    --install \
-    --game-path /game && \
-    rm -rf /tmp/smapi /tmp/smapi.zip
+# ============================================================================
+# Stage 3: Build SMAPI from source with the patch series in patches/smapi applied
+# ============================================================================
+# The runtime image installs this build into the game volume at boot (init_smapi in
+# docker/rootfs/startapp.sh); the mod-builder stage installs it for compilation.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS smapi-builder
+
+ARG SMAPI_VERSION
+
+# zip keeps the Unix permission bits inside install.dat (the SDK image has git but no zip)
+RUN apt-get update && apt-get install -y --no-install-recommends zip && rm -rf /var/lib/apt/lists/*
+
+COPY --from=game-downloader /game /game
+RUN git clone --depth 1 --branch "${SMAPI_VERSION}" https://github.com/Pathoschild/SMAPI.git /smapi
+
+# A patch that no longer applies to the pinned upstream fails the build here, not silently at runtime
+COPY patches/smapi /smapi-patches
+RUN for patch in /smapi-patches/*.patch; do \
+        echo "Applying ${patch}" && git -C /smapi apply --check "${patch}" && git -C /smapi apply "${patch}"; \
+    done
+
+COPY --chmod=0755 docker/smapi/build-installer.sh /smapi-build.sh
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    /smapi-build.sh /smapi /game /smapi-patches "${SMAPI_VERSION}" /out
 
 # ============================================================================
-# Stage 3: Build mod using game DLLs from stage 2
+# Stage 4: Build mod using game DLLs from stage 2 and SMAPI from stage 3
 # ============================================================================
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS mod-builder
 
 ARG BUILD_CONFIGURATION=Debug
 
+# Mod compilation resolves StardewModdingAPI.dll from the game folder, so install our build there
 COPY --from=game-downloader /game /game
+COPY --from=smapi-builder /out /tmp/smapi
+RUN /tmp/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path /game && \
+    rm -rf /tmp/smapi
 
 # Copy project files first for better layer caching
 # (.editorconfig: code-style rules enforced at build via EnforceCodeStyleInBuild)
@@ -134,11 +147,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     cp /src/tests/fixtures/TestFarmMod/manifest.json /output/TestFarmMod/manifest.json
 
 # ============================================================================
-# Stage 4: Final runtime image (no game files, downloads on first run)
+# Stage 5: Final runtime image (no game files, downloads on first run)
 # ============================================================================
 FROM --platform=$BUILDPLATFORM jlesage/baseimage-gui:debian-13-v4.13 AS server
 
-ARG SMAPI_VERSION
 ARG TMUX_VERSION=3.7c
 
 ENV APP_NAME="Stardew Dedicated Server" \
@@ -159,7 +171,6 @@ ENV APP_NAME="Stardew Dedicated Server" \
     SERVER_FPS=0 \
     # SMAPI
     SMAPI_USE_CURRENT_SHELL=true \
-    SMAPI_VERSION=${SMAPI_VERSION} \
     SMAPI_MODS_PATH=/data/Mods \
     # Pid file of startapp.sh's phase responder; read by the mod (ApiPortHandoff) and the HEALTHCHECK
     API_HANDOFF_PID_FILE=/tmp/phase-responder.pid
@@ -178,7 +189,6 @@ RUN add-pkg \
     libfontconfig1 \
     locales \
     procps \
-    unzip \
     xz-utils \
     # Additional packages
     htop \
@@ -236,6 +246,7 @@ RUN \
     set-cont-env HOME /config
 
 # Copy pre-built tools from build stages
+COPY --from=smapi-builder /out /opt/smapi
 COPY --from=mod-builder /output/dll-patcher /opt/dll-patcher
 COPY --from=mod-builder /output/netdebug /opt/netdebug
 COPY --from=mod-builder /output/diagnostics /opt/diagnostics

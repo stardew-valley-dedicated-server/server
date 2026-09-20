@@ -49,22 +49,50 @@ wait_for_game_files() {
     echo "Game files detected!"
 }
 
+# The installer copies the bundle one entry at a time and exits 0 even when it fails, so a
+# launcher alone proves nothing; completeness is the launcher, the runtime files, and the last
+# entry the installer writes (a bundled mod's manifest). A reinstall clears these first (see
+# init_smapi) so the check can't pass on a stale copy the previous install left behind.
+SMAPI_PAYLOAD_MARKERS=(
+    "${SMAPI_EXECUTABLE}"
+    "${GAME_DEST_DIR}/StardewModdingAPI.dll"
+    "${GAME_DEST_DIR}/StardewModdingAPI.deps.json"
+    "${GAME_DEST_DIR}/Mods/ConsoleCommands/manifest.json"
+)
+
+smapi_install_complete() {
+    local f
+    for f in "${SMAPI_PAYLOAD_MARKERS[@]}"; do
+        [ -e "${f}" ] || return 1
+    done
+}
+
 init_smapi() {
-    if [ -e "${SMAPI_EXECUTABLE}" ]; then
-        echo "SMAPI already installed"
-    else
-        echo "Installing SMAPI ${SMAPI_VERSION}..."
-
-        curl -L "https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/SMAPI-${SMAPI_VERSION}-installer.zip" -o /tmp/smapi.zip
-        unzip -q /tmp/smapi.zip -d /tmp/smapi/
-
-        printf "2\n\n" | "/tmp/smapi/SMAPI ${SMAPI_VERSION} installer/internal/linux/SMAPI.Installer" \
-            --install \
-            --game-path "${GAME_DEST_DIR}"
-
-        rm -rf /tmp/smapi /tmp/smapi.zip
-        echo "SMAPI installed successfully!"
-    fi
+    # Same SMAPI build and shared-volume lock as the server's startapp.sh, but a client installs
+    # only onto a volume with no complete SMAPI install (a client booting before the server).
+    # Upgrades are the server's job: it reinstalls on a build-id mismatch, so a client image built
+    # from a different revision never fights it over the shared volume.
+    local want stamp
+    want="$(cat /opt/smapi/BUILD_ID)"
+    stamp="${GAME_DEST_DIR}/smapi-internal/.sdvd-smapi-build"
+    (
+        flock 9
+        if smapi_install_complete; then
+            echo "SMAPI $(cat "${stamp}" 2>/dev/null || echo '(unstamped build)') already installed"
+        else
+            echo "Installing SMAPI ${want}..."
+            # Clear every completeness marker first so a partial retry can't leave stale markers
+            # that make the check pass on an incomplete install (see the server's startapp.sh).
+            rm -f "${SMAPI_PAYLOAD_MARKERS[@]}"
+            /opt/smapi/internal/linux/SMAPI.Installer --no-prompt --install --game-path "${GAME_DEST_DIR}"
+            if ! smapi_install_complete; then
+                print_error "SMAPI install failed: the SMAPI files in ${GAME_DEST_DIR} are incomplete"
+                exit 1
+            fi
+            echo "${want}" > "${stamp}"
+            echo "SMAPI installed successfully!"
+        fi
+    ) 9> "${GAME_DEST_DIR}/.smapi-install.lock"
 
     # Apply SMAPI config overrides
     if [ -f /data/smapi-config.json ]; then

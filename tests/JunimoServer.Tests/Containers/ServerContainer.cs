@@ -155,11 +155,8 @@ public class ServerContainer : IAsyncDisposable
         }
     }
 
-    // Server error patterns to ignore (known non-fatal)
-    private static readonly string[] IgnoredErrorPatterns = new[]
-    {
-        "XACT", // Audio initialization fails in headless mode
-    };
+    // Server error patterns to ignore (known non-fatal). Empty: every [ERROR] line counts.
+    private static readonly string[] IgnoredErrorPatterns = Array.Empty<string>();
 
     private ServerContainer(
         IContainer serverContainer,
@@ -1051,9 +1048,7 @@ public class ServerContainer : IAsyncDisposable
 
     // Fatal crash headers the runtime writes without a SMAPI prefix: FailFast
     // (e.g. missing libicu), an unhandled exception that escaped SMAPI's
-    // handlers, or a stack overflow. Keep in sync with the terminator set in
-    // docker/rootfs/opt/base/bin/strip-startup-noise.awk (the attach-cli
-    // startup-noise filter ends its suppression window on the same headers).
+    // handlers, or a stack overflow.
     private static bool IsUnprefixedCrashHeader(string line)
     {
         return line.StartsWith("Process terminated.", StringComparison.Ordinal)

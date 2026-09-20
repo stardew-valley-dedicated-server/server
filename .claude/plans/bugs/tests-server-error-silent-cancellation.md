@@ -26,8 +26,8 @@ collateral rather than cause).
 
 Test-side symbols, all in `tests/JunimoServer.Tests` unless noted:
 
-- `ServerContainer` scans server logs for `\b(ERROR|FATAL)\b` (`IgnoredErrorPatterns` has only
-  `"XACT"`); `FlushError` → `_errorCancellation.Cancel()`.
+- `ServerContainer` scans server logs for `\b(ERROR|FATAL)\b` (`IgnoredErrorPatterns` is
+  empty); `FlushError` → `_errorCancellation.Cancel()`.
 - `TestLifecycle` treats any cancelled test CT as stopOnFail → `NotifyStopOnFail()` →
   `TestResourceBroker`'s `_runCts.Cancel()` → mass cancel; each victim re-triggers. Because the
   trigger is a cancellation, nothing is recorded as failed (`TestRunState.ApplyTestFailed`

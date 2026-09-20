@@ -119,3 +119,13 @@ server/
     └── discord-bot/        # Discord bot integration
 ```
 
+
+## SMAPI Build
+
+The images do not download a SMAPI release. The `smapi-builder` stage in `docker/Dockerfile` and
+`docker/Dockerfile.test-client` clones the upstream tag pinned by `ARG SMAPI_VERSION`, applies the
+patch series in `patches/smapi/`, and packages the Linux installer with
+`docker/smapi/build-installer.sh`. The runtime image ships that package at `/opt/smapi` and
+installs it into the game volume on startup, reinstalling whenever the volume holds a different
+build (`smapi-internal/.sdvd-smapi-build`). See `patches/smapi/README.md` for what the patches
+change and how to re-derive them for a new SMAPI release.

@@ -98,8 +98,8 @@ public class FestivalTests : TestBase
     private static readonly TimeSpan FestivalSettleWindow = TimeSpan.FromSeconds(6);
 
     // The Fair's leave can be briefly deferred while the grange results box is open (HandleDialogueBox
-    // clears it within ~12s), so allow more than NetworkSyncTimeout (10s). A ceiling only — the common
-    // (box-already-clear) case ends within ~1s.
+    // clears it on its next one-second pass), so allow more than NetworkSyncTimeout (10s). A ceiling
+    // only — the common (box-already-clear) case ends within ~1s.
     private static readonly TimeSpan FairLeaveEndTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>

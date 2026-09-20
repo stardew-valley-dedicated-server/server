@@ -363,9 +363,10 @@ public class AlwaysOnServer : ModService
         alwaysOnServerFestivals.HandleFestivalStart();
         alwaysOnServerFestivals.HandleFestivalLeave();
         // Per-tick: the main-event countdown announce ("Type !event…") and timeout backstop must reach
-        // players promptly. OneSecondUpdateTicked fires every 60 ticks — 12s at SERVER_TPS=5 — which
-        // delayed the announce past clients' wait windows. Countdown/timeout gating is wall-clock based
-        // (DateTime.UtcNow) and one-shot-flagged, so per-tick invocation is safe and more responsive.
+        // players promptly, and OneSecondUpdateTicked is per second at best (per 60 ticks on stock
+        // SMAPI, see one-second-update-ticked-fires-per-game-tick.md). Countdown/timeout gating is
+        // wall-clock based (DateTime.UtcNow) and one-shot-flagged, so per-tick invocation is safe and
+        // more responsive.
         alwaysOnServerFestivals.HandleFestivalEvents();
     }
 
@@ -1544,10 +1545,10 @@ public class AlwaysOnServer : ModService
 
     /// <summary>
     /// Apply the host's one-time new-game choices (pet, farm cave) deterministically at load. These
-    /// run here — not on the OneSecondUpdateTicked loop, which fires every 12s at SERVER_TPS=5 (see
+    /// run here — not on the OneSecondUpdateTicked loop (see
     /// one-second-update-ticked-fires-per-game-tick.md) — so the choice is settled before the
     /// reload/newgame completion contract resolves and before anything (a /test seed, an operator
-    /// command) can write the same state, which the 12s cadence would otherwise race and overwrite.
+    /// command) can write the same state, which a loop-timed write would otherwise race and overwrite.
     /// Each handler is single-shot on a save-persisted signal (pet existence, eventsSeen "65"), so a
     /// re-run on /reload is a no-op.
     /// </summary>

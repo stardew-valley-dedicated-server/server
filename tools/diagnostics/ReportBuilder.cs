@@ -61,7 +61,8 @@ internal sealed class ReportBuilder
                 new[] { "Server", Format.OrUnknown(Json.Field(status, "serverVersion")) },
                 new[] { "Game", Format.OrUnknown(Json.Field(status, "gameVersion")) },
                 new[] { "Git commit", Format.OrUnknown(Config.GitSha) },
-                new[] { "SMAPI", Format.OrUnknown(Config.SmapiVersion) },
+                new[] { "SMAPI (image)", Format.OrUnknown(Config.SmapiImageBuild) },
+                new[] { "SMAPI (installed)", Format.OrUnknown(Config.SmapiInstalledBuild) },
             }
         );
         _sb.AppendLine();
