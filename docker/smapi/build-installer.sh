@@ -10,6 +10,7 @@
 #   internal/linux/install.dat      the SMAPI bundle the installer lays out into the game folder
 #   BUILD_ID                        <smapi-version>-<12 hex of sha256 over the patch series and this script>
 #   LICENSE.txt                     upstream's LGPL notice (SMAPI is LGPL v3)
+#   SOURCE-OFFER.txt                LGPL v3 corresponding-source pointer for the modified build
 set -euo pipefail
 
 src="$1"
@@ -93,5 +94,19 @@ rm -rf "${bundle}"
 patch_hash="$(cat "${patches}"/*.patch "$0" | sha256sum | cut -c1-12)"
 printf '%s\n' "${version}-${patch_hash}" > "${out}/BUILD_ID"
 cp "${src}/LICENSE.txt" "${out}/LICENSE.txt"
+
+# LGPL v3 source offer: image recipients get LICENSE.txt but not the repo — point them at the
+# corresponding source for this modified build.
+cat > "${out}/SOURCE-OFFER.txt" <<EOF
+This directory ships a MODIFIED build of SMAPI (Stardew Modding API), licensed under
+LGPL v3 -- see LICENSE.txt in this directory for the full license text.
+
+Upstream source:      https://github.com/Pathoschild/SMAPI (git tag ${version})
+Modifications:        https://github.com/stardew-valley-dedicated-server/server
+                      -> patches/smapi/ (applied at build time)
+Corresponding source: the upstream tag above plus that patch series. This exact build is
+                      identified by BUILD_ID ($(cat "${out}/BUILD_ID")) and by the image's
+                      SDVD_GIT_SHA environment variable.
+EOF
 
 echo "SMAPI $(cat "${out}/BUILD_ID") packaged in ${out}"
