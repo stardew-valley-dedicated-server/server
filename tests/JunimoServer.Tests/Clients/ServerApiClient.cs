@@ -830,6 +830,25 @@ public class TestDebugCommandResponse
 }
 
 /// <summary>
+/// Response from /test/host_farmhouse_bed POST endpoint (test-only). Mirrors the server-side
+/// TestHostFarmhouseBedResponse DTO.
+/// </summary>
+public class TestHostFarmhouseBedResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("farmHouseHasPlayerBed")]
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    [JsonPropertyName("farmHouseFurnitureCount")]
+    public int FarmHouseFurnitureCount { get; set; }
+}
+
+/// <summary>
 /// Response from /test/stamp_claim POST endpoint (test-only). Mirrors the server-side
 /// TestStampClaimResponse DTO. Stamps a synthetic abandoned slot claim onto an uncustomized,
 /// homed farmhand so the save-load sweep can be exercised on reload.
@@ -2479,8 +2498,7 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Test-only: run a vanilla debug command on the host via parseDebugInput (so Harmony prefixes
-    /// on the handlers, e.g. HostFarmhouseUpgradeGuard, are exercised) and return the host's
+    /// Test-only: run a vanilla debug command on the host via parseDebugInput and return the host's
     /// HouseUpgradeLevel + location afterwards. A warp command only arms the warp; poll
     /// <c>/diagnostics/state</c> for arrival.
     /// POST /test/debug_command?command=...
@@ -2497,6 +2515,25 @@ public class ServerApiClient : IDisposable
         );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<TestDebugCommandResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: replace every bed in the host farmhouse with the given bed item (e.g. "2052", the
+    /// Double bed) on the DefaultBedPosition tile.
+    /// POST /test/host_farmhouse_bed?bedId=...
+    /// </summary>
+    public async Task<TestHostFarmhouseBedResponse?> SetHostFarmhouseBed(
+        string bedId,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/host_farmhouse_bed?bedId={Uri.EscapeDataString(bedId)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHostFarmhouseBedResponse>(ct);
     }
 
     /// <summary>

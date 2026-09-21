@@ -6,6 +6,7 @@ using JunimoServer.Services.ChatCommands;
 using JunimoServer.Services.Commands;
 using JunimoServer.Services.GameManager;
 using JunimoServer.Services.Lobby;
+using JunimoServer.Services.SaveImport;
 using JunimoServer.Services.ServerOptim;
 using JunimoServer.Shared;
 using JunimoServer.Util;
@@ -51,6 +52,7 @@ public class AlwaysOnServer : ModService
     private HostActivity _lastHoldOff;
 
     private readonly LobbyService _lobbyService;
+    private readonly SaveImportService _saveImportService;
 
     // Wall-clock start of the stuck-ShippingMenu window (seconds-based, so TPS-independent).
     private DateTime? _shippingMenuTimeoutStartTime;
@@ -67,12 +69,14 @@ public class AlwaysOnServer : ModService
         IModHelper helper,
         IMonitor monitor,
         Harmony harmony,
-        LobbyService lobbyService
+        LobbyService lobbyService,
+        SaveImportService saveImportService
     )
         : base(helper, monitor)
     {
         Config = config;
         _lobbyService = lobbyService;
+        _saveImportService = saveImportService;
 
         // Register console commands
         helper.ConsoleCommands.Register(
@@ -1604,39 +1608,26 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Keep the host farmhouse sleepable (it is internal-only, see
-    /// <see cref="HostFarmhouseUpgradeGuard"/>). Two heals, no-op for new/healthy saves:
-    /// a farmhouse a prior build left upgraded is reset to level 0 (TRANSITIONAL: remove after
-    /// 2026-09-01 once affected saves have self-healed, #346), and a level-0 farmhouse with no
-    /// bed at all gets the default bed (a host-swapped import moves the owner's furniture, bed
-    /// included, into their cabin; a host sleeping in place in a bedless house never starts the
-    /// day). Only a house with NO bed is touched — a bed of the wrong type (a Double at level 0)
-    /// is the owner's furniture waiting for the import finalizer to move it, never something to
-    /// delete.
+    /// Load-time heal of the host farmhouse (internal-only, see
+    /// <see cref="HostFarmhouseUpgradeGuard"/>): resets an upgraded farmhouse to level 0 and
+    /// ensures a usable bed. The bed is left to the save-import finalizer while an import is
+    /// pending: the farmhouse still holds the former owner's bed until the finalizer moves it.
     /// </summary>
     private void HealHostFarmhouse()
     {
         if (Game1.player.HouseUpgradeLevel != 0)
         {
             HostFarmhouseUpgradeGuard.ResetHostFarmhouseToLevelZero();
-            Monitor.Log(
-                "Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.",
-                LogLevel.Info
-            );
+            Monitor.Log("Reset host farmhouse to level 0 (internal-only).", LogLevel.Info);
             return;
         }
 
-        var farmhouse = Utility.getHomeOfFarmer(Game1.player);
-        if (farmhouse == null || farmhouse.GetBed() != null)
+        if (_saveImportService.TryReadIntent() != null)
         {
             return;
         }
 
-        HostFarmhouseUpgradeGuard.ForceDefaultBedAtLevelZero(farmhouse);
-        Monitor.Log(
-            "Host farmhouse had no bed; placed the default bed so the host can sleep in place.",
-            LogLevel.Info
-        );
+        HostFarmhouseUpgradeGuard.EnsureHostPlayerBed();
     }
 
     /// <summary>

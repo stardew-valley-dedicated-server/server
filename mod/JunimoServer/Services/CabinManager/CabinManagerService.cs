@@ -2515,7 +2515,9 @@ public partial class CabinManagerService : ModService
     /// later failure leaves them claimable), then homes them into a known cabin and moves their
     /// farmhouse contents and household NPCs into it. Self-heals (Warn + clear + return) on any
     /// pre-condition miss, and clears the intent on EVERY exit (including a throw after a world
-    /// mutation) so a failed finalize never retries against an already-changed world.
+    /// mutation) so a failed finalize never retries against an already-changed world. Every exit
+    /// ends in <see cref="HostFarmhouseUpgradeGuard.EnsureHostPlayerBed"/>: the load-time heal skips
+    /// the bed while an intent is pending, since the farmhouse holds the owner's bed until the move.
     /// </summary>
     private void TryFinalizeOnLoad()
     {
@@ -2525,6 +2527,18 @@ public partial class CabinManagerService : ModService
             return; // zero cost on normal loads
         }
 
+        try
+        {
+            FinalizeOnLoad(intent);
+        }
+        finally
+        {
+            HostFarmhouseUpgradeGuard.EnsureHostPlayerBed();
+        }
+    }
+
+    private void FinalizeOnLoad(PendingFinalize intent)
+    {
         // Wrong-save guard: a stale intent (or an unrelated loader write between import and reboot)
         // must not mis-finalize a different save.
         if (!string.Equals(Constants.SaveFolderName, intent.SaveName, StringComparison.Ordinal))
@@ -2789,10 +2803,6 @@ public partial class CabinManagerService : ModService
             cabin.furniture.Add(f);
             moved++;
         }
-
-        // The owner's bed just left with the furniture; the host needs one of its own or its
-        // in-place sleep never starts the day (see ForceDefaultBedAtLevelZero).
-        HostFarmhouseUpgradeGuard.ForceDefaultBedAtLevelZero(farmHouse);
 
         // fridge contents: a default cabin fridge is empty, so move the source fridge's items into
         // the destination fridge (keeps the destination's NetRef<Chest> identity intact).

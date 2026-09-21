@@ -210,7 +210,7 @@ public class SaveImportTests : TestBase
 
                 // The owner's cabin holds the chest and the fridge item; the host FarmHouse is empty
                 // (objects, fridge AND furniture — the starter furniture must have moved too) except
-                // for the default bed the finalizer places for the host's own sleep.
+                // for the host's default bed.
                 var cabinHasContents = cabin.ObjectCount >= 1 && cabin.FridgeItemCount >= 1;
                 var farmHouseEmpty =
                     state.FarmHouseObjectCount == 0

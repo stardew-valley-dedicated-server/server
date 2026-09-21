@@ -5,12 +5,10 @@ using Xunit;
 namespace JunimoServer.Tests;
 
 /// <summary>
-/// Pins the host's main farmhouse invariants: it is internal-only and stays at HouseUpgradeLevel 0
-/// (#346), and it always holds the bed the host's in-place sleep depends on. A debug house-upgrade
-/// command run on the host (the only residual upgrade path, via the admin console) must be blocked by
-/// <c>HostFarmhouseUpgradeGuard</c>; a bedless level-0 farmhouse must be healed on load. Drives the
-/// real vanilla debug commands through parseDebugInput so the guard's Harmony prefix is genuinely
-/// exercised.
+/// Pins the host's main farmhouse invariants: it stays at HouseUpgradeLevel 0 (#346) and always
+/// holds a usable bed. Debug house-upgrade commands (the only residual upgrade path) must be blocked
+/// by <c>HostFarmhouseUpgradeGuard</c>; a farmhouse without a usable bed must be healed on load.
+/// Drives the real vanilla debug commands through parseDebugInput so the Harmony prefix runs.
 /// </summary>
 [TestServer(Isolation = IsolationMode.SharedAssembly)]
 public class HostFarmhouseUpgradeGuardTests : TestBase
@@ -35,21 +33,20 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
     }
 
     /// <summary>
-    /// A level-0 host farmhouse with no bed (the shape a host-swapped save import leaves when the
-    /// owner's furniture, bed included, moves into their cabin) is healed on load, and the host can
-    /// then sleep IN PLACE. In place matters: a host that warps home first rides the warp's own
-    /// fade into the day transition, which masks a missing bed. Without the heal the client's
-    /// sleep readies the host, <c>NewDay</c> runs with <c>isInBed == false</c>, no fade is armed,
-    /// <c>newDayAfterFade</c> never runs, and the day never advances.
+    /// A host farmhouse without a bed <c>GetPlayerBed</c> finds (none at all, or a Double at level 0)
+    /// is healed on load, and the host can then sleep in place. In place matters: a host that warps
+    /// home first rides the warp's fade into the day transition, which masks a missing bed.
     /// </summary>
-    [Fact]
+    [Theory]
+    [InlineData(null)] // no bed at all
+    [InlineData("2052")] // BedFurniture.DOUBLE_BED_INDEX: a Double bed, unusable at level 0
     [TestServer(Clients = 1, Exclusive = true)]
-    public async Task BedlessHostFarmhouse_HealedOnLoad_HostSleepsInPlace()
+    public async Task UnusableHostBed_HealedOnLoad_HostSleepsInPlace(string? wrongBedId)
     {
         var ct = TestCt;
 
-        // Construct the bedless save: park the host in its farmhouse, clear every piece of
-        // furniture there (the bed is furniture), persist, and reload so OnSaveLoaded runs the heal.
+        // Build the broken save: clear all furniture (the bed is furniture), optionally place the
+        // wrong bed, persist, reload.
         await WarpHostHomeAsync(ct);
 
         var clear = await ServerApi.RunDebugCommand("clearfurniture", ct);
@@ -65,6 +62,29 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
             cancellationToken: ct
         );
         Assert.True(bedRemoved, "clearfurniture must leave the host farmhouse with no bed");
+
+        if (wrongBedId != null)
+        {
+            var placed = await ServerApi.SetHostFarmhouseBed(wrongBedId, ct);
+            Assert.True(
+                placed?.Success == true,
+                $"placing bed {wrongBedId} failed: {placed?.Error}"
+            );
+            var bedReplaced = await PollingHelper.WaitUntilAsync(
+                WaitName.Polling_HostFarmhouse_BedReplaced,
+                async () =>
+                {
+                    var state = await ServerApi.GetDiagnosticsState(ct);
+                    return state is { FarmHouseHasPlayerBed: false, FarmHouseFurnitureCount: 1 };
+                },
+                TestTimings.CabinAssignmentTimeout,
+                cancellationToken: ct
+            );
+            Assert.True(
+                bedReplaced,
+                $"bed {wrongBedId} must be present yet not found by GetPlayerBed at level 0"
+            );
+        }
 
         var saved = await ServerApi.ForceSave(ct);
         Assert.True(saved?.Success == true, $"ForceSave failed: {saved?.Error}");
@@ -84,10 +104,10 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
             healed,
             "After reload the level-0 host farmhouse must hold exactly one bed that GetPlayerBed finds"
         );
-        Log("Bedless host farmhouse healed on load");
+        Log($"Host farmhouse healed on load (wrongBedId={wrongBedId ?? "none"})");
 
-        // The runtime gate: a farmhand sleeps while the host already stands in its farmhouse, so the
-        // host sleeps in place with no warp fade to hide a missing bed. The day must advance.
+        // A farmhand sleeps while the host already stands in its farmhouse, so the host sleeps in
+        // place with no warp fade to hide a missing bed.
         var farmer = await Farmers.ConnectFastAsync(namePrefix: "BedSleeper", ct: ct);
         Assert.True(
             await ServerApi.WaitForPlayerByIdAsync(farmer.JoinResult.UniqueMultiplayerId, ct: ct),
@@ -100,8 +120,7 @@ public class HostFarmhouseUpgradeGuardTests : TestBase
     }
 
     /// <summary>
-    /// Warps the host into its farmhouse via the vanilla debug warp and waits for arrival (the
-    /// command only arms the warp; it completes over later ticks through the fade pump).
+    /// Warps the host into its farmhouse via the vanilla debug warp and waits for arrival.
     /// </summary>
     private async Task WarpHostHomeAsync(CancellationToken ct)
     {

@@ -222,8 +222,7 @@ public class DiagnosticsStateResponse
     /// <summary>Furniture count in the host FarmHouse (must be 1, the default bed, after a swap import).</summary>
     public int FarmHouseFurnitureCount { get; set; }
 
-    /// <summary>Whether <c>FarmHouse.GetPlayerBed()</c> finds a bed for the host's level — the bed the
-    /// sleep automation's in-place sleep depends on.</summary>
+    /// <summary>Whether <c>FarmHouse.GetPlayerBed()</c> finds a bed in the host FarmHouse.</summary>
     public bool FarmHouseHasPlayerBed { get; set; }
 
     /// <summary>The host's current location (<c>Game1.currentLocation.NameOrUniqueName</c>).</summary>

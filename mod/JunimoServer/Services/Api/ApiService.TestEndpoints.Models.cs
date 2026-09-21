@@ -211,6 +211,22 @@ public class TestDebugCommandResponse
 }
 
 /// <summary>
+/// Response from POST /test/host_farmhouse_bed (test-only). Replaces every bed in the host
+/// farmhouse with the given bed item on the DefaultBedPosition tile.
+/// </summary>
+public class TestHostFarmhouseBedResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Whether <c>FarmHouse.GetPlayerBed()</c> finds a bed afterwards.</summary>
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    /// <summary>Furniture count in the host farmhouse afterwards.</summary>
+    public int FarmHouseFurnitureCount { get; set; }
+}
+
+/// <summary>
 /// Response from GET /test/festival_state (test-only). A direct read of the host's
 /// festival state, so E2E tests can assert "festival still active" / "festival ended"
 /// without proxying through the client's location (which reads "Temp" during a festival)
