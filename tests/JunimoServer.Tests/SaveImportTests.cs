@@ -209,12 +209,14 @@ public class SaveImportTests : TestBase
                 }
 
                 // The owner's cabin holds the chest and the fridge item; the host FarmHouse is empty
-                // (objects, fridge AND furniture — the starter furniture must have moved too).
+                // (objects, fridge AND furniture — the starter furniture must have moved too) except
+                // for the default bed the finalizer places for the host's own sleep.
                 var cabinHasContents = cabin.ObjectCount >= 1 && cabin.FridgeItemCount >= 1;
                 var farmHouseEmpty =
                     state.FarmHouseObjectCount == 0
                     && state.FarmHouseFridgeItemCount == 0
-                    && state.FarmHouseFurnitureCount == 0;
+                    && state.FarmHouseFurnitureCount == 1
+                    && state.FarmHouseHasPlayerBed;
                 return cabinHasContents && farmHouseEmpty;
             },
             TestTimings.CabinAssignmentTimeout,
@@ -223,7 +225,7 @@ public class SaveImportTests : TestBase
         Assert.True(
             ok,
             $"After swap import, owner uid={ownerUid} cabin must hold the moved chest + fridge item "
-                + "and the Server FarmHouse must be empty (objects, fridge, furniture)"
+                + "and the Server FarmHouse must hold nothing but the host's default bed"
         );
         Log("Contents move confirmed (reuse path)");
     }
@@ -275,12 +277,13 @@ public class SaveImportTests : TestBase
                 }
 
                 // Chest + fridge item survived the level-0→level-N realization; FarmHouse empty
-                // (objects, fridge AND furniture).
+                // (objects, fridge AND furniture) except for the host's default bed.
                 var cabinHasContents = cabin.ObjectCount >= 1 && cabin.FridgeItemCount >= 1;
                 var farmHouseEmpty =
                     state.FarmHouseObjectCount == 0
                     && state.FarmHouseFridgeItemCount == 0
-                    && state.FarmHouseFurnitureCount == 0;
+                    && state.FarmHouseFurnitureCount == 1
+                    && state.FarmHouseHasPlayerBed;
                 return cabinHasContents && farmHouseEmpty;
             },
             TestTimings.CabinAssignmentTimeout,
@@ -289,7 +292,7 @@ public class SaveImportTests : TestBase
         Assert.True(
             ok,
             $"After build-path swap import of an upgraded house, owner uid={ownerUid} cabin must hold "
-                + "the moved contents and the FarmHouse must be empty"
+                + "the moved contents and the FarmHouse must hold nothing but the host's default bed"
         );
         Log("Contents move confirmed (build path, upgraded house)");
     }

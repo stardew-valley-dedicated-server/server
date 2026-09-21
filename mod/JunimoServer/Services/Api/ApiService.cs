@@ -214,12 +214,20 @@ public class DiagnosticsStateResponse
     public long[] DisconnectingFarmers { get; set; } = System.Array.Empty<long>();
 
     // ── Save-import assertion probes ──
-    // The post-swap Server-host FarmHouse must be empty after the contents/NPC move.
+    // The post-swap Server-host FarmHouse must hold nothing but the default bed after the
+    // contents/NPC move.
     /// <summary>Placed-object count in the host FarmHouse (must be 0 after a swap import).</summary>
     public int FarmHouseObjectCount { get; set; }
 
-    /// <summary>Furniture count in the host FarmHouse (must be 0 after a swap import).</summary>
+    /// <summary>Furniture count in the host FarmHouse (must be 1, the default bed, after a swap import).</summary>
     public int FarmHouseFurnitureCount { get; set; }
+
+    /// <summary>Whether <c>FarmHouse.GetPlayerBed()</c> finds a bed for the host's level — the bed the
+    /// sleep automation's in-place sleep depends on.</summary>
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    /// <summary>The host's current location (<c>Game1.currentLocation.NameOrUniqueName</c>).</summary>
+    public string HostLocation { get; set; } = "";
 
     /// <summary>Fridge-item count in the host FarmHouse (must be 0 after a swap import).</summary>
     public int FarmHouseFridgeItemCount { get; set; }
@@ -3112,10 +3120,20 @@ public partial class ApiService : ModService
                             var fh = Game1.getLocationFromName("FarmHouse") as FarmHouse;
                             resp.FarmHouseObjectCount = fh?.objects?.Count() ?? 0;
                             resp.FarmHouseFurnitureCount = fh?.furniture?.Count ?? 0;
+                            resp.FarmHouseHasPlayerBed = fh?.GetPlayerBed() != null;
                             resp.FarmHouseFridgeItemCount =
                                 fh?.fridge?.Value?.Items?.Count(i => i != null) ?? 0;
                             var masterCellar = Game1.getLocationFromName("Cellar");
                             resp.MasterCellarObjectCount = masterCellar?.objects?.Count() ?? 0;
+                        }
+                    );
+
+                    TryRead(
+                        "hostLocation",
+                        resp.FailedFields,
+                        () =>
+                        {
+                            resp.HostLocation = Game1.currentLocation?.NameOrUniqueName ?? "";
                         }
                     );
 

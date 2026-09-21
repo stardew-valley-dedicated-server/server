@@ -111,10 +111,10 @@ public partial class ApiService
                             await HandlePostTestLightningStrikeAsync(request)
                         );
                         return;
-                    case "/test/house_upgrade":
+                    case "/test/debug_command":
                         await WriteJsonAsync(
                             response,
-                            await HandlePostTestHouseUpgradeAsync(request)
+                            await HandlePostTestDebugCommandAsync(request)
                         );
                         return;
                     case "/test/stamp_claim":
@@ -881,36 +881,39 @@ public partial class ApiService
 
     [ApiEndpoint(
         "POST",
-        "/test/house_upgrade",
-        Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)",
+        "/test/debug_command",
+        Summary = "Run a vanilla debug command on the host via parseDebugInput (test-only)",
         Tag = "Test"
     )]
-    [ApiResponse(typeof(TestHouseUpgradeResponse), 200)]
-    private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(
+    [ApiResponse(typeof(TestDebugCommandResponse), 200)]
+    private async Task<TestDebugCommandResponse> HandlePostTestDebugCommandAsync(
         HttpListenerRequest request
     )
     {
         var command = request.QueryString["command"];
         if (string.IsNullOrWhiteSpace(command))
         {
-            return new TestHouseUpgradeResponse
+            return new TestDebugCommandResponse
             {
                 Success = false,
                 Error = "Missing 'command' query parameter",
             };
         }
 
-        // Route through parseDebugInput so the real vanilla handler — and thus the
-        // HostFarmhouseUpgradeGuard Harmony prefix — is exercised, exactly as an admin typing it
-        // at the console would be. Set Success only after the command actually runs, so a throw
-        // can't report a false-positive pass to the guard test.
-        var result = new TestHouseUpgradeResponse();
+        // Route through parseDebugInput so the real vanilla handler — and any Harmony prefix on
+        // it, e.g. HostFarmhouseUpgradeGuard — is exercised, exactly as an admin typing it at the
+        // console would be. Set Success only after the command actually runs, so a throw can't
+        // report a false-positive pass. A warp command only ARMS the warp (it completes over
+        // later ticks through the fade pump), so HostLocation here is the pre-warp location;
+        // poll /diagnostics/state for arrival.
+        var result = new TestDebugCommandResponse();
         try
         {
             await RunOnGameThreadAsync(() =>
             {
                 Game1.game1.parseDebugInput(command);
                 result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
+                result.HostLocation = Game1.currentLocation?.NameOrUniqueName ?? "";
                 result.Success = true;
             });
         }

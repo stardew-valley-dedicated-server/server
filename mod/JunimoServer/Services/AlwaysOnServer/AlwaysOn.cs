@@ -246,7 +246,7 @@ public class AlwaysOnServer : ModService
 
                 PreSeedEarlyGameEvents();
                 PreSeedChoices();
-                HealUpgradedHostFarmhouse();
+                HealHostFarmhouse();
             }
 
             // Seed locks for cabins whose farmhands are already offline at load time.
@@ -1604,21 +1604,37 @@ public class AlwaysOnServer : ModService
     }
 
     /// <summary>
-    /// Reset a host farmhouse that a prior build left upgraded back to level 0 (the host farmhouse
-    /// is internal-only, see <see cref="HostFarmhouseUpgradeGuard"/>). No-op for new/healthy saves.
-    ///
-    /// TRANSITIONAL: remove after 2026-09-01 once affected saves have self-healed (#346).
+    /// Keep the host farmhouse sleepable (it is internal-only, see
+    /// <see cref="HostFarmhouseUpgradeGuard"/>). Two heals, no-op for new/healthy saves:
+    /// a farmhouse a prior build left upgraded is reset to level 0 (TRANSITIONAL: remove after
+    /// 2026-09-01 once affected saves have self-healed, #346), and a level-0 farmhouse with no
+    /// bed at all gets the default bed (a host-swapped import moves the owner's furniture, bed
+    /// included, into their cabin; a host sleeping in place in a bedless house never starts the
+    /// day). Only a house with NO bed is touched — a bed of the wrong type (a Double at level 0)
+    /// is the owner's furniture waiting for the import finalizer to move it, never something to
+    /// delete.
     /// </summary>
-    private void HealUpgradedHostFarmhouse()
+    private void HealHostFarmhouse()
     {
-        if (Game1.player.HouseUpgradeLevel == 0)
+        if (Game1.player.HouseUpgradeLevel != 0)
+        {
+            HostFarmhouseUpgradeGuard.ResetHostFarmhouseToLevelZero();
+            Monitor.Log(
+                "Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.",
+                LogLevel.Info
+            );
+            return;
+        }
+
+        var farmhouse = Utility.getHomeOfFarmer(Game1.player);
+        if (farmhouse == null || farmhouse.GetBed() != null)
         {
             return;
         }
 
-        HostFarmhouseUpgradeGuard.ResetHostFarmhouseToLevelZero();
+        HostFarmhouseUpgradeGuard.ForceDefaultBedAtLevelZero(farmhouse);
         Monitor.Log(
-            "Reset host farmhouse to level 0 (internal-only); cleared a stale upgrade from #346.",
+            "Host farmhouse had no bed; placed the default bed so the host can sleep in place.",
             LogLevel.Info
         );
     }

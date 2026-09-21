@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.Auth;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
@@ -2729,9 +2730,10 @@ public partial class CabinManagerService : ModService
     /// <summary>
     /// Moves the former owner's placed farmhouse contents (chests + contents, machines + held items,
     /// furniture, fridge, mini-jukebox, wallpaper/flooring) from the FarmHouse into their cabin, then
-    /// clears the FarmHouse copies so the Server host boots into an empty house. The engine has no
-    /// built-in farmhouse→cabin transfer, so this is hand-written from the source-derived content
-    /// list. Returns the count of moved objects + furniture (for the finalize event).
+    /// clears the FarmHouse copies so the Server host boots into a house holding only the default
+    /// bed. The engine has no built-in farmhouse→cabin transfer, so this is hand-written from the
+    /// source-derived content list. Returns the count of moved objects + furniture (for the
+    /// finalize event).
     /// </summary>
     private int TransferFarmhouseContentsToCabin(FarmHouse farmHouse, Cabin cabin, bool builtFresh)
     {
@@ -2787,6 +2789,10 @@ public partial class CabinManagerService : ModService
             cabin.furniture.Add(f);
             moved++;
         }
+
+        // The owner's bed just left with the furniture; the host needs one of its own or its
+        // in-place sleep never starts the day (see ForceDefaultBedAtLevelZero).
+        HostFarmhouseUpgradeGuard.ForceDefaultBedAtLevelZero(farmHouse);
 
         // fridge contents: a default cabin fridge is empty, so move the source fridge's items into
         // the destination fridge (keeps the destination's NetRef<Chest> identity intact).

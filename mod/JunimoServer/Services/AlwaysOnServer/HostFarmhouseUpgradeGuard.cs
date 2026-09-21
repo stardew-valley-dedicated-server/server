@@ -22,7 +22,9 @@ namespace JunimoServer.Services.AlwaysOn;
 /// through, so the prefixes run.
 ///
 /// Also exposes <see cref="ResetHostFarmhouseToLevelZero"/>, the transitional load-time self-heal
-/// for saves the old mirroring behavior already corrupted (see that method's note).
+/// for saves the old mirroring behavior already corrupted (see that method's note), and
+/// <see cref="ForceDefaultBedAtLevelZero"/>, which guarantees the level-0 house has the bed the
+/// sleep automation needs.
 /// </summary>
 public static class HostFarmhouseUpgradeGuard
 {
@@ -61,8 +63,14 @@ public static class HostFarmhouseUpgradeGuard
     /// Remove every bed in the farmhouse and place one fresh default (Single) bed on the level-0
     /// DefaultBedPosition tile, so the host always has a reachable bed that
     /// <see cref="FarmHouse.GetPlayerBed"/> can find. No-op if the map has no DefaultBedPosition.
+    ///
+    /// The bed is load-bearing for the day transition: <c>Game1.NewDay</c> arms the fade whose
+    /// completion runs <c>newDayAfterFade</c> only while <c>player.isInBed</c>, and that flag is
+    /// recomputed every tick from the "Bed" tile property a <see cref="BedFurniture"/> provides. A
+    /// host sleeping in place in a bedless house sets <c>newDay</c> but never fades, so the
+    /// transition never starts and every client waits forever.
     /// </summary>
-    private static void ForceDefaultBedAtLevelZero(FarmHouse farmhouse)
+    public static void ForceDefaultBedAtLevelZero(FarmHouse farmhouse)
     {
         if (!TryGetDefaultBedPosition(farmhouse, out var bedPos))
         {

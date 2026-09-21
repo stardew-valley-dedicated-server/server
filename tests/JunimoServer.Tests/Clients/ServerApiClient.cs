@@ -204,6 +204,12 @@ public class DiagnosticsStateResponse
     [JsonPropertyName("farmHouseFurnitureCount")]
     public int FarmHouseFurnitureCount { get; set; }
 
+    [JsonPropertyName("farmHouseHasPlayerBed")]
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    [JsonPropertyName("hostLocation")]
+    public string HostLocation { get; set; } = "";
+
     [JsonPropertyName("farmHouseFridgeItemCount")]
     public int FarmHouseFridgeItemCount { get; set; }
 
@@ -805,10 +811,10 @@ public class TestFarmEventStateResponse
 }
 
 /// <summary>
-/// Response from /test/house_upgrade POST endpoint (test-only). Mirrors the server-side
-/// TestHouseUpgradeResponse DTO.
+/// Response from /test/debug_command POST endpoint (test-only). Mirrors the server-side
+/// TestDebugCommandResponse DTO.
 /// </summary>
-public class TestHouseUpgradeResponse
+public class TestDebugCommandResponse
 {
     [JsonPropertyName("success")]
     public bool Success { get; set; }
@@ -818,6 +824,9 @@ public class TestHouseUpgradeResponse
 
     [JsonPropertyName("hostHouseUpgradeLevel")]
     public int HostHouseUpgradeLevel { get; set; }
+
+    [JsonPropertyName("hostLocation")]
+    public string HostLocation { get; set; } = "";
 }
 
 /// <summary>
@@ -2470,23 +2479,24 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Test-only: run a vanilla debug house-upgrade command on the host (via parseDebugInput, so the
-    /// HostFarmhouseUpgradeGuard Harmony prefix is exercised) and return the host's resulting
-    /// HouseUpgradeLevel. Used to pin that the host farmhouse cannot be upgraded (stays 0).
-    /// POST /test/house_upgrade?command=...
+    /// Test-only: run a vanilla debug command on the host via parseDebugInput (so Harmony prefixes
+    /// on the handlers, e.g. HostFarmhouseUpgradeGuard, are exercised) and return the host's
+    /// HouseUpgradeLevel + location afterwards. A warp command only arms the warp; poll
+    /// <c>/diagnostics/state</c> for arrival.
+    /// POST /test/debug_command?command=...
     /// </summary>
-    public async Task<TestHouseUpgradeResponse?> RunDebugHouseUpgrade(
+    public async Task<TestDebugCommandResponse?> RunDebugCommand(
         string command,
         CancellationToken ct = default
     )
     {
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
-            $"/test/house_upgrade?command={Uri.EscapeDataString(command)}",
+            $"/test/debug_command?command={Uri.EscapeDataString(command)}",
             ct
         );
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<TestHouseUpgradeResponse>(ct);
+        return await response.Content.ReadFromJsonAsync<TestDebugCommandResponse>(ct);
     }
 
     /// <summary>
