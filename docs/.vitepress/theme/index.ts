@@ -2,6 +2,7 @@ import type { Theme } from "vitepress";
 import DefaultTheme from "vitepress/theme";
 import { theme as openapiTheme, useOpenapi, useTheme as useOpenapiTheme } from "vitepress-openapi/client";
 import AnnouncementBar from "./AnnouncementBar.vue";
+import InstallCommand from "./InstallCommand.vue";
 import { initRandomIconAnimation } from "./randomIconAnimation";
 import ServerStatusWidget from "./ServerStatusWidget.vue";
 import "vitepress-openapi/dist/style.css";
@@ -15,6 +16,7 @@ export default {
     async enhanceApp(ctx) {
         const { app } = ctx;
         app.component("ServerStatusWidget", ServerStatusWidget);
+        app.component("InstallCommand", InstallCommand);
         // TODO: Show for local builds, but hide for public deployments
         const hideTryItOutButton = true;
 

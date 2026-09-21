@@ -4,17 +4,7 @@
 
 Run this from your server directory:
 
-::: code-group
-
-```sh [Linux / macOS]
-curl -fsSL https://docs.junimoserver.com/install.sh | bash
-```
-
-```powershell [Windows]
-irm https://docs.junimoserver.com/install.ps1 | iex
-```
-
-:::
+<InstallCommand update />
 
 It pulls the image for your configured `IMAGE_VERSION` (`latest`, `preview`, or a pinned version), installs the `docker-compose.yml` that matches it, and restarts. `.env`, saves, and settings are untouched.
 
