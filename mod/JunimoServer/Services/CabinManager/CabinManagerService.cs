@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.Auth;
 using JunimoServer.Services.Lobby;
 using JunimoServer.Services.MessageInterceptors;
@@ -2514,7 +2515,9 @@ public partial class CabinManagerService : ModService
     /// later failure leaves them claimable), then homes them into a known cabin and moves their
     /// farmhouse contents and household NPCs into it. Self-heals (Warn + clear + return) on any
     /// pre-condition miss, and clears the intent on EVERY exit (including a throw after a world
-    /// mutation) so a failed finalize never retries against an already-changed world.
+    /// mutation) so a failed finalize never retries against an already-changed world. Every exit
+    /// ends in <see cref="HostFarmhouseUpgradeGuard.EnsureHostPlayerBed"/>: the load-time heal skips
+    /// the bed while an intent is pending, since the farmhouse holds the owner's bed until the move.
     /// </summary>
     private void TryFinalizeOnLoad()
     {
@@ -2524,6 +2527,18 @@ public partial class CabinManagerService : ModService
             return; // zero cost on normal loads
         }
 
+        try
+        {
+            FinalizeOnLoad(intent);
+        }
+        finally
+        {
+            HostFarmhouseUpgradeGuard.EnsureHostPlayerBed();
+        }
+    }
+
+    private void FinalizeOnLoad(PendingFinalize intent)
+    {
         // Wrong-save guard: a stale intent (or an unrelated loader write between import and reboot)
         // must not mis-finalize a different save.
         if (!string.Equals(Constants.SaveFolderName, intent.SaveName, StringComparison.Ordinal))
@@ -2729,9 +2744,10 @@ public partial class CabinManagerService : ModService
     /// <summary>
     /// Moves the former owner's placed farmhouse contents (chests + contents, machines + held items,
     /// furniture, fridge, mini-jukebox, wallpaper/flooring) from the FarmHouse into their cabin, then
-    /// clears the FarmHouse copies so the Server host boots into an empty house. The engine has no
-    /// built-in farmhouse→cabin transfer, so this is hand-written from the source-derived content
-    /// list. Returns the count of moved objects + furniture (for the finalize event).
+    /// clears the FarmHouse copies so the Server host boots into a house holding only the default
+    /// bed. The engine has no built-in farmhouse→cabin transfer, so this is hand-written from the
+    /// source-derived content list. Returns the count of moved objects + furniture (for the
+    /// finalize event).
     /// </summary>
     private int TransferFarmhouseContentsToCabin(FarmHouse farmHouse, Cabin cabin, bool builtFresh)
     {

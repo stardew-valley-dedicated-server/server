@@ -204,6 +204,12 @@ public class DiagnosticsStateResponse
     [JsonPropertyName("farmHouseFurnitureCount")]
     public int FarmHouseFurnitureCount { get; set; }
 
+    [JsonPropertyName("farmHouseHasPlayerBed")]
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    [JsonPropertyName("hostLocation")]
+    public string HostLocation { get; set; } = "";
+
     [JsonPropertyName("farmHouseFridgeItemCount")]
     public int FarmHouseFridgeItemCount { get; set; }
 
@@ -805,10 +811,10 @@ public class TestFarmEventStateResponse
 }
 
 /// <summary>
-/// Response from /test/house_upgrade POST endpoint (test-only). Mirrors the server-side
-/// TestHouseUpgradeResponse DTO.
+/// Response from /test/debug_command POST endpoint (test-only). Mirrors the server-side
+/// TestDebugCommandResponse DTO.
 /// </summary>
-public class TestHouseUpgradeResponse
+public class TestDebugCommandResponse
 {
     [JsonPropertyName("success")]
     public bool Success { get; set; }
@@ -818,6 +824,28 @@ public class TestHouseUpgradeResponse
 
     [JsonPropertyName("hostHouseUpgradeLevel")]
     public int HostHouseUpgradeLevel { get; set; }
+
+    [JsonPropertyName("hostLocation")]
+    public string HostLocation { get; set; } = "";
+}
+
+/// <summary>
+/// Response from /test/host_farmhouse_bed POST endpoint (test-only). Mirrors the server-side
+/// TestHostFarmhouseBedResponse DTO.
+/// </summary>
+public class TestHostFarmhouseBedResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("farmHouseHasPlayerBed")]
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    [JsonPropertyName("farmHouseFurnitureCount")]
+    public int FarmHouseFurnitureCount { get; set; }
 }
 
 /// <summary>
@@ -2470,23 +2498,42 @@ public class ServerApiClient : IDisposable
     }
 
     /// <summary>
-    /// Test-only: run a vanilla debug house-upgrade command on the host (via parseDebugInput, so the
-    /// HostFarmhouseUpgradeGuard Harmony prefix is exercised) and return the host's resulting
-    /// HouseUpgradeLevel. Used to pin that the host farmhouse cannot be upgraded (stays 0).
-    /// POST /test/house_upgrade?command=...
+    /// Test-only: run a vanilla debug command on the host via parseDebugInput and return the host's
+    /// HouseUpgradeLevel + location afterwards. A warp command only arms the warp; poll
+    /// <c>/diagnostics/state</c> for arrival.
+    /// POST /test/debug_command?command=...
     /// </summary>
-    public async Task<TestHouseUpgradeResponse?> RunDebugHouseUpgrade(
+    public async Task<TestDebugCommandResponse?> RunDebugCommand(
         string command,
         CancellationToken ct = default
     )
     {
         var response = await SendWithRetryAsync(
             HttpMethod.Post,
-            $"/test/house_upgrade?command={Uri.EscapeDataString(command)}",
+            $"/test/debug_command?command={Uri.EscapeDataString(command)}",
             ct
         );
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<TestHouseUpgradeResponse>(ct);
+        return await response.Content.ReadFromJsonAsync<TestDebugCommandResponse>(ct);
+    }
+
+    /// <summary>
+    /// Test-only: replace every bed in the host farmhouse with the given bed item (e.g. "2052", the
+    /// Double bed) on the DefaultBedPosition tile.
+    /// POST /test/host_farmhouse_bed?bedId=...
+    /// </summary>
+    public async Task<TestHostFarmhouseBedResponse?> SetHostFarmhouseBed(
+        string bedId,
+        CancellationToken ct = default
+    )
+    {
+        var response = await SendWithRetryAsync(
+            HttpMethod.Post,
+            $"/test/host_farmhouse_bed?bedId={Uri.EscapeDataString(bedId)}",
+            ct
+        );
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TestHostFarmhouseBedResponse>(ct);
     }
 
     /// <summary>

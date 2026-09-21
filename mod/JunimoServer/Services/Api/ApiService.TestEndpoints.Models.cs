@@ -194,18 +194,36 @@ public class TestLightningStrikeResponse
 }
 
 /// <summary>
-/// Response from POST /test/house_upgrade (test-only). Runs a vanilla debug house-upgrade
-/// command through parseDebugInput (exercising the HostFarmhouseUpgradeGuard Harmony prefix) and
-/// reports the host's resulting HouseUpgradeLevel, so a test can pin "the host farmhouse can't be
-/// upgraded" (it must stay 0).
+/// Response from POST /test/debug_command (test-only). Runs a vanilla debug command through
+/// parseDebugInput (so Harmony prefixes on the handlers, e.g. HostFarmhouseUpgradeGuard, are
+/// exercised) and reports host state a test pins afterwards.
 /// </summary>
-public class TestHouseUpgradeResponse
+public class TestDebugCommandResponse
 {
     public bool Success { get; set; }
     public string? Error { get; set; }
 
-    /// <summary>The host farmer's HouseUpgradeLevel after the debug command ran (expected 0).</summary>
+    /// <summary>The host farmer's HouseUpgradeLevel after the command ran (the upgrade guard keeps it 0).</summary>
     public int HostHouseUpgradeLevel { get; set; }
+
+    /// <summary>The host's location right after the command ran (a warp is still pending here).</summary>
+    public string HostLocation { get; set; } = "";
+}
+
+/// <summary>
+/// Response from POST /test/host_farmhouse_bed (test-only). Replaces every bed in the host
+/// farmhouse with the given bed item on the DefaultBedPosition tile.
+/// </summary>
+public class TestHostFarmhouseBedResponse
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+
+    /// <summary>Whether <c>FarmHouse.GetPlayerBed()</c> finds a bed afterwards.</summary>
+    public bool FarmHouseHasPlayerBed { get; set; }
+
+    /// <summary>Furniture count in the host farmhouse afterwards.</summary>
+    public int FarmHouseFurnitureCount { get; set; }
 }
 
 /// <summary>

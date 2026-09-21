@@ -141,6 +141,12 @@ public enum WaitName
     Polling_FarmhandVisibility_IpOffReleased,
     Polling_FarmhandVisibility_IpOffReowned,
 
+    // HostFarmhouseUpgradeGuardTests.cs (4)
+    Polling_HostFarmhouse_HostWarpedHome,
+    Polling_HostFarmhouse_BedRemoved,
+    Polling_HostFarmhouse_BedReplaced,
+    Polling_HostFarmhouse_BedHealed,
+
     // SaveImportTests.cs (14)
     Polling_SaveImport_SwapFinalized,
     Polling_SaveImport_ContentsMoved,

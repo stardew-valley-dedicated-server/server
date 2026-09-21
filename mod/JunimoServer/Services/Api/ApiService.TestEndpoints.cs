@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using JunimoServer.Services.AlwaysOn;
 using JunimoServer.Services.Auth;
 using JunimoServer.Services.CropSaver;
 using JunimoServer.Services.Lobby;
@@ -111,10 +112,16 @@ public partial class ApiService
                             await HandlePostTestLightningStrikeAsync(request)
                         );
                         return;
-                    case "/test/house_upgrade":
+                    case "/test/debug_command":
                         await WriteJsonAsync(
                             response,
-                            await HandlePostTestHouseUpgradeAsync(request)
+                            await HandlePostTestDebugCommandAsync(request)
+                        );
+                        return;
+                    case "/test/host_farmhouse_bed":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostTestHostFarmhouseBedAsync(request)
                         );
                         return;
                     case "/test/stamp_claim":
@@ -881,36 +888,37 @@ public partial class ApiService
 
     [ApiEndpoint(
         "POST",
-        "/test/house_upgrade",
-        Summary = "Run a debug house-upgrade command on the host to verify it's blocked (test-only)",
+        "/test/debug_command",
+        Summary = "Run a vanilla debug command on the host via parseDebugInput (test-only)",
         Tag = "Test"
     )]
-    [ApiResponse(typeof(TestHouseUpgradeResponse), 200)]
-    private async Task<TestHouseUpgradeResponse> HandlePostTestHouseUpgradeAsync(
+    [ApiResponse(typeof(TestDebugCommandResponse), 200)]
+    private async Task<TestDebugCommandResponse> HandlePostTestDebugCommandAsync(
         HttpListenerRequest request
     )
     {
         var command = request.QueryString["command"];
         if (string.IsNullOrWhiteSpace(command))
         {
-            return new TestHouseUpgradeResponse
+            return new TestDebugCommandResponse
             {
                 Success = false,
                 Error = "Missing 'command' query parameter",
             };
         }
 
-        // Route through parseDebugInput so the real vanilla handler — and thus the
-        // HostFarmhouseUpgradeGuard Harmony prefix — is exercised, exactly as an admin typing it
-        // at the console would be. Set Success only after the command actually runs, so a throw
-        // can't report a false-positive pass to the guard test.
-        var result = new TestHouseUpgradeResponse();
+        // parseDebugInput runs the real vanilla handler, Harmony prefixes included. Success is set
+        // only after the command ran so a throw can't report a false pass. A warp command only
+        // arms the warp, so HostLocation is the pre-warp location; poll /diagnostics/state for
+        // arrival.
+        var result = new TestDebugCommandResponse();
         try
         {
             await RunOnGameThreadAsync(() =>
             {
                 Game1.game1.parseDebugInput(command);
                 result.HostHouseUpgradeLevel = Game1.MasterPlayer.HouseUpgradeLevel;
+                result.HostLocation = Game1.currentLocation?.NameOrUniqueName ?? "";
                 result.Success = true;
             });
         }
@@ -918,6 +926,54 @@ public partial class ApiService
         {
             // Don't log at Error level — that trips ServerContainer's error cancellation and
             // poisons the test (.claude/rules/debugging.md). Surface via the response instead.
+            result.Success = false;
+            result.Error = ex.Message;
+        }
+
+        return result;
+    }
+
+    [ApiEndpoint(
+        "POST",
+        "/test/host_farmhouse_bed",
+        Summary = "Replace every bed in the host farmhouse with the given bed item (test-only)",
+        Tag = "Test"
+    )]
+    [ApiResponse(typeof(TestHostFarmhouseBedResponse), 200)]
+    private async Task<TestHostFarmhouseBedResponse> HandlePostTestHostFarmhouseBedAsync(
+        HttpListenerRequest request
+    )
+    {
+        var bedId = request.QueryString["bedId"];
+        if (string.IsNullOrWhiteSpace(bedId))
+        {
+            return new TestHostFarmhouseBedResponse
+            {
+                Success = false,
+                Error = "Missing 'bedId' query parameter",
+            };
+        }
+
+        // Vanilla has no debug command that places furniture.
+        var result = new TestHostFarmhouseBedResponse();
+        try
+        {
+            await RunOnGameThreadAsync(() =>
+            {
+                var farmhouse = Utility.getHomeOfFarmer(Game1.player);
+                if (!HostFarmhouseUpgradeGuard.ReplaceBeds(farmhouse, bedId))
+                {
+                    result.Error = "Host farmhouse map has no DefaultBedPosition";
+                    return;
+                }
+
+                result.FarmHouseHasPlayerBed = farmhouse.GetPlayerBed() != null;
+                result.FarmHouseFurnitureCount = farmhouse.furniture.Count;
+                result.Success = true;
+            });
+        }
+        catch (Exception ex)
+        {
             result.Success = false;
             result.Error = ex.Message;
         }

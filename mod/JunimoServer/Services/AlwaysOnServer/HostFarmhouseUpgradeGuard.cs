@@ -21,8 +21,8 @@ namespace JunimoServer.Services.AlwaysOn;
 /// command table via reflection; Harmony patches the method bodies the cached delegates dispatch
 /// through, so the prefixes run.
 ///
-/// Also exposes <see cref="ResetHostFarmhouseToLevelZero"/>, the transitional load-time self-heal
-/// for saves the old mirroring behavior already corrupted (see that method's note).
+/// Also exposes the load-time heals <see cref="ResetHostFarmhouseToLevelZero"/> and
+/// <see cref="EnsureHostPlayerBed"/>.
 /// </summary>
 public static class HostFarmhouseUpgradeGuard
 {
@@ -31,16 +31,9 @@ public static class HostFarmhouseUpgradeGuard
     public static void Initialize(IMonitor monitor) => _monitor = monitor;
 
     /// <summary>
-    /// Reset the host's main farmhouse to level 0 (the load-time self-heal for #346).
-    ///
-    /// We can't rely on vanilla's relative-shift upgrade machinery here: a save corrupted by the
-    /// old bare HouseUpgradeLevel write never had its furniture shifted into the upgraded frame,
-    /// and <c>setMapForUpgradeLevel</c>'s bed-relocation block is gated/skipped for several
-    /// previous-level combinations (the bed lands off the level-0 DefaultBedPosition). So after the
-    /// vanilla relayout loads the level-0 map, deterministically force a single default bed onto
-    /// the level-0 DefaultBedPosition: remove every existing bed, then add a fresh one at the
-    /// correct tile. Level 0 expects a Single bed (<see cref="FarmHouse.GetPlayerBed"/>), so this
-    /// also fixes a leftover Double bed.
+    /// Reset the host's main farmhouse to level 0. Vanilla's relayout can't be trusted for the bed:
+    /// <c>setMapForUpgradeLevel</c>'s bed-relocation block is skipped for several previous-level
+    /// combinations, so the bed is forced onto the level-0 DefaultBedPosition afterwards.
     /// </summary>
     public static void ResetHostFarmhouseToLevelZero()
     {
@@ -54,23 +47,43 @@ public static class HostFarmhouseUpgradeGuard
         farmhouse.ReadWallpaperAndFloorTileData();
         farmhouse.RefreshFloorObjectNeighbors();
 
-        ForceDefaultBedAtLevelZero(farmhouse);
+        ReplaceBeds(farmhouse, BedFurniture.DEFAULT_BED_INDEX);
     }
 
     /// <summary>
-    /// Remove every bed in the farmhouse and place one fresh default (Single) bed on the level-0
-    /// DefaultBedPosition tile, so the host always has a reachable bed that
-    /// <see cref="FarmHouse.GetPlayerBed"/> can find. No-op if the map has no DefaultBedPosition.
+    /// Place the default bed unless <see cref="FarmHouse.GetPlayerBed"/> already finds one. A bed
+    /// of the wrong type counts as none: <c>GetPlayerBedSpot</c> then falls back to the entry tile,
+    /// the host sleeps off-bed, and <c>NewDay</c> never arms the fade. Must run after a pending
+    /// save-import finalize, which moves the former owner's bed into their cabin.
     /// </summary>
-    private static void ForceDefaultBedAtLevelZero(FarmHouse farmhouse)
+    public static void EnsureHostPlayerBed()
+    {
+        var farmhouse = Utility.getHomeOfFarmer(Game1.player);
+        if (farmhouse.GetPlayerBed() != null)
+        {
+            return;
+        }
+
+        ReplaceBeds(farmhouse, BedFurniture.DEFAULT_BED_INDEX);
+        _monitor?.Log(
+            "Host farmhouse had no usable bed; placed the default bed so the host can sleep in place.",
+            LogLevel.Info
+        );
+    }
+
+    /// <summary>
+    /// Remove every bed in the farmhouse and place one of the given item id on the
+    /// DefaultBedPosition tile. Returns false (and does nothing) if the map has no such tile.
+    /// </summary>
+    public static bool ReplaceBeds(FarmHouse farmhouse, string bedId)
     {
         if (!TryGetDefaultBedPosition(farmhouse, out var bedPos))
         {
             _monitor?.Log(
-                "Host farmhouse heal: no DefaultBedPosition on the level-0 map; skipped bed fixup.",
+                "Host farmhouse heal: no DefaultBedPosition on the map; skipped bed fixup.",
                 LogLevel.Warn
             );
-            return;
+            return false;
         }
 
         foreach (var bed in farmhouse.furniture.OfType<BedFurniture>().ToList())
@@ -79,9 +92,8 @@ public static class HostFarmhouseUpgradeGuard
             farmhouse.furniture.Remove(farmhouse.furniture.GuidOf(bed));
         }
 
-        farmhouse.furniture.Add(
-            new BedFurniture(BedFurniture.DEFAULT_BED_INDEX, new Vector2(bedPos.X, bedPos.Y))
-        );
+        farmhouse.furniture.Add(new BedFurniture(bedId, new Vector2(bedPos.X, bedPos.Y)));
+        return true;
     }
 
     /// <summary>
