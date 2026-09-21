@@ -27,7 +27,7 @@ const active = ref(0);
          handler; only the tab toggle is ours (static markup can't switch the active block). -->
     <div class="vp-code-group vp-adaptive-theme">
         <div class="tabs">
-            <template v-for="(c, i) in commands" :key="i">
+            <template v-for="(c, i) in commands" :key="c.lang">
                 <input
                     :id="`install-${uid}-${i}`"
                     type="radio"
@@ -41,7 +41,7 @@ const active = ref(0);
         <div class="blocks">
             <div
                 v-for="(c, i) in commands"
-                :key="i"
+                :key="c.lang"
                 :class="[`language-${c.lang}`, 'vp-adaptive-theme', { active: active === i }]"
             >
                 <button title="Copy Code" class="copy"></button>
