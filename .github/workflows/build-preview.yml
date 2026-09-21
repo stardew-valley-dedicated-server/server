@@ -210,9 +210,9 @@ jobs:
             ## Install or update
             Run from your server folder to update, or from an empty folder for a new server.
             ### Linux/macOS
-            `curl -fsSL https://docs.junimoserver.com/install.sh | bash`
+            `curl -fsSL https://docs.junimoserver.com/preview/install.sh | bash`
             ### Windows (PowerShell)
-            `powershell -c "irm https://docs.junimoserver.com/install.ps1 | iex"`
+            `powershell -c "irm https://docs.junimoserver.com/preview/install.ps1 | iex"`
           buttons: >-
             [{"label":"Upgrade guide","url":"https://docs.junimoserver.com/admins/operations/upgrading"},
              {"label":"See all changes","url":"${{ steps.changelog.outputs.compare-url }}"}]

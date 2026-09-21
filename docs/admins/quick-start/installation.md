@@ -10,19 +10,7 @@ Before you start, make sure you have [Docker and a Steam account that owns Stard
 
 Create a new server folder with the config files, then enter it:
 
-::: code-group
-
-```sh [Linux / macOS]
-curl -fsSL https://docs.junimoserver.com/install.sh | bash
-cd junimoserver
-```
-
-```powershell [Windows]
-irm https://docs.junimoserver.com/install.ps1 | iex
-cd junimoserver
-```
-
-:::
+<InstallCommand />
 
 When you run it, the script asks which release channel to use (`preview` or `latest`), then offers to **sign in to Steam and start the server for you**: answer yes, enter your Steam login when prompted, and it downloads the game, starts the server, and opens the console. If you accept, you're done. Jump to step 5 below to connect your game.
 
