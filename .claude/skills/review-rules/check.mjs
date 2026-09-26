@@ -23,6 +23,20 @@ const mdFiles = (dir) =>
         .map((f) => join(dir, f))
     : [];
 const frontmatter = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? null;
+// Globs from the `paths:` list form that standard.md prescribes; empty, `null`, and `~` items don't count.
+const pathGlobs = (fm) => {
+  const block = /^paths:[ \t]*(?:#.*)?((?:\r?\n[ \t]+-.*)+)/m.exec(fm)?.[1] ?? "";
+  return [...block.matchAll(/-[ \t]*(.*)/g)]
+    .map((m) => m[1].replace(/\s+#.*$/, "").trim().replace(/^(["'])(.*)\1$/, "$2"))
+    .filter((g) => g && g !== "null" && g !== "~");
+};
+const decode = (target) => {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
+};
 
 const standard = read(join(skillDir, "standard.md"));
 const cap = (row) => {
@@ -63,9 +77,7 @@ overCap(pathScoped, PATH_SCOPED_CAP, "path-scoped");
 for (const p of universal)
   if (frontmatter(read(p)) !== null) problems.push(`frontmatter: ${rel(p)} is universal but has frontmatter`);
 for (const p of pathScoped)
-  // At least one glob, inline (`paths: "x"`, `paths: ["x"]`) or as a list item on the next line.
-  if (!/^paths:[ \t]*(?:["'[]*[^\s"'#[\]]|(?:#.*)?\r?\n[ \t]+-[ \t]*["']?[^\s"'#])/m.test(frontmatter(read(p)) ?? ""))
-    problems.push(`frontmatter: ${rel(p)} has no paths: glob`);
+  if (pathGlobs(frontmatter(read(p)) ?? "").length === 0) problems.push(`frontmatter: ${rel(p)} has no paths: glob`);
 for (const p of skills) {
   const fm = frontmatter(read(p)) ?? "";
   const dirName = dirname(p).split(/[\\/]/).pop();
@@ -81,7 +93,7 @@ for (const p of [claudeMd, readme, ...universal, ...pathScoped, ...skillDocs].fi
   for (const [, angled, bare] of text.matchAll(/\]\((?:<([^>]+)>|([^)\s]+))\)/g)) {
     const target = angled ?? bare;
     if (/^(https?:|mailto:|#)/.test(target)) continue;
-    if (!existsSync(resolve(dirname(p), decodeURIComponent(target.split("#")[0]))))
+    if (!existsSync(resolve(dirname(p), decode(target.split("#")[0]))))
       problems.push(`link: ${rel(p)} -> ${target} does not exist`);
   }
 }
