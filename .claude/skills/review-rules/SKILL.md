@@ -1,126 +1,70 @@
 ---
 name: review-rules
-description: Audits and refines the project's `.claude/` rules and `CLAUDE.md` for conciseness, format consistency, correctness, and pull-its-weight tokens. Use when the user asks to review, refine, audit, lint, or clean up rules; when a rule directory has grown enough that adherence is degrading; and — before reporting done — whenever you have written, merged, split, or materially rewritten a rule file yourself, since the checklist below is what catches title form, backticks, cited identifiers, `paths:` accuracy, and index sync in one pass.
+description: Audits the project's `.claude/` rules, `CLAUDE.md`, and skills against the shared gates and word budget in `standard.md`, proposing cuts, compressions, mechanizations, and fixes. Use when the user asks to review, prune, audit, or clean up rules, and after writing or materially rewriting a rule file.
 argument-hint: [optional path/glob or focus hint]
-allowed-tools: Read, Grep, Glob, Edit, Write
+allowed-tools: Read, Grep, Glob, Edit, Write, Bash(node .claude/skills/review-rules/check.mjs)
 ---
 
 # Review Rules
 
-Audit `.claude/rules/**`, `CLAUDE.md`, and `.claude/skills/**/SKILL.md` and propose edits before writing any. Curates what exists; does not grow the set — for new rules, route the user to `/extract-session-rules`.
+Audit `CLAUDE.md`, `.claude/rules/**`, and `.claude/skills/*/SKILL.md` (the default scope) against [standard.md](standard.md). A rule that fails a gate is cut, mechanized, moved, merged, or rescoped — whichever its first failed gate calls for. This skill never adds rules; new ones go through `/extract-session-rules`.
 
-Arguments passed on invocation (e.g. `/review-rules universal only`, `/review-rules tests/**`, `/review-rules conciseness pass`):
+Arguments (scope or focus filters; they override the default scope):
 
 > $ARGUMENTS
 
-Apply them as scope or focus filters in pass 1 and propagate to pass 2. They take precedence over the defaults below.
-
-## Scope
-
-In scope: `.claude/rules/**/*.md`, `.claude/rules/README.md`, `CLAUDE.md` (root + nested), `.claude/skills/**/SKILL.md`.
-
-Out of scope unless the user opts in: `.claude/plans/**`, `docs/**`, anything outside `.claude/` and root `CLAUDE.md`.
+Phases 1–3 are read-only. Nothing is edited before the user approves in phase 3.
 
 ## Procedure
 
-### Pass 1 — Inventory
+### 1. Measure
 
-Glob the in-scope files (filtered by argument if any). Read each. Build a flat list: path, line count, frontmatter, one-line summary. Cross-check `.claude/rules/README.md`: every **path-scoped** file (`.claude/rules/*.md`) has an index row, every indexed file is present, one-liners match. Universal files carry no index row — confirm they are not listed, not that they are.
+Read `standard.md`, then run `node .claude/skills/review-rules/check.mjs`. Investigate each problem it reports and either propose a fix or dismiss it with evidence. The gates in phase 2 are the judgment it can't make.
 
-**Early exit:** if pass 1 surfaces no candidate issues at all, report that and stop. Don't manufacture findings.
+### 2. Judge
 
-### Pass 2 — Findings
+Read every in-scope file. Walk each rule through the gates in order; the first failed gate decides its disposition:
 
-Tag each finding:
+| Failed gate | Disposition |
+|---|---|
+| 1 recurring or costly, 2 beyond model default | **[CUT]** |
+| 3 not mechanizable | **[MECHANIZE]** — name the hook, lint, or check |
+| 4 project-specific | **[MOVE]** to `~/.claude/CLAUDE.md` if it's a working preference worth keeping, else **[CUT]** |
+| 5 not derivable | **[CUT]** if the code or docs already say it; **[MOVE]** to a code comment or `docs/` if they should |
+| 6 not duplicated | **[MERGE]** into the surviving rule if it adds anything, else **[CUT]** |
+| 7 placement | **[RESCOPE]**, or **[MOVE]** to a skill when it's a multi-step procedure |
 
-- **[CUT]** delete content that fails the keep-test below
-- **[FIX]** edit for format, clarity, correctness
-- **[MOVE]** content belongs elsewhere (code comment, commit, docs, auto-memory, different rule)
-- **[SPLIT]** file does two unrelated things
-- **[MERGE]** duplicates an existing rule
-- **[RESCOPE]** `paths:` glob is wrong, or universal/path-scoped placement is wrong
-- **[INDEX]** `README.md` out of sync with the file
-- **[QUESTION]** needs the user before acting
+A rule whose trigger (path, identifier, feature) no longer exists is [CUT]. A cut rule gets no other finding. Any other rule can additionally get:
 
-#### Form
+- **[COMPRESS]** exceeds its cap or carries extra incidents, restated rationale, or narration — give the target word count.
+- **[FIX]** format, broken link, missing path or identifier, `paths:` not matching where it fires, contradiction with another rule.
+- **[INDEX]** `README.md` out of sync.
 
-The keep-test for every line: **"Would removing this cause Claude to make mistakes?"** If no, cut it.
+"Removing it might cause mistakes" is not a keep argument; a gate is. Back each finding with evidence that fits the claim:
 
-- No filler ("It is important to note", "In general", "As mentioned earlier"), no hedging ("may want to consider possibly").
-- No restating what Claude already knows (general framework concepts, language semantics).
-- One subject per file. "X invariants" with five related bullets is fine; two unrelated rules sharing a file is [SPLIT].
-- Length: CLAUDE.md target ≤200 lines (Anthropic's stated soft cap). For rule files, only flag length if a file has grown materially since last review or contains content that fails the keep-test — don't flag a rule purely for its line count.
+- Existence (path, identifier, trigger) → grep or glob.
+- Recurrence (gate 1) → one of the gate's three conditions shown by the rule's `**Why:**`, another rule, or `git log`; a single cited incident with no defect or stated cost fails.
+- Mechanizable or derivable (gates 3, 5) → the config, code, or docs that would carry it.
+- Duplication (gate 6) → the other rule's text.
 
-#### Format
+Skills have no word cap (they load only when invoked), but cut restatements and check their format.
 
-- **Frontmatter.** Path-scoped rules: `paths:` only, gitignore globs. Universal rules: no frontmatter. SKILL.md: `name`, `description`, optional `argument-hint`, optional `allowed-tools` (scoped where possible, e.g. `Bash(docker compose exec discli discli *)`; a rule must match each `&&`/`;`/`|` subcommand on its own). A skill that takes arguments places `\$ARGUMENTS` where the procedure reads them; repo-absolute paths in commands use the project-dir variable (`CLAUDE_PROJECT_DIR` in `${...}` form). Don't set `disable-model-invocation` on a skill whose description asks Claude to self-invoke it — the flag removes the description from Claude's context entirely.
-- **SKILL.md description shape.** The description is the only thing Claude sees when deciding whether to load the skill — it's the discovery surface, not just metadata. Required: third person, first sentence states the capability, second clause states *when to use* with concrete triggers. Reject "Helps with X"-style vagueness.
-- **Title is a clause that states the rule** (e.g. `# AsyncLocal flows through awaits, not through external queue pumps`). Not a noun phrase like `# Cabin Notes`.
-- **Body skeleton.** Opening one-line statement; optional sub-sections; trailing `**Why:**` and `**How to apply:**`. Match this across rules — if a rule omits one of those blocks and the content would benefit, [FIX].
-- **Headings.** `#` for title, `##` for sub-sections. `####+` only when genuinely needed.
-- **Writing style.** Per `extract-session-rules/SKILL.md` § Writing style: action first, no quotes, one anchor per point, plain English. [FIX] prose that fails it.
-- **Backticks** around filenames, identifiers, env vars, paths.
-- **Cross-rule links.** Markdown links to other rule files, used consistently. Don't mix bare filenames and links.
-- **Doc links.** Relative paths into `docs/`, used the same way everywhere.
-- **No backslash paths.** Forward slashes only.
-- **Terminology.** One term per concept within a rule, and (where feasible) across rules — e.g. don't have `host` / `daemon` / `endpoint` referring to the same thing in three different files.
+### 3. Propose
 
-#### Correctness
+Open with a budget table: current, after proposal, cap. Then one line per finding, grouped by tag: `[TAG] path — evidence — words saved`. If a cap stays exceeded, say by how much and name further cuts that would reach it, weakest gate evidence first. Plain text, not pickers — their 4-option cap is too small. Wait for explicit approval.
 
-- **Cited paths exist.** Spot-check with Glob.
-- **Cited identifiers exist.** Grep one or two per rule.
-- **No refactor history.** "previously", "no longer", "has been removed", "this used to" — see `no-refactor-history-in-code.md`.
-- **No machine-local content.** Dev-machine paths, full session IDs, `.claude/plans/...` references, dates.
-- **No contradictions across rules.** If `rule-A` says "always X" and `rule-B` says "never X under condition Y", at least one needs to acknowledge the other.
-- **Trigger still real.** If the `**Why:**` cites a condition (a feature flag, a config default, a framework quirk), confirm the condition still exists. A rule guarding against a removed surface is dead weight.
-- **Earned, not speculative.** A rule should trace to a real incident, not "we should be careful about X." Speculative rules age the worst — flag for [QUESTION] if the `**Why:**` doesn't ground it in something concrete.
+```
+|               | Now   | After | Cap   |
+|---------------|-------|-------|-------|
+| Always loaded | 9,734 | 2,310 | 2,500 |
 
-#### Scope and placement
+[CUT] .claude/rules/universal/orthogonal-fields.md — gate 1: one incident, no stated cost — −291
+[MECHANIZE] .claude/rules/universal/answer-then-stop.md — gate 3: `UserPromptSubmit` hook on a `Q:` prefix — −407
+[COMPRESS] .claude/rules/host-automation.md — keep the invariants, cut the narration; 2,421 → 300 — −2,121
 
-- **Right home.** For each rule, ask:
-  - Fact about code Claude can read → code comment, not rule.
-  - How the system evolved → commit / PR description.
-  - User-facing reference → `docs/`.
-  - User-personal preference → auto-memory.
-  - One-off task state → ephemeral, no persistent home.
-  - Behavioral guidance with non-obvious "why" → rule, keep.
-- **`paths:` accuracy.** Open the cited paths and confirm the rule actually applies. A rule mentioning `tests/.../Infrastructure/**` but only ever firing for `Helpers/Docker*.cs` should be [RESCOPE]d.
-- **Universal vs path-scoped.** Single-area → must be path-scoped. Genuinely cross-cutting → `universal/`. For each L1 rule, ask: "outside the subtree where the incident happened, where in *this* codebase would this rule actually fire?" If the answer is "almost nowhere," it's [RESCOPE] to L2, not [KEEP] — universal placement costs tokens on every session for a rule that only matters in one tree. Generalized vocabulary is not the same as cross-cutting applicability; check the fire surface in this repo, not the rule's wording.
+Reply with findings or tags to apply (e.g. "all CUT, and the host-automation COMPRESS"), or "none".
+```
 
-#### Index sync
+### 4. Apply
 
-- Only path-scoped rules (`.claude/rules/*.md`) are indexed. Every one has a row; every row maps to a present file. Universal rules (`.claude/rules/universal/*.md`) are always loaded and carry no row — verify by globbing `universal/`, not by an index entry.
-- One-liner is a single trigger clause — enough to decide whether to open the rule — and matches the current rule.
-- "Triggers on" column reflects current `paths:` (abbreviated is fine).
-
-### Pass 3 — Propose, then act
-
-1. **Present findings in plain text**, grouped by file, one short bullet each. Cap initial output at the highest-value ~20 findings; if more, say so and ask whether to continue. Plain text, not pickers — free-text replies (`fix all CUT and FIX, defer SPLIT`) scale better.
-
-2. **Wait for explicit approval.** Never write silently.
-
-3. **Apply** with `Edit` (preferred — diff is reviewable) or `Write` (whole-file rewrites only). When updating `README.md`, edit only the rows that changed.
-
-4. **Re-read each edited file** to confirm the change.
-
-5. **Report final state**: files changed, deferred (with one-line reason), open [QUESTION]s. One line per file.
-
-## Self-check before reporting
-
-Before pass 3, walk this checklist:
-
-- [ ] Each finding has one of the eight tags and anchors to a check above (no taste-only findings).
-- [ ] Identifier / path claims grepped at least once.
-- [ ] Cross-rule contradictions actually cross-checked, not assumed absent.
-- [ ] No new footer label, heading style, or terminology introduced by my own findings.
-- [ ] If pass 1 surfaced nothing, I'm reporting that, not padding.
-
-## Guardrails
-
-- **Verify before claiming.** No shipped finding without one piece of evidence (per `verify-claims.md`).
-- **Adversarial split for findings.** Per `adversarial-review-split-findings.md`: each self-review finding is inherent non-issue or actionable; "out of scope" doesn't cover small adjacent fixes.
-- **Match edit count to what was approved.** Per `plan-discipline.md`: N approved findings → exactly N edits. New issue mid-pass → announce before applying.
-- **Anchor every [FIX] to a check above.** "I'd phrase it differently" is not a finding.
-- **Preserve cited filenames.** Per `scope-means-no-reads-or-writes.md`: before renaming a rule file, grep the project. If anything outside `.claude/rules/` cites it, keep the name and rewrite contents in place.
-- **No stylistic drift mid-pass.** Don't introduce a new footer label like `**Triggers:**` while auditing for inconsistency.
-- **Don't grow the rule set here.** Real new rule worth saving → suggest `/extract-session-rules`.
+Make exactly the approved edits. Before renaming or deleting a rule or skill, grep the repo for its filename (for a skill, its directory name) and repair citations — or keep the name if a citing file is out of scope. Rerun `check.mjs` and report before/after, plus deferred items with a one-line reason.

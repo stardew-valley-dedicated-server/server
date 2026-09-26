@@ -11,7 +11,7 @@ carry no index row — they are always loaded; discover them by globbing
 `universal/`. Only the path-scoped rules below need an index entry, because the
 index is the sole discovery mechanism for a rule that has not yet been loaded.
 
-For rule authoring/extraction, see `.claude/skills/extract-session-rules/SKILL.md`.
+Every rule must pass the gates and fit the budget in `.claude/skills/review-rules/standard.md`.
 
 ## L2 — `rules/` (paths-gated)
 
