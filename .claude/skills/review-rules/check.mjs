@@ -63,7 +63,9 @@ overCap(pathScoped, PATH_SCOPED_CAP, "path-scoped");
 for (const p of universal)
   if (frontmatter(read(p)) !== null) problems.push(`frontmatter: ${rel(p)} is universal but has frontmatter`);
 for (const p of pathScoped)
-  if (!/^paths:/m.test(frontmatter(read(p)) ?? "")) problems.push(`frontmatter: ${rel(p)} lacks paths:`);
+  // At least one glob, inline (`paths: "x"`, `paths: ["x"]`) or as a list item on the next line.
+  if (!/^paths:[ \t]*(?:["'[]*[^\s"'#[\]]|(?:#.*)?\r?\n[ \t]+-[ \t]*["']?[^\s"'#])/m.test(frontmatter(read(p)) ?? ""))
+    problems.push(`frontmatter: ${rel(p)} has no paths: glob`);
 for (const p of skills) {
   const fm = frontmatter(read(p)) ?? "";
   const dirName = dirname(p).split(/[\\/]/).pop();
@@ -83,14 +85,12 @@ for (const p of [claudeMd, readme, ...universal, ...pathScoped, ...skillDocs].fi
   }
 }
 
-// Index sync, only while README.md carries an index table
+// Index sync
 if (existsSync(readme)) {
   const indexed = new Set([...read(readme).matchAll(/^\|\s*`([^`]+\.md)`/gm)].map((m) => m[1]));
-  if (indexed.size > 0) {
-    const present = new Set(pathScoped.map((p) => relative(rulesDir, p).replaceAll("\\", "/")));
-    for (const f of present) if (!indexed.has(f)) problems.push(`index: ${f} has no README.md row`);
-    for (const f of indexed) if (!present.has(f)) problems.push(`index: README.md row ${f} has no file`);
-  }
+  const present = new Set(pathScoped.map((p) => relative(rulesDir, p).replaceAll("\\", "/")));
+  for (const f of present) if (!indexed.has(f)) problems.push(`index: ${f} has no README.md row`);
+  for (const f of indexed) if (!present.has(f)) problems.push(`index: README.md row ${f} has no file`);
 }
 
 console.log(`always-loaded ${alwaysTotal}/${ALWAYS_LOADED_CAP} words (${alwaysLoaded.length} files)`);
