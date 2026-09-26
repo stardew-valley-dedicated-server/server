@@ -13,7 +13,7 @@ The language servers download on first use and need runtimes this repo already r
 
 ## Projects
 
-The project-scoped [`.mcp.json`](https://github.com/stardew-valley-dedicated-server/server/blob/master/.mcp.json) starts Serena with `--project-from-cwd`, so the root project of the checkout Claude Code starts in (the main checkout or a worktree) is active from the start. Serena picks the project once, at startup: after a session switches into a worktree, ask the agent to activate the worktree by path.
+The project-scoped [`.mcp.json`](https://github.com/stardew-valley-dedicated-server/server/blob/master/.mcp.json) starts Serena without a project. At the start of a session, and again after switching into a worktree, ask the agent to activate the checkout you are working in by its path. Use the path, not the name: every checkout's root project is named `junimo`, so Serena rejects the name once more than one checkout has used it.
 
 | Project | Root | Covers |
 |---|---|---|
@@ -24,4 +24,4 @@ The first activation in a fresh checkout is slow while the C# language server re
 
 ## Decompiled game code
 
-`stardew-decompiled` needs the decompiled sources, which stay out of git: run the [decompilation step](/developers/advanced/decompiling) first. Its `.serena/project.yml` is committed, so it works as soon as the sources are there. Serena has one active project at a time. The first time, ask the agent to activate the main checkout's `decompiled/sdv-<version>/` folder by path (worktrees have the config but not the sources); after that, the name works. Switch back by path too: every checkout's root project is named `junimo`, so Serena rejects that name once more than one checkout has used it.
+`stardew-decompiled` needs the decompiled sources, which stay out of git: run the [decompilation step](/developers/advanced/decompiling) first. Its `.serena/project.yml` is committed, so it works as soon as the sources are there. Serena has one active project at a time. The first time, ask the agent to activate the main checkout's `decompiled/sdv-<version>/` folder by path (worktrees have the config but not the sources); after that, the name works.

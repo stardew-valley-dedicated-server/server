@@ -5,8 +5,7 @@
       "args": [
         "start-mcp-server",
         "--context",
-        "claude-code",
-        "--project-from-cwd"
+        "claude-code"
       ]
     }
   }
