@@ -25,8 +25,8 @@ const mdFiles = (dir) =>
 const frontmatter = (text) => /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? null;
 // Globs from the `paths:` list form that standard.md prescribes; empty, `null`, and `~` items don't count.
 const pathGlobs = (fm) => {
-  const block = /^paths:[ \t]*(?:#.*)?((?:\r?\n[ \t]+-.*)+)/m.exec(fm)?.[1] ?? "";
-  return [...block.matchAll(/-[ \t]*(.*)/g)]
+  const block = /^paths:[ \t]*(?:#.*)?((?:\r?\n(?:[ \t]+-.*|[ \t]*(?:#.*)?))*)/m.exec(fm)?.[1] ?? "";
+  return [...block.matchAll(/^[ \t]+-[ \t]*(.*)/gm)]
     .map((m) => m[1].replace(/\s+#.*$/, "").trim().replace(/^(["'])(.*)\1$/, "$2"))
     .filter((g) => g && g !== "null" && g !== "~");
 };
