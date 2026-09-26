@@ -78,7 +78,8 @@ for (const p of skills) {
 const skillDocs = skills.flatMap((p) => mdFiles(dirname(p)));
 for (const p of [claudeMd, readme, ...universal, ...pathScoped, ...skillDocs].filter(existsSync)) {
   const text = read(p).replace(/```[\s\S]*?```/g, "");
-  for (const [, target] of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+  for (const [, angled, bare] of text.matchAll(/\]\((?:<([^>]+)>|([^)\s]+))\)/g)) {
+    const target = angled ?? bare;
     if (/^(https?:|mailto:|#)/.test(target)) continue;
     if (!existsSync(resolve(dirname(p), decodeURIComponent(target.split("#")[0]))))
       problems.push(`link: ${rel(p)} -> ${target} does not exist`);

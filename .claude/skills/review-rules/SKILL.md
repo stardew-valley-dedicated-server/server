@@ -42,7 +42,7 @@ A rule whose trigger (path, identifier, feature) no longer exists is [CUT]. A cu
 
 "Removing it might cause mistakes" is not a keep argument; a gate is. Back each finding with evidence that fits the claim:
 
-- Existence (path, identifier, trigger) → grep or glob.
+- Existence (path, identifier, trigger) → grep or glob. Game symbols live in the gitignored `decompiled/` tree, which worktrees lack — search it in the main checkout; a miss in the repo alone is not evidence.
 - Recurrence (gate 1) → one of the gate's three conditions shown by the rule's `**Why:**`, another rule, or `git log`; a single cited incident with no defect or stated cost fails.
 - Mechanizable or derivable (gates 3, 5) → the config, code, or docs that would carry it.
 - Duplication (gate 6) → the other rule's text.
