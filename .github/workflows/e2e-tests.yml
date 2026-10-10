@@ -793,7 +793,7 @@ jobs:
       # failed or aborted run is still inspectable.
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-test-results
           path: TestResults/runs/
@@ -973,7 +973,7 @@ jobs:
       - name: Upload web report (fallback)
         if: always() && steps.r2.outputs.report_url == ''
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-web-report
           path: TestResults/runs/*/report/
