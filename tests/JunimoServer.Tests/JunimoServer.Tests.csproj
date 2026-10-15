@@ -19,23 +19,23 @@
   <ItemGroup>
     <!-- xUnit v3 -->
     <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
 
     <!-- Test SDK -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1">
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
 
     <!-- Test dependencies -->
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
-    <PackageReference Include="Testcontainers" Version="4.15.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
+    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.2.0" />
+    <PackageReference Include="Testcontainers" Version="4.16.0" />
     <!-- Not used directly: lifts Testcontainers' transitive SSH.NET above the
          audit-flagged 2025.1.0 (GHSA-q939-rpr3-3284), which fails restore. -->
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
