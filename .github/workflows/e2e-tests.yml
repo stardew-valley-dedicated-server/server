@@ -497,7 +497,7 @@ jobs:
       - name: Setup .NET 10.0
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.401'
+          dotnet-version: '10.0.403'
 
       # Build the test-UI SPA so the runner can assemble the offline web report
       # (test-web) from it after the run. The runner's report path (ReportGenerator,
@@ -752,7 +752,7 @@ jobs:
       - name: Publish CTRF results to job summary
         if: always()
         continue-on-error: true
-        uses: ctrf-io/github-test-reporter@7974087018bf4857cf5a9d78723e152038c3fa31 # v1.3.0
+        uses: ctrf-io/github-test-reporter@dbb08957b5b2af918b39136ab2c5532002c7649b # v1.3.2
         with:
           report-path: 'TestResults/runs/**/ctrf-report.json'
           summary-report: true
@@ -793,7 +793,7 @@ jobs:
       # failed or aborted run is still inspectable.
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-test-results
           path: TestResults/runs/
@@ -973,7 +973,7 @@ jobs:
       - name: Upload web report (fallback)
         if: always() && steps.r2.outputs.report_url == ''
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-web-report
           path: TestResults/runs/*/report/
