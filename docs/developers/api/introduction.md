@@ -234,7 +234,7 @@ curl -X POST "http://localhost:8080/players/kick?playerId=620826087702429092" \
 Transport round-trip time per connected player. `pingMs` is `-1` when the server no longer has a connection for that player, which makes a stuck ("ghost") player easy to spot.
 
 ```json
-[{ "id": 620826087702429092, "name": "PlayerName", "pingMs": 42 }]
+{ "connections": [{ "id": 620826087702429092, "name": "PlayerName", "pingMs": 42 }] }
 ```
 
 ### DELETE /farmhands

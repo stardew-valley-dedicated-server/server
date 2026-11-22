@@ -173,6 +173,11 @@ public class PlayerConnectionInfo
     public float PingMs { get; set; }
 }
 
+public class PlayerConnectionsResponse
+{
+    public List<PlayerConnectionInfo> Connections { get; set; } = new();
+}
+
 public class PlayersResponse
 {
     /// <summary>List of connected players.</summary>
@@ -4577,13 +4582,14 @@ public partial class ApiService : ModService
     }
 
     [ApiEndpoint("GET", "/players/connections", Summary = "Ping per connected player", Tag = "Server")]
-    [ApiResponse(typeof(List<PlayerConnectionInfo>), 200, Description = "Connection info")]
-    private async Task<List<PlayerConnectionInfo>> HandleGetPlayerConnectionsAsync()
+    [ApiResponse(typeof(PlayerConnectionsResponse), 200, Description = "Connection info")]
+    private async Task<PlayerConnectionsResponse> HandleGetPlayerConnectionsAsync()
     {
-        var list = new List<PlayerConnectionInfo>();
+        var response = new PlayerConnectionsResponse();
+        var list = response.Connections;
         if (Game1.gameMode != 3 || !Game1.IsServer || Game1.server == null)
         {
-            return list;
+            return response;
         }
         await RunOnGameThreadAsync(() =>
         {
@@ -4601,7 +4607,7 @@ public partial class ApiService : ModService
                 list.Add(new PlayerConnectionInfo { Id = id, Name = farmer.Name, PingMs = ping });
             }
         });
-        return list;
+        return response;
     }
 
     [ApiEndpoint("POST", "/roles/admin", Summary = "Grant admin role to a player", Tag = "Roles")]
