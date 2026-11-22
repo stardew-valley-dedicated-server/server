@@ -164,6 +164,15 @@ public class PlayerInfo
 /// <summary>
 /// Response containing list of connected players.
 /// </summary>
+public class PlayerConnectionInfo
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = "";
+
+    /// <summary>Round-trip time reported by the transport; -1 when the connection is unknown.</summary>
+    public float PingMs { get; set; }
+}
+
 public class PlayersResponse
 {
     /// <summary>List of connected players.</summary>
@@ -2217,6 +2226,9 @@ public partial class ApiService : ModService
                     case "/players":
                         await WriteJsonAsync(response, HandleGetPlayers());
                         break;
+                    case "/players/connections":
+                        await WriteJsonAsync(response, await HandleGetPlayerConnectionsAsync());
+                        break;
                     case "/farmhands":
                         await ProfileFarmhandsAsync(response);
                         break;
@@ -2290,6 +2302,12 @@ public partial class ApiService : ModService
                         await WriteJsonAsync(
                             response,
                             await HandlePostClockSpeedAsync(multiplierParam)
+                        );
+                        break;
+                    case "/players/kick":
+                        await WriteJsonAsync(
+                            response,
+                            await HandlePostKickPlayerAsync(request.QueryString["playerId"])
                         );
                         break;
                     case "/roles/admin":
@@ -4525,6 +4543,65 @@ public partial class ApiService : ModService
             Multiplier = multiplier,
             EffectiveMs = effectiveMs,
         };
+    }
+
+    [ApiEndpoint("POST", "/players/kick", Summary = "Disconnect a connected player", Tag = "Server")]
+    [ApiResponse(typeof(FarmhandResponse), 200, Description = "Player kicked")]
+    private async Task<FarmhandResponse> HandlePostKickPlayerAsync(string? playerId)
+    {
+        if (!long.TryParse(playerId, out var id))
+        {
+            return new FarmhandResponse { Success = false, Error = "Missing or invalid 'playerId'" };
+        }
+        if (Game1.gameMode != 3 || !Game1.IsServer || Game1.server == null)
+        {
+            return new FarmhandResponse { Success = false, Error = "Server not ready" };
+        }
+
+        string? name = null;
+        await RunOnGameThreadAsync(() =>
+        {
+            if (Game1.otherFarmers.TryGetValue(id, out var farmer))
+            {
+                name = farmer.Name;
+                Game1.server.kick(id);
+            }
+        });
+
+        if (name == null)
+        {
+            return new FarmhandResponse { Success = false, Error = "Player is not connected" };
+        }
+        Monitor.Log($"Kicked {name} ({id}) via API", LogLevel.Info);
+        return new FarmhandResponse { Success = true, Message = $"Kicked {name}" };
+    }
+
+    [ApiEndpoint("GET", "/players/connections", Summary = "Ping per connected player", Tag = "Server")]
+    [ApiResponse(typeof(List<PlayerConnectionInfo>), 200, Description = "Connection info")]
+    private async Task<List<PlayerConnectionInfo>> HandleGetPlayerConnectionsAsync()
+    {
+        var list = new List<PlayerConnectionInfo>();
+        if (Game1.gameMode != 3 || !Game1.IsServer || Game1.server == null)
+        {
+            return list;
+        }
+        await RunOnGameThreadAsync(() =>
+        {
+            foreach (var (id, farmer) in Game1.otherFarmers)
+            {
+                float ping;
+                try
+                {
+                    ping = Game1.server.getPingToClient(id);
+                }
+                catch
+                {
+                    ping = -1;
+                }
+                list.Add(new PlayerConnectionInfo { Id = id, Name = farmer.Name, PingMs = ping });
+            }
+        });
+        return list;
     }
 
     [ApiEndpoint("POST", "/roles/admin", Summary = "Grant admin role to a player", Tag = "Roles")]
