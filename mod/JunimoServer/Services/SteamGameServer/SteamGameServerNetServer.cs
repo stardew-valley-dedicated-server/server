@@ -47,6 +47,12 @@ internal sealed class SteamGameServerNetServer : HookableServer
     /// <summary>Connection data by Steam ID (for O(1) lookup).</summary>
     private Dictionary<ulong, ConnectionData> _steamIdConnectionMap;
 
+    // Connections whose send failed, shut down with a full player disconnect on the next
+    // receiveMessages() tick. Not inline: sendMessage runs inside the game's broadcast loops over
+    // the farmer list, which the disconnect modifies. Closing only the Steam side would leave the
+    // farmer online with a dead connection, its slot impossible to re-join.
+    private readonly HashSet<HSteamNetConnection> _pendingShutdown = new();
+
     /// <summary>
     /// Raised when a farmhand is accepted via Steam SDR.
     /// Parameters: (farmerId, steamId).
@@ -195,6 +201,8 @@ internal sealed class SteamGameServerNetServer : HookableServer
         {
             return;
         }
+
+        ShutdownFailedConnections();
 
         PollJoiningMessages();
         PollFarmhandMessages();
@@ -390,8 +398,13 @@ internal sealed class SteamGameServerNetServer : HookableServer
 
         if (result != EResult.k_EResultOK)
         {
-            _monitor.Log($"Failed to send message: {result}", LogLevel.Warn);
-            CloseConnection(connection);
+            if (_pendingShutdown.Add(connection))
+            {
+                _monitor.Log(
+                    $"Failed to send message: {result}; disconnecting the peer on the next tick",
+                    LogLevel.Warn
+                );
+            }
         }
         else
         {
@@ -721,6 +734,25 @@ internal sealed class SteamGameServerNetServer : HookableServer
     public override void offerInvite()
     {
         // No-op: Steam overlay not available in headless mode
+    }
+
+    private void ShutdownFailedConnections()
+    {
+        if (_pendingShutdown.Count == 0)
+        {
+            return;
+        }
+
+        var failed = new List<HSteamNetConnection>(_pendingShutdown);
+        _pendingShutdown.Clear();
+        foreach (var connection in failed)
+        {
+            var name = _connectionDataMap.TryGetValue(connection, out var data)
+                ? data.DisplayName
+                : "unknown";
+            _monitor.Log($"Dropping dead connection ({name})", LogLevel.Info);
+            ShutdownConnection(connection);
+        }
     }
 
     private void ShutdownConnection(HSteamNetConnection connection)
