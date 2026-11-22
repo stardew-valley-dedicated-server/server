@@ -229,7 +229,14 @@ public class SteamAuthService
     private void OnDisconnected(SteamClient.DisconnectedCallback cb)
     {
         Logger.Log($"{_logPrefix} Disconnected (UserInitiated: {cb.UserInitiated})");
-        _connectTcs?.TrySetResult(false);
+        // Only a failure of the connection being waited on ends the wait early; SteamKit reports
+        // those with UserInitiated=false. Teardowns of the previous connection (Connect() closes it
+        // first, and our own Disconnect() calls) report true and can still be queued when a new
+        // wait starts.
+        if (!cb.UserInitiated)
+        {
+            _connectTcs?.TrySetResult(false);
+        }
         IsLoggedIn = false;
         _loginTcs?.TrySetResult(false);
         MaybeStartReconnect("disconnected", cb.UserInitiated, EResult.OK);
