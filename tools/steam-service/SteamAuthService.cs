@@ -33,7 +33,7 @@ public record AppTicketResult(
 public class SteamAuthService
 {
     // Timing constants
-    private static readonly TimeSpan ConnectionEstablishmentDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ConnectionEstablishmentTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TicketRequestTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CallbackPollInterval = TimeSpan.FromMilliseconds(10);
     private static readonly TimeSpan TicketCacheMaxAge = TimeSpan.FromMinutes(10);
@@ -73,6 +73,7 @@ public class SteamAuthService
 
     private readonly CancellationTokenSource _cts = new();
     private TaskCompletionSource<bool>? _loginTcs;
+    private volatile TaskCompletionSource<bool>? _connectTcs;
     private string? _refreshToken;
     private string? _username;
 
@@ -222,11 +223,20 @@ public class SteamAuthService
     private void OnConnected(SteamClient.ConnectedCallback cb)
     {
         Logger.Log($"{_logPrefix} Connected to Steam");
+        _connectTcs?.TrySetResult(true);
     }
 
     private void OnDisconnected(SteamClient.DisconnectedCallback cb)
     {
         Logger.Log($"{_logPrefix} Disconnected (UserInitiated: {cb.UserInitiated})");
+        // Only a failure of the connection being waited on ends the wait early; SteamKit reports
+        // those with UserInitiated=false. Teardowns of the previous connection (Connect() closes it
+        // first, and our own Disconnect() calls) report true and can still be queued when a new
+        // wait starts.
+        if (!cb.UserInitiated)
+        {
+            _connectTcs?.TrySetResult(false);
+        }
         IsLoggedIn = false;
         _loginTcs?.TrySetResult(false);
         MaybeStartReconnect("disconnected", cb.UserInitiated, EResult.OK);
@@ -929,8 +939,7 @@ public class SteamAuthService
 
         // Connect
         Logger.Log($"{_logPrefix} Connecting...");
-        _steamClient.Connect();
-        await Task.Delay(ConnectionEstablishmentDelay);
+        await ConnectAndWaitAsync();
 
         // Authenticate
         try
@@ -965,8 +974,7 @@ public class SteamAuthService
     private async Task LoginWithQrCodeInsideLockAsync()
     {
         Logger.Log($"{_logPrefix} Connecting...");
-        _steamClient.Connect();
-        await Task.Delay(ConnectionEstablishmentDelay);
+        await ConnectAndWaitAsync();
 
         try
         {
@@ -1016,10 +1024,33 @@ public class SteamAuthService
         Console.WriteLine();
     }
 
+    /// <summary>Connects and waits for ConnectedCallback instead of a fixed delay.</summary>
+    private async Task ConnectAndWaitAsync()
+    {
+        // SteamClient.Connect() is asynchronous: it first fetches the CM list from the WebAPI,
+        // then opens the CM connection. On higher-latency links that takes over 2s, so a fixed
+        // delay let auth start on a disconnected client ("SteamClient instance must be connected").
+        var tcs = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _connectTcs = tcs;
+        _steamClient.Connect();
+        var done = await Task.WhenAny(tcs.Task, Task.Delay(ConnectionEstablishmentTimeout));
+        if (done != tcs.Task)
+        {
+            Logger.Log(
+                $"{_logPrefix} Timed out connecting to Steam after {ConnectionEstablishmentTimeout.TotalSeconds}s"
+            );
+        }
+        else if (!tcs.Task.Result)
+        {
+            Logger.Log($"{_logPrefix} Connection to Steam closed before it was established");
+        }
+    }
+
     private async Task ConnectAndLoginAsync(string refreshToken)
     {
-        _steamClient.Connect();
-        await Task.Delay(ConnectionEstablishmentDelay);
+        await ConnectAndWaitAsync();
         await LoginWithTokenInternalAsync(refreshToken);
     }
 
@@ -1105,8 +1136,7 @@ public class SteamAuthService
                 if (!_steamClient.IsConnected)
                 {
                     Logger.Log($"{_logPrefix} Reconnecting...");
-                    _steamClient.Connect();
-                    await Task.Delay(ConnectionEstablishmentDelay);
+                    await ConnectAndWaitAsync();
                 }
             }
         }
