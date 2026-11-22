@@ -231,7 +231,7 @@ curl -X POST "http://localhost:8080/players/kick?playerId=620826087702429092" \
 
 ### GET /players/connections
 
-Transport round-trip time per connected player. `pingMs` is `-1` when the server no longer has a connection for that player, which makes a stuck ("ghost") player easy to spot.
+Transport round-trip time per connected player. `pingMs` is `-1` when the server has no connection for that player, which makes a stuck ("ghost") player easy to spot.
 
 ```json
 { "connections": [{ "id": 620826087702429092, "name": "PlayerName", "pingMs": 42 }] }
